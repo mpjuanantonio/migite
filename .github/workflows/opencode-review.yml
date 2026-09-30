@@ -21,9 +21,11 @@ jobs:
       - uses: anomalyco/opencode/github@latest
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENCODE_PERMISSION: '{"edit": "deny", "bash": "deny"}'
         with:
           model: opencode-go/kimi-k3
+          use_github_token: true
           prompt: |
             Eres el revisor de código de este repositorio. Solo analizas:
             no editas nada. Revisa este pull request contra AGENTS.md y
