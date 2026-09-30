@@ -24,7 +24,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENCODE_PERMISSION: '{"edit": "deny", "bash": "deny"}'
         with:
-          model: opencode-go/kimi-k3
+          model: opencode-go/glm-5.3-flash
           use_github_token: true
           prompt: |
             Eres el revisor de código de este repositorio. Solo analizas:
