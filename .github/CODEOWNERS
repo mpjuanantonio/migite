@@ -1,0 +1,11 @@
+.github/workflows/  @mpjuanantonio
+/CODEOWNERS         @mpjuanantonio
+infra/              @mpjuanantonio
+**/auth/**          @mpjuanantonio
+**/migrations/**    @mpjuanantonio
+*.env.example       @mpjuanantonio
+
+# === CARRIL ESTÁNDAR ===
+src/                @mpjuanantonio
+tests/              @mpjuanantonio
+docs/               @mpjuanantonio
