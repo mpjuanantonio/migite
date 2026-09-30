@@ -1,0 +1,36 @@
+name: opencode-review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: anomalyco/opencode/github@latest
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          OPENCODE_PERMISSION: '{"edit": "deny", "bash": "deny"}'
+        with:
+          model: opencode-go/kimi-k3
+          prompt: |
+            Eres el revisor de código de este repositorio. Solo analizas:
+            no editas nada. Revisa este pull request contra AGENTS.md y
+            devuelve tus hallazgos como comentario del PR:
+
+            1. **Bloqueantes** — bugs, fugas de secretos, pérdida de datos
+            2. **Importantes** — diseño, rendimiento, edge cases
+            3. **Sugerencias** — estilo, naming, simplificación
+
+            Cada hallazgo: `archivo:línea` + problema + propuesta concreta.
+            Si no hay hallazgos, responde exactamente "APROBADO".

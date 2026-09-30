@@ -16,18 +16,21 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
-      contents: read
-      pull-requests: read
-      issues: read
+      contents: write
+      pull-requests: write
+      issues: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
+          fetch-depth: 1
           persist-credentials: false
 
       - name: Run opencode
         uses: anomalyco/opencode/github@latest
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          OPENCODE_PERMISSION: '{"edit": "allow", "bash": {"*": "deny", "git status*": "allow", "git diff*": "allow", "git log*": "allow", "git add*": "allow", "git commit*": "allow"}}'
         with:
-          model: opencode-go/mimo-v2.6-pro
+          model: opencode-go/deepseek-v4.1-flash
+          variant: max
