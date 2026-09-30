@@ -6,6 +6,7 @@ on:
 
 jobs:
   triage:
+    if: github.event.issue.user.login == 'mpjuanantonio' 
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -21,6 +22,7 @@ jobs:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
           OPENCODE_PERMISSION: '{"edit": "deny", "bash": "deny"}'
         with:
+          share: false
           model: opencode-go/mimo-v2.6-flash
           prompt: |
             Revisa este issue nuevo y responde SOLO con una clasificación:
