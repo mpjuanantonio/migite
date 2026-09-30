@@ -1,0 +1,146 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "opencode-go": {
+      "models": {
+        "deepseek-v4.1-flash": {
+          "options": {
+            "reasoningEffort": "max"
+          }
+        }
+      }
+    }
+  },
+  "permission": {
+    "bash": {
+      "*": "ask",
+      "git status*": "allow",
+      "git diff*": "allow",
+      "git log*": "allow",
+      "rm *": "deny"
+    },
+    "edit": {
+      "*.env": "deny",
+      "*.env.*": "deny"
+    },
+    "read": {
+      "*": "allow",
+      "*.env": "deny",
+      "*.env.*": "deny"
+    }
+  },
+  "agent": {
+    "orchestrator": {
+      "mode": "primary",
+      "description": "Tech lead del equipo. Descompone la petición, delega en los subagentes por rol e integra resultados. No escribe código.",
+      "model": "opencode-go/deepseek-v4.1-flash",
+      "prompt": "{file:./prompts/orchestrator.txt}",
+      "permission": {
+        "edit": "deny",
+        "bash": {
+          "*": "deny",
+          "git status*": "allow",
+          "git diff*": "allow",
+          "git log*": "allow"
+        },
+        "task": {
+          "*": "deny",
+          "implementador": "allow",
+          "code-reviewer": "allow",
+          "test-architect": "allow",
+          "security-auditor": "allow",
+          "docs-writer": "allow",
+          "explore": "allow"
+        }
+      }
+    },
+    "implementador": {
+      "mode": "subagent",
+      "description": "Implementador junior. Ejecuta tareas acotadas de código: features pequeñas, fixes, boilerplate, migraciones, scaffolding de tests. Devuelve un informe al final.",
+      "model": "opencode-go/mimo-v2.6-flash",
+      "prompt": "{file:./prompts/implementador.txt}",
+      "permission": {
+        "edit": {
+          "*": "allow",
+          "*.env": "deny",
+          "*.env.*": "deny",
+          "AGENTS.md": "deny",
+          ".github/workflows/*": "deny"
+        },
+        "bash": {
+          "*": "ask",
+          "npm test*": "allow",
+          "npm run lint*": "allow",
+          "npm run typecheck*": "allow",
+          "git add*": "allow",
+          "git commit*": "allow",
+          "git push*": "deny"
+        },
+        "external_directory": "deny"
+      }
+    },
+    "code-reviewer": {
+      "mode": "subagent",
+      "description": "Revisor de código senior (read-only). Audita calidad, bugs, seguridad y mantenibilidad. No edita. Devuelve hallazgos con severidad y archivo:línea.",
+      "model": "opencode-go/kimi-k3",
+      "temperature": 0.1,
+      "prompt": "{file:./prompts/code-reviewer.txt}",
+      "permission": {
+        "edit": "deny",
+        "bash": "deny",
+        "webfetch": "deny"
+      }
+    },
+    "test-architect": {
+      "mode": "subagent",
+      "description": "Arquitecta de tests senior. Define estrategia de cobertura, escribe tests y audita gaps. Solo toca archivos de test.",
+      "model": "opencode-go/mimo-v2.6-pro",
+      "prompt": "{file:./prompts/test-architect.txt}",
+      "permission": {
+        "edit": {
+          "*": "deny",
+          "**/*.test.*": "allow",
+          "**/*.spec.*": "allow",
+          "**/tests/**": "allow",
+          "**/__tests__/**": "allow",
+          "**/test/**": "allow"
+        },
+        "bash": {
+          "*": "ask",
+          "npm test*": "allow",
+          "npm run test*": "allow",
+          "npx vitest*": "allow",
+          "npx playwright test*": "allow"
+        }
+      }
+    },
+    "security-auditor": {
+      "mode": "subagent",
+      "description": "Auditor de seguridad senior (read-only). OWASP, fugas de secretos, permisos excesivos, dependencias vulnerables. Devuelve un informe de riesgos.",
+      "model": "opencode-go/deepseek-v4.1-flash",
+      "temperature": 0.1,
+      "prompt": "{file:./prompts/security-auditor.txt}",
+      "permission": {
+        "edit": "deny",
+        "bash": "deny",
+        "webfetch": "deny"
+      }
+    },
+    "docs-writer": {
+      "mode": "subagent",
+      "description": "Redactor de documentación junior. README, guías de uso, API docs. Solo toca archivos de documentación.",
+      "model": "opencode-go/mimo-v2.6-flash",
+      "prompt": "{file:./prompts/docs-writer.txt}",
+      "permission": {
+        "edit": {
+          "*": "deny",
+          "docs/**": "allow",
+          "*.md": "allow",
+          "AGENTS.md": "deny"
+        },
+        "bash": "deny",
+        "webfetch": "deny"
+      }
+    }
+  }
+}
