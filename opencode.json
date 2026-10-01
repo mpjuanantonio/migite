@@ -33,7 +33,7 @@
     "orchestrator": {
       "mode": "primary",
       "description": "Tech lead del equipo. Descompone la petición, delega en los subagentes por rol e integra resultados. No escribe código.",
-      "model": "opencode-go/deepseek-v4.1-flash",
+      "model": "opencode-go/mimo-v2.6-pro",
       "prompt": "{file:./prompts/orchestrator.txt}",
       "permission": {
         "edit": "deny",
@@ -82,7 +82,7 @@
     "code-reviewer": {
       "mode": "subagent",
       "description": "Revisor de código senior (read-only). Audita calidad, bugs, seguridad y mantenibilidad. No edita. Devuelve hallazgos con severidad y archivo:línea.",
-      "model": "opencode-go/kimi-k3",
+      "model": "opencode-go/glm-5.3-flash",
       "temperature": 0.1,
       "prompt": "{file:./prompts/code-reviewer.txt}",
       "permission": {

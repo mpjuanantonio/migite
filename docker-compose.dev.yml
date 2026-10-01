@@ -1,0 +1,13 @@
+# docker-compose.dev.yml — override de desarrollo (hot-reload)
+services:
+  app:
+    build:
+      context: .
+      target: dev
+    volumes:
+      - vault:/data/vault
+      - appdata:/data/app
+      - ./apps:/app/apps
+      - ./packages:/app/packages
+    environment:
+      NODE_ENV: development

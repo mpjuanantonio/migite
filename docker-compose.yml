@@ -1,0 +1,44 @@
+# docker-compose.yml (base, compartido dev/prod)
+# Uso:  docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#       docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+services:
+  app:
+    build:
+      context: .
+      target: dev
+    ports:
+      - "3000:3000"
+    env_file: .env
+    volumes:
+      - vault:/data/vault
+      - appdata:/data/app
+    depends_on:
+      - litellm
+      - searxng
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    ports:
+      - "4000:4000"
+    env_file: .env
+    volumes:
+      - ./config/litellm.yaml:/app/config.yaml
+    command: ["--config", "/app/config.yaml"]
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:16-alpine
+    env_file: .env
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  searxng:
+    image: searxng/searxng:latest
+    volumes:
+      - ./config/searxng.yml:/etc/searxng/settings.yml
+
+volumes:
+  vault:
+  appdata:
+  pgdata:

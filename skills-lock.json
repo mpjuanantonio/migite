@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "skills": {
+    "mcp-builder": {
+      "source": "jezweb/claude-skills",
+      "sourceType": "github",
+      "skillPath": "plugins/integrations/skills/mcp-builder/SKILL.md",
+      "computedHash": "bce3421022085acb3005d9fa64c5f03490fbd38bf59a485c900fc06f56da19d6"
+    },
+    "telegram-bot": {
+      "source": "claude-office-skills/skills",
+      "sourceType": "github",
+      "skillPath": "telegram-bot/SKILL.md",
+      "computedHash": "8c9554098e2f9c4baa53980e09f3bd7374034c1948e73341b691a33ebb473db9"
+    },
+    "vercel-composition-patterns": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/composition-patterns/SKILL.md",
+      "computedHash": "f98931159fa9c7fed043bcd18a891a46dcf89ababa38df13a4c5b7b30dc0ce07"
+    },
+    "vercel-react-best-practices": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/react-best-practices/SKILL.md",
+      "computedHash": "3219a1944e404ffc14d1d9d6aef6dd2e3855b81387ee0a044ccbfe14d34c2357"
+    }
+  }
+}

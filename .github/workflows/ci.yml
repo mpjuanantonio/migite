@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      # El pipeline existe antes que el codigo (F0). Con codigo (F1+) se ejecuta todo.
+      - name: Detectar codigo
+        id: init
+        run: echo "has_code=$([ -f package.json ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v7
+        if: steps.init.outputs.has_code == 'true'
+        with:
+          node-version: lts/*
+          cache: npm
+      - run: npm ci
+        if: steps.init.outputs.has_code == 'true'
+      - run: npm run lint
+        if: steps.init.outputs.has_code == 'true'
+      - run: npm run typecheck
+        if: steps.init.outputs.has_code == 'true'
+      - run: npm test
+        if: steps.init.outputs.has_code == 'true'
+      - run: npm run build
+        if: steps.init.outputs.has_code == 'true'
+
+      - name: Pipeline listo (sin codigo aun)
+        if: steps.init.outputs.has_code == 'false'
+        run: echo "CI listo - se activara con el codigo en F1"

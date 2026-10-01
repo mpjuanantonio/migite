@@ -1,0 +1,11 @@
+# docker-compose.prod.yml — override de produccion (servidor)
+# La imagen la construye release.yml y la despliega deploy.yml (con --no-build)
+services:
+  app:
+    image: ghcr.io/mpjuanantonio/migite:${VERSION:?Define VERSION=vX.Y.Z}
+    restart: unless-stopped
+    volumes:
+      - vault:/data/vault
+      - appdata:/data/app
+    environment:
+      NODE_ENV: production

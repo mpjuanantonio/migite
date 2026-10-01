@@ -1,0 +1,6 @@
+# SearXNG — configuracion base (F2 se completa)
+use_default_settings: true
+server:
+  secret_key: "${SEARXNG_SECRET}"
+  limiter: false
+  image_proxy: false
