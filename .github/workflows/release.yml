@@ -6,6 +6,8 @@ on:
 
 jobs:
   release:
+    # Sin codigo (package.json) todavia no hay nada que versionar ni construir
+    if: hashFiles('package.json') != ''
     runs-on: ubuntu-latest
     permissions:
       contents: write      # GitHub Release
