@@ -10,6 +10,7 @@ jobs:
   opencode:
     if: |
       github.event.comment.user.login == 'mpjuanantonio' &&
+      !startsWith(github.event.comment.body, '/oc review') &&
       (
         contains(github.event.comment.body, ' /oc') ||
         startsWith(github.event.comment.body, '/oc') ||
