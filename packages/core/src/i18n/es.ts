@@ -25,6 +25,7 @@ export const es = {
   "error.serverStartFailed": "No se pudo iniciar el servidor: {detail}",
   "error.translationKeyMissing":
     'clave "{key}" presente en [{presentIn}] pero ausente en [{absentIn}]',
+  "error.typeSeedFailed": "No se pudieron sembrar los tipos nativos en {path}: {problems}",
   "error.undeclaredProvider": "el proveedor {provider} no está declarado en proveedores",
   "warning.missingApiKey":
     "Aviso: no está definida la variable de entorno {variable} (clave API). La app funciona, pero el agente de IA quedará inoperativo.",

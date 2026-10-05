@@ -22,6 +22,7 @@ export const en = {
   "error.portUnavailable": "the network address is not available (EADDRNOTAVAIL)",
   "error.serverStartFailed": "The server could not be started: {detail}",
   "error.translationKeyMissing": 'key "{key}" present in [{presentIn}] but missing in [{absentIn}]',
+  "error.typeSeedFailed": "Native types could not be seeded in {path}: {problems}",
   "error.undeclaredProvider": "provider {provider} is not declared in providers",
   "warning.missingApiKey":
     "Warning: the environment variable {variable} (API key) is not set. The app works, but the AI agent will be unavailable.",

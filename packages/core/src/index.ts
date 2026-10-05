@@ -31,3 +31,5 @@ export {
   type TranslationParams,
   t,
 } from "./i18n/index.js";
+
+export { NATIVE_TYPE_IDS, seedNativeTypes } from "./native-types/index.js";
