@@ -24,6 +24,8 @@ export const en = {
   "error.translationKeyMissing": 'key "{key}" present in [{presentIn}] but missing in [{absentIn}]',
   "error.typeSeedFailed": "Native types could not be seeded in {path}: {problems}",
   "error.undeclaredProvider": "provider {provider} is not declared in providers",
+  "warning.invalidTypeAttribute": "Warning: attribute {id} discarded in {path}",
+  "warning.invalidTypeFile": "Warning: issues in type file {path}: {problems}",
   "warning.missingApiKey":
     "Warning: the environment variable {variable} (API key) is not set. The app works, but the AI agent will be unavailable.",
   "web.containerNotFound": "Root container #root not found",

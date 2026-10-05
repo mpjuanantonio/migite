@@ -27,6 +27,8 @@ export const es = {
     'clave "{key}" presente en [{presentIn}] pero ausente en [{absentIn}]',
   "error.typeSeedFailed": "No se pudieron sembrar los tipos nativos en {path}: {problems}",
   "error.undeclaredProvider": "el proveedor {provider} no está declarado en proveedores",
+  "warning.invalidTypeAttribute": "Aviso: atributo {id} descartado en {path}",
+  "warning.invalidTypeFile": "Aviso: incidencias en el fichero de tipo {path}: {problems}",
   "warning.missingApiKey":
     "Aviso: no está definida la variable de entorno {variable} (clave API). La app funciona, pero el agente de IA quedará inoperativo.",
   "web.containerNotFound": "No se encontro el contenedor #root",
