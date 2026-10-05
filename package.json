@@ -14,6 +14,7 @@
     "format": "biome check --write .",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
+    "check:i18n": "turbo run check:i18n",
     "prepare": "husky"
   },
   "lint-staged": {
