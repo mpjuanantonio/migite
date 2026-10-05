@@ -5,7 +5,7 @@ import type { ZodError } from "zod";
 import { defaultLocale, type Locale, t } from "../i18n/index.js";
 import { type EnvEntry, envIssues, parseDotenv } from "./env.js";
 import { ConfigError } from "./errors.js";
-import { type AppConfig, appSchema, type LlmConfig, llmSchema } from "./schema.js";
+import { type AppConfig, type LlmConfig, makeAppSchema, makeLlmSchema } from "./schema.js";
 
 export interface LoadConfigOptions {
   readonly root?: string;
@@ -52,10 +52,13 @@ const readYaml = (filePath: string, path: string, locale: Locale): unknown => {
   }
 };
 
-const applyEnv = (entries: readonly EnvEntry[]): void => {
+export const applyEnv = (
+  entries: readonly EnvEntry[],
+  target: NodeJS.ProcessEnv = process.env,
+): void => {
   for (const entry of entries) {
-    if (process.env[entry.name] === undefined) {
-      process.env[entry.name] = entry.value;
+    if (target[entry.name] === undefined) {
+      target[entry.name] = entry.value;
     }
   }
 };
@@ -82,7 +85,7 @@ export const loadConfig = (options: LoadConfigOptions = {}): Config => {
   const root = options.root ?? process.cwd();
   const locale = options.locale ?? defaultLocale;
 
-  const app = appSchema.safeParse(
+  const app = makeAppSchema(locale).safeParse(
     readYaml(join(root, "config", "app.yaml"), "config/app.yaml", locale),
   );
   if (!app.success) {
@@ -90,7 +93,7 @@ export const loadConfig = (options: LoadConfigOptions = {}): Config => {
   }
 
   const appLocale = app.data.locale;
-  const llm = llmSchema.safeParse(
+  const llm = makeLlmSchema(appLocale).safeParse(
     readYaml(join(root, "config", "llm.yaml"), "config/llm.yaml", appLocale),
   );
   if (!llm.success) {

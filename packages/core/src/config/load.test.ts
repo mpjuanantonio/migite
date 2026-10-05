@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { missingApiKeys } from "./apikeys.js";
 import { ConfigError } from "./errors.js";
-import { loadConfig } from "./load.js";
+import { applyEnv, loadConfig } from "./load.js";
 
 const VALID_APP = `paths:
   vault: ./vault
@@ -391,6 +391,34 @@ describe("loadConfig", () => {
       expect(error.message.startsWith("Invalid configuration in config/llm.yaml")).toBe(true);
     });
 
+    it("reports app.yaml issues in the requested locale", () => {
+      const root = createRoot({
+        "config/app.yaml": VALID_APP.replace("vault: ./vault", 'vault: ""'),
+        "config/llm.yaml": VALID_LLM,
+      });
+
+      const error = captureConfigError(() => loadConfig({ root, locale: "en" }));
+
+      expect(error.message).toContain("Invalid configuration in config/app.yaml");
+      expect(error.message).toContain("paths.vault");
+      expect(error.message).toContain("must not be empty");
+      expect(error.message).not.toContain("no puede estar vacío");
+    });
+
+    it("reports llm.yaml issues in the locale declared by app.yaml", () => {
+      const root = createRoot({
+        "config/app.yaml": VALID_APP.replace("locale: es", "locale: en"),
+        "config/llm.yaml":
+          "providers: []\nroles:\n  chat: { provider: openai, model: gpt-4o-mini }\n  retrieve: { provider: openai, model: gpt-4o-mini }\n  summarize: { provider: openai, model: gpt-4o-mini }\n  embeddings: { provider: openai, model: text-embedding-3-small }\n",
+      });
+
+      const error = captureConfigError(() => loadConfig({ root }));
+
+      expect(error.message).toContain("Invalid configuration in config/llm.yaml");
+      expect(error.message).toContain("must declare at least one provider");
+      expect(error.message).not.toContain("debe declarar al menos un proveedor");
+    });
+
     it("reports a YAML syntax error by code and line, without dumping the content", () => {
       const root = createRoot({
         "config/app.yaml":
@@ -454,6 +482,30 @@ describe("loadConfig", () => {
         expect(config.envVars).toEqual(["PORT"]);
         expect(process.env.PORT).toBe("3000");
       });
+    });
+  });
+});
+
+describe("applyEnv", () => {
+  it("writes into the injected target keeping the values already present", () => {
+    const target: NodeJS.ProcessEnv = { OPENAI_API_KEY: "del-shell" };
+
+    applyEnv(
+      [
+        { name: "OPENAI_API_KEY", value: "del-fichero", line: 1 },
+        { name: "NUEVA", value: "nueva", line: 2 },
+      ],
+      target,
+    );
+
+    expect(target).toEqual({ OPENAI_API_KEY: "del-shell", NUEVA: "nueva" });
+  });
+
+  it("defaults the target to process.env", () => {
+    withVars(["MIGITE_APPLY_ENV"], () => {
+      applyEnv([{ name: "MIGITE_APPLY_ENV", value: "1", line: 1 }]);
+
+      expect(process.env.MIGITE_APPLY_ENV).toBe("1");
     });
   });
 });

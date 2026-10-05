@@ -1,15 +1,11 @@
 import { z } from "zod";
-import { locales, t } from "../i18n/index.js";
+import { type Locale, locales, t } from "../i18n/index.js";
 
 export const ROLES = ["chat", "retrieve", "summarize", "embeddings"] as const;
 
 export type LlmRole = (typeof ROLES)[number];
 
 export const ENV_VAR_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
-
-const nonEmptyText = z.string().trim().min(1, t("error.emptyValue"));
-
-const envVarName = z.string().regex(ENV_VAR_PATTERN, t("error.invalidEnvVarName"));
 
 const isValidTimeZone = (timeZone: string): boolean => {
   try {
@@ -20,77 +16,96 @@ const isValidTimeZone = (timeZone: string): boolean => {
   }
 };
 
-const timeZone = nonEmptyText.refine(isValidTimeZone, t("error.invalidTimeZone"));
+const nonEmptyText = (locale: Locale) =>
+  z
+    .string()
+    .trim()
+    .min(1, t("error.emptyValue", undefined, locale));
 
-const httpUrl = nonEmptyText.pipe(
-  z.url({ protocol: /^https?$/, error: t("error.invalidHttpUrl") }),
-);
+const envVarName = (locale: Locale) =>
+  z.string().regex(ENV_VAR_PATTERN, t("error.invalidEnvVarName", undefined, locale));
 
-export const providerSchema = z.strictObject({
-  id: nonEmptyText,
-  baseUrl: httpUrl,
-  apiKeyEnv: envVarName,
-});
+const httpUrl = (locale: Locale) =>
+  nonEmptyText(locale).pipe(
+    z.url({ protocol: /^https?$/, error: t("error.invalidHttpUrl", undefined, locale) }),
+  );
 
-export const roleAssignmentSchema = z.strictObject({
-  provider: nonEmptyText,
-  model: nonEmptyText,
-});
+const timeZoneSchema = (locale: Locale) =>
+  nonEmptyText(locale).refine(isValidTimeZone, t("error.invalidTimeZone", undefined, locale));
 
-const roleShape = {
-  chat: roleAssignmentSchema,
-  retrieve: roleAssignmentSchema,
-  summarize: roleAssignmentSchema,
-  embeddings: roleAssignmentSchema,
-} satisfies Record<LlmRole, typeof roleAssignmentSchema>;
-
-const roles = z.strictObject(roleShape);
-
-export const appSchema = z.strictObject({
-  paths: z.strictObject({
-    vault: nonEmptyText,
-    index: nonEmptyText,
-  }),
-  timeZone,
-  locale: z.enum(locales),
-});
-
-export const llmSchema = z
-  .strictObject({
-    providers: z.array(providerSchema).min(1, t("error.missingProvider")),
-    roles,
-  })
-  .superRefine((config, ctx) => {
-    const ids = config.providers.map((provider) => provider.id);
-    const declared = new Set<string>();
-
-    for (const [index, id] of ids.entries()) {
-      if (declared.has(id)) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["providers", index, "id"],
-          message: t("error.duplicateProviderId", { id }),
-        });
-      }
-      declared.add(id);
-    }
-
-    for (const role of ROLES) {
-      const assignment = config.roles[role];
-      if (!declared.has(assignment.provider)) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["roles", role, "provider"],
-          message: t("error.undeclaredProvider", { provider: assignment.provider }),
-        });
-      }
-    }
+export const makeProviderSchema = (locale: Locale) =>
+  z.strictObject({
+    id: nonEmptyText(locale),
+    baseUrl: httpUrl(locale),
+    apiKeyEnv: envVarName(locale),
   });
 
-export type AppConfig = z.infer<typeof appSchema>;
+export const makeRoleAssignmentSchema = (locale: Locale) =>
+  z.strictObject({
+    provider: nonEmptyText(locale),
+    model: nonEmptyText(locale),
+  });
 
-export type LlmConfig = z.infer<typeof llmSchema>;
+export const makeAppSchema = (locale: Locale) =>
+  z.strictObject({
+    paths: z.strictObject({
+      vault: nonEmptyText(locale),
+      index: nonEmptyText(locale),
+    }),
+    timeZone: timeZoneSchema(locale),
+    locale: z.enum(locales),
+  });
 
-export type Provider = z.infer<typeof providerSchema>;
+export const makeLlmSchema = (locale: Locale) => {
+  const providerSchema = makeProviderSchema(locale);
+  const roleAssignmentSchema = makeRoleAssignmentSchema(locale);
 
-export type RoleAssignment = z.infer<typeof roleAssignmentSchema>;
+  const roleShape = {
+    chat: roleAssignmentSchema,
+    retrieve: roleAssignmentSchema,
+    summarize: roleAssignmentSchema,
+    embeddings: roleAssignmentSchema,
+  } satisfies Record<LlmRole, typeof roleAssignmentSchema>;
+
+  const roles = z.strictObject(roleShape);
+
+  return z
+    .strictObject({
+      providers: z.array(providerSchema).min(1, t("error.missingProvider", undefined, locale)),
+      roles,
+    })
+    .superRefine((config, ctx) => {
+      const ids = config.providers.map((provider) => provider.id);
+      const declared = new Set<string>();
+
+      for (const [index, id] of ids.entries()) {
+        if (declared.has(id)) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["providers", index, "id"],
+            message: t("error.duplicateProviderId", { id }, locale),
+          });
+        }
+        declared.add(id);
+      }
+
+      for (const role of ROLES) {
+        const assignment = config.roles[role];
+        if (!declared.has(assignment.provider)) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["roles", role, "provider"],
+            message: t("error.undeclaredProvider", { provider: assignment.provider }, locale),
+          });
+        }
+      }
+    });
+};
+
+export type AppConfig = z.infer<ReturnType<typeof makeAppSchema>>;
+
+export type LlmConfig = z.infer<ReturnType<typeof makeLlmSchema>>;
+
+export type Provider = z.infer<ReturnType<typeof makeProviderSchema>>;
+
+export type RoleAssignment = z.infer<ReturnType<typeof makeRoleAssignmentSchema>>;
