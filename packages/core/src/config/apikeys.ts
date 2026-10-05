@@ -1,23 +1,23 @@
 import type { LlmConfig } from "./schema.js";
 
-export const clavesApiAusentes = (
+export const missingApiKeys = (
   llm: LlmConfig,
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): readonly string[] => {
-  const vistas = new Set<string>();
-  const ausentes: string[] = [];
+  const seen = new Set<string>();
+  const missing: string[] = [];
 
-  for (const proveedor of llm.proveedores) {
-    const nombre = proveedor.apiKeyEnv;
-    if (vistas.has(nombre)) {
+  for (const provider of llm.providers) {
+    const name = provider.apiKeyEnv;
+    if (seen.has(name)) {
       continue;
     }
-    vistas.add(nombre);
-    const valor = env[nombre];
-    if (valor === undefined || valor.trim() === "") {
-      ausentes.push(nombre);
+    seen.add(name);
+    const value = env[name];
+    if (value === undefined || value.trim() === "") {
+      missing.push(name);
     }
   }
 
-  return ausentes;
+  return missing;
 };

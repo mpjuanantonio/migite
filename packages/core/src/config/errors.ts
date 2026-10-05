@@ -5,7 +5,7 @@ export class ConfigError extends Error {
   readonly issues: readonly string[];
 
   constructor(path: string, issues: readonly string[], locale: Locale = defaultLocale) {
-    super(`${t("error.configInvalida", { path }, locale)}: ${issues.join("; ")}`);
+    super(`${t("error.invalidConfig", { path }, locale)}: ${issues.join("; ")}`);
     this.name = "ConfigError";
     this.path = path;
     this.issues = issues;

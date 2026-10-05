@@ -1,11 +1,11 @@
-export { clavesApiAusentes } from "./apikeys.js";
+export { missingApiKeys } from "./apikeys.js";
 export { ConfigError } from "./errors.js";
 export { type Config, type LoadConfigOptions, loadConfig } from "./load.js";
 export {
   type AppConfig,
-  type AsignacionRol,
   type LlmConfig,
   type LlmRole,
-  type Proveedor,
+  type Provider,
   ROLES,
+  type RoleAssignment,
 } from "./schema.js";

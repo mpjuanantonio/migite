@@ -1,42 +1,42 @@
 import { describe, expect, it } from "vitest";
-import { parseDotenv, problemasDeEnv } from "./env.js";
+import { envIssues, parseDotenv } from "./env.js";
 
 describe("parseDotenv", () => {
-  it("recorta el comentario de los valores sin comillas", () => {
-    const { entries, issues } = parseDotenv("PORT=3000 # comentario de la linea\n");
+  it("strips comments from unquoted values", () => {
+    const { entries, issues } = parseDotenv("PORT=3000 # inline comment\n");
 
     expect(issues).toEqual([]);
     expect(entries).toEqual([{ name: "PORT", value: "3000", line: 1 }]);
   });
 
-  it("recorta el comentario aunque el valor lleve espacios o tabuladores delante", () => {
-    const { entries } = parseDotenv("CLAVE=sk-1   # comentario\nOTRA=sk-2\t# tabulado\n");
+  it("strips the comment even when the value is prefixed by spaces or tabs", () => {
+    const { entries } = parseDotenv("KEY=sk-1   # comment\nOTHER=sk-2\t# tab\n");
 
     expect(entries.map((entry) => entry.value)).toEqual(["sk-1", "sk-2"]);
   });
 
-  it("recorta el comentario cuando solo hay espacios tras el igual", () => {
-    const { entries } = parseDotenv("VACIA= # solo comentario\n");
+  it("strips the comment when only spaces follow the equals sign", () => {
+    const { entries } = parseDotenv("EMPTY= # comment only\n");
 
-    expect(entries).toEqual([{ name: "VACIA", value: "", line: 1 }]);
+    expect(entries).toEqual([{ name: "EMPTY", value: "", line: 1 }]);
   });
 
-  it("conserva el comentario dentro de los valores comillados", () => {
-    const { entries } = parseDotenv('CLAVE="sk-1 # no es comentario"\n');
+  it("keeps the comment inside quoted values", () => {
+    const { entries } = parseDotenv('KEY="sk-1 # not a comment"\n');
 
-    expect(entries).toEqual([{ name: "CLAVE", value: "sk-1 # no es comentario", line: 1 }]);
+    expect(entries).toEqual([{ name: "KEY", value: "sk-1 # not a comment", line: 1 }]);
   });
 
-  it("conserva el almohadillado cuando no va precedido de espacio", () => {
-    const { entries } = parseDotenv("URL=https://ejemplo.com/#/ruta\n");
+  it("keeps hash fragments that are not preceded by a space", () => {
+    const { entries } = parseDotenv("URL=https://example.com/#/route\n");
 
-    expect(entries).toEqual([{ name: "URL", value: "https://ejemplo.com/#/ruta", line: 1 }]);
+    expect(entries).toEqual([{ name: "URL", value: "https://example.com/#/route", line: 1 }]);
   });
 
-  it("no convierte un PORT con comentario en un valor invalido", () => {
-    const { entries, issues } = parseDotenv("PORT=3000 # sirve para el server\n");
+  it("does not turn a commented PORT into an invalid value", () => {
+    const { entries, issues } = parseDotenv("PORT=3000 # used by the server\n");
 
     expect(issues).toEqual([]);
-    expect(problemasDeEnv(entries)).toEqual([]);
+    expect(envIssues(entries)).toEqual([]);
   });
 });

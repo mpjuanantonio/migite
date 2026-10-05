@@ -1,4 +1,5 @@
-import { PATRON_VARIABLE } from "./schema.js";
+import { t } from "../i18n/index.js";
+import { ENV_VAR_PATTERN } from "./schema.js";
 
 export interface EnvEntry {
   readonly name: string;
@@ -11,51 +12,51 @@ export interface ParsedEnv {
   readonly issues: readonly string[];
 }
 
-const PATRON_PUERTO = /^\d+$/;
-const ENTRECOMILLADO = /^(['"])(.*)\1$/;
+const PORT_PATTERN = /^\d+$/;
+const QUOTED_VALUE = /^(['"])(.*)\1$/;
 
-const sinComentario = (valor: string): string => {
-  const corte = valor.search(/\s#/);
-  return (corte === -1 ? valor : valor.slice(0, corte)).trim();
+const stripComment = (value: string): string => {
+  const cut = value.search(/\s#/);
+  return (cut === -1 ? value : value.slice(0, cut)).trim();
 };
 
 export const parseDotenv = (source: string): ParsedEnv => {
   const entries: EnvEntry[] = [];
   const issues: string[] = [];
-  const lineas = source.split(/\r?\n/);
+  const lines = source.split(/\r?\n/);
 
-  for (const [indice, linea] of lineas.entries()) {
-    const numero = indice + 1;
-    const texto = linea.trim();
-    if (texto === "" || texto.startsWith("#")) {
+  for (const [index, line] of lines.entries()) {
+    const number = index + 1;
+    const text = line.trim();
+    if (text === "" || text.startsWith("#")) {
       continue;
     }
-    const separador = texto.indexOf("=");
-    if (separador === -1) {
-      issues.push(`línea ${numero}: falta «=»`);
+    const separator = text.indexOf("=");
+    if (separator === -1) {
+      issues.push(t("error.envMissingEquals", { line: number }));
       continue;
     }
-    const name = texto.slice(0, separador).trim();
-    if (!PATRON_VARIABLE.test(name)) {
-      issues.push(`línea ${numero}: nombre de variable inválido`);
+    const name = text.slice(0, separator).trim();
+    if (!ENV_VAR_PATTERN.test(name)) {
+      issues.push(t("error.envInvalidName", { line: number }));
       continue;
     }
-    const crudo = texto.slice(separador + 1);
-    const comillado = ENTRECOMILLADO.exec(crudo.trim());
-    const valor = comillado === null ? sinComentario(crudo) : (comillado[2] ?? "");
-    entries.push({ name, value: valor, line: numero });
+    const raw = text.slice(separator + 1);
+    const quoted = QUOTED_VALUE.exec(raw.trim());
+    const value = quoted === null ? stripComment(raw) : (quoted[2] ?? "");
+    entries.push({ name, value, line: number });
   }
 
   return { entries, issues };
 };
 
-export const problemasDeEnv = (entries: readonly EnvEntry[]): readonly string[] => {
-  const puerto = entries.find((entry) => entry.name === "PORT");
-  if (puerto === undefined) {
+export const envIssues = (entries: readonly EnvEntry[]): readonly string[] => {
+  const port = entries.find((entry) => entry.name === "PORT");
+  if (port === undefined) {
     return [];
   }
-  const valor = Number(puerto.value);
-  const valido =
-    PATRON_PUERTO.test(puerto.value) && Number.isInteger(valor) && valor >= 1 && valor <= 65535;
-  return valido ? [] : [`línea ${puerto.line}: PORT debe ser un entero entre 1 y 65535`];
+  const value = Number(port.value);
+  const valid =
+    PORT_PATTERN.test(port.value) && Number.isInteger(value) && value >= 1 && value <= 65535;
+  return valid ? [] : [t("error.envInvalidPort", { line: port.line })];
 };

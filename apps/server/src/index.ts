@@ -3,31 +3,31 @@ import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { loadConfig } from "@migite/core";
 import { app } from "./app.js";
-import { avisosDeArranque, mensajeDeErrorDeServidor, resolverPuerto } from "./arranque.js";
+import { resolvePort, serverErrorMessage, startupWarnings } from "./startup.js";
 
-const raiz = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
-const arrancar = (): void => {
-  const config = loadConfig({ root: raiz });
-  const port = resolverPuerto(process.env.PORT);
+const start = (): void => {
+  const config = loadConfig({ root });
+  const port = resolvePort(process.env.PORT);
 
-  for (const aviso of avisosDeArranque(config)) {
-    console.warn(aviso);
+  for (const warning of startupWarnings(config)) {
+    console.warn(warning);
   }
 
-  const servidor = serve({ fetch: app.fetch, port }, (info) => {
-    console.log(`Migite escuchando en http://localhost:${info.port}`);
-    console.log(`Configuración válida en ${raiz} (idioma ${config.app.idioma})`);
+  const server = serve({ fetch: app.fetch, port }, (info) => {
+    console.log(`Migite listening on http://localhost:${info.port}`);
+    console.log(`Valid config at ${root} (locale ${config.app.locale})`);
   });
 
-  servidor.on("error", (error) => {
-    console.error(mensajeDeErrorDeServidor(error));
+  server.on("error", (error) => {
+    console.error(serverErrorMessage(error));
     process.exitCode = 1;
   });
 };
 
 try {
-  arrancar();
+  start();
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;

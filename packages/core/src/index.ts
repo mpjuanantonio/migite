@@ -5,16 +5,16 @@ export const createId = (prefix?: string): string => {
 
 export {
   type AppConfig,
-  type AsignacionRol,
   type Config,
   ConfigError,
-  clavesApiAusentes,
   type LlmConfig,
   type LlmRole,
   type LoadConfigOptions,
   loadConfig,
-  type Proveedor,
+  missingApiKeys,
+  type Provider,
   ROLES,
+  type RoleAssignment,
 } from "./config/index.js";
 
 export {

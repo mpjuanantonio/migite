@@ -2,8 +2,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse, YAMLParseError } from "yaml";
 import type { ZodError } from "zod";
-import { defaultLocale, type Locale } from "../i18n/index.js";
-import { type EnvEntry, parseDotenv, problemasDeEnv } from "./env.js";
+import { defaultLocale, type Locale, t } from "../i18n/index.js";
+import { type EnvEntry, envIssues, parseDotenv } from "./env.js";
 import { ConfigError } from "./errors.js";
 import { type AppConfig, appSchema, type LlmConfig, llmSchema } from "./schema.js";
 
@@ -18,36 +18,41 @@ export interface Config {
   readonly envVars: readonly string[];
 }
 
-const formatearIssues = (error: ZodError): readonly string[] =>
+const formatIssues = (error: ZodError): readonly string[] =>
   error.issues.map((issue) => {
     const path = issue.path.map((segment) => String(segment)).join(".");
     return path === "" ? issue.message : `${path}: ${issue.message}`;
   });
 
-const mensajeDeYaml = (error: unknown): string => {
+const yamlErrorMessage = (error: unknown): string => {
   if (error instanceof YAMLParseError) {
-    const posicion = error.linePos?.[0];
-    const lugar = posicion === undefined ? "" : `, línea ${posicion.line}, columna ${posicion.col}`;
-    return `sintaxis YAML inválida (${error.code}${lugar})`;
+    const position = error.linePos?.[0];
+    return position === undefined
+      ? t("error.invalidYamlSyntaxCode", { code: error.code })
+      : t("error.invalidYamlSyntaxAt", {
+          code: error.code,
+          line: position.line,
+          column: position.col,
+        });
   }
-  return "sintaxis YAML inválida";
+  return t("error.invalidYamlSyntax");
 };
 
-const leerYaml = (ruta: string, path: string, locale: Locale): unknown => {
+const readYaml = (filePath: string, path: string, locale: Locale): unknown => {
   let source: string;
   try {
-    source = readFileSync(ruta, "utf8");
+    source = readFileSync(filePath, "utf8");
   } catch {
-    throw new ConfigError(path, ["fichero ausente o ilegible"], locale);
+    throw new ConfigError(path, [t("error.configMissingFile")], locale);
   }
   try {
     return parse(source);
   } catch (error) {
-    throw new ConfigError(path, [mensajeDeYaml(error)], locale);
+    throw new ConfigError(path, [yamlErrorMessage(error)], locale);
   }
 };
 
-const aplicarEnv = (entries: readonly EnvEntry[]): void => {
+const applyEnv = (entries: readonly EnvEntry[]): void => {
   for (const entry of entries) {
     if (process.env[entry.name] === undefined) {
       process.env[entry.name] = entry.value;
@@ -55,21 +60,21 @@ const aplicarEnv = (entries: readonly EnvEntry[]): void => {
   }
 };
 
-const leerEnv = (ruta: string, locale: Locale): readonly string[] => {
+const readEnv = (filePath: string, locale: Locale): readonly string[] => {
   let source: string;
   try {
-    source = readFileSync(ruta, "utf8");
+    source = readFileSync(filePath, "utf8");
   } catch {
     return [];
   }
 
   const { entries, issues } = parseDotenv(source);
-  const problemas = [...issues, ...problemasDeEnv(entries)];
-  if (problemas.length > 0) {
-    throw new ConfigError(".env", problemas, locale);
+  const problems = [...issues, ...envIssues(entries)];
+  if (problems.length > 0) {
+    throw new ConfigError(".env", problems, locale);
   }
 
-  aplicarEnv(entries);
+  applyEnv(entries);
   return entries.map((entry) => entry.name);
 };
 
@@ -78,21 +83,21 @@ export const loadConfig = (options: LoadConfigOptions = {}): Config => {
   const locale = options.locale ?? defaultLocale;
 
   const app = appSchema.safeParse(
-    leerYaml(join(root, "config", "app.yaml"), "config/app.yaml", locale),
+    readYaml(join(root, "config", "app.yaml"), "config/app.yaml", locale),
   );
   if (!app.success) {
-    throw new ConfigError("config/app.yaml", formatearIssues(app.error), locale);
+    throw new ConfigError("config/app.yaml", formatIssues(app.error), locale);
   }
 
-  const idioma = app.data.idioma;
+  const appLocale = app.data.locale;
   const llm = llmSchema.safeParse(
-    leerYaml(join(root, "config", "llm.yaml"), "config/llm.yaml", idioma),
+    readYaml(join(root, "config", "llm.yaml"), "config/llm.yaml", appLocale),
   );
   if (!llm.success) {
-    throw new ConfigError("config/llm.yaml", formatearIssues(llm.error), idioma);
+    throw new ConfigError("config/llm.yaml", formatIssues(llm.error), appLocale);
   }
 
-  const envVars = leerEnv(join(root, ".env"), idioma);
+  const envVars = readEnv(join(root, ".env"), appLocale);
 
   return { app: app.data, llm: llm.data, envVars };
 };

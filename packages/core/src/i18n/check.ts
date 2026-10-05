@@ -1,4 +1,5 @@
 import type { Catalogs } from "./catalogs.js";
+import { t } from "./t.js";
 
 export const checkCatalogs = (catalogs: Catalogs): readonly string[] => {
   const entries = Object.entries(catalogs);
@@ -13,7 +14,11 @@ export const checkCatalogs = (catalogs: Catalogs): readonly string[] => {
     const absentIn = localeNames.filter((locale) => !presentIn.includes(locale));
     if (absentIn.length > 0) {
       problems.push(
-        `clave "${key}" presente en [${presentIn.join(", ")}] pero ausente en [${absentIn.join(", ")}]`,
+        t("error.translationKeyMissing", {
+          key,
+          presentIn: presentIn.join(", "),
+          absentIn: absentIn.join(", "),
+        }),
       );
     }
   }

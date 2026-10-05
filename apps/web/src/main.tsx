@@ -6,7 +6,7 @@ import { App } from "./App";
 const container = document.getElementById("root");
 
 if (container === null) {
-  throw new Error(t("web.contenedorNoEncontrado"));
+  throw new Error(t("web.containerNotFound"));
 }
 
 createRoot(container).render(

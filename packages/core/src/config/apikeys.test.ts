@@ -1,53 +1,53 @@
 import { describe, expect, it } from "vitest";
-import { clavesApiAusentes } from "./apikeys.js";
+import { missingApiKeys } from "./apikeys.js";
 import type { LlmConfig } from "./schema.js";
 
-const llmCon = (...apiKeyEnvs: readonly string[]): LlmConfig => ({
-  proveedores: apiKeyEnvs.map((apiKeyEnv, indice) => ({
-    id: `prov-${indice}`,
+const llmWith = (...apiKeyEnvs: readonly string[]): LlmConfig => ({
+  providers: apiKeyEnvs.map((apiKeyEnv, index) => ({
+    id: `prov-${index}`,
     baseUrl: "https://api.example.com/v1",
     apiKeyEnv,
   })),
   roles: {
-    conversar: { proveedor: "prov-0", modelo: "gpt-4o-mini" },
-    recuperar: { proveedor: "prov-0", modelo: "gpt-4o-mini" },
-    resumir: { proveedor: "prov-0", modelo: "gpt-4o-mini" },
-    embeddings: { proveedor: "prov-0", modelo: "gpt-4o-mini" },
+    chat: { provider: "prov-0", model: "gpt-4o-mini" },
+    retrieve: { provider: "prov-0", model: "gpt-4o-mini" },
+    summarize: { provider: "prov-0", model: "gpt-4o-mini" },
+    embeddings: { provider: "prov-0", model: "gpt-4o-mini" },
   },
 });
 
-describe("clavesApiAusentes", () => {
-  it("devuelve el nombre de la variable que no está definida", () => {
-    expect(clavesApiAusentes(llmCon("OPENAI_API_KEY"), {})).toEqual(["OPENAI_API_KEY"]);
+describe("missingApiKeys", () => {
+  it("returns the name of the variable that is not defined", () => {
+    expect(missingApiKeys(llmWith("OPENAI_API_KEY"), {})).toEqual(["OPENAI_API_KEY"]);
   });
 
-  it("devuelve vacío si la variable está definida", () => {
+  it("returns nothing when the variable is defined", () => {
     const env = { OPENAI_API_KEY: "sk-definida" };
 
-    expect(clavesApiAusentes(llmCon("OPENAI_API_KEY"), env)).toEqual([]);
+    expect(missingApiKeys(llmWith("OPENAI_API_KEY"), env)).toEqual([]);
   });
 
-  it("trata una variable vacía o en blanco como ausente", () => {
-    expect(clavesApiAusentes(llmCon("OPENAI_API_KEY"), { OPENAI_API_KEY: "" })).toEqual([
+  it("treats an empty or blank variable as missing", () => {
+    expect(missingApiKeys(llmWith("OPENAI_API_KEY"), { OPENAI_API_KEY: "" })).toEqual([
       "OPENAI_API_KEY",
     ]);
-    expect(clavesApiAusentes(llmCon("OPENAI_API_KEY"), { OPENAI_API_KEY: "   " })).toEqual([
+    expect(missingApiKeys(llmWith("OPENAI_API_KEY"), { OPENAI_API_KEY: "   " })).toEqual([
       "OPENAI_API_KEY",
     ]);
   });
 
-  it("deduplica proveedores que comparten la misma variable", () => {
-    const llm = llmCon("OPENAI_API_KEY", "OPENAI_API_KEY");
+  it("deduplicates providers that share the same variable", () => {
+    const llm = llmWith("OPENAI_API_KEY", "OPENAI_API_KEY");
 
-    expect(clavesApiAusentes(llm, {})).toEqual(["OPENAI_API_KEY"]);
+    expect(missingApiKeys(llm, {})).toEqual(["OPENAI_API_KEY"]);
   });
 
-  it("devuelve solo nombres, nunca valores del entorno", () => {
-    const env = { OTRA_VAR: "sk-secreto-que-no-debe-saltar" };
+  it("returns only names, never environment values", () => {
+    const env = { OTHER_VAR: "sk-secreto-que-no-debe-saltar" };
 
-    const ausentes = clavesApiAusentes(llmCon("OPENAI_API_KEY"), env);
+    const missing = missingApiKeys(llmWith("OPENAI_API_KEY"), env);
 
-    expect(ausentes).toEqual(["OPENAI_API_KEY"]);
-    expect(ausentes.join(" ")).not.toContain("sk-secreto-que-no-debe-saltar");
+    expect(missing).toEqual(["OPENAI_API_KEY"]);
+    expect(missing.join(" ")).not.toContain("sk-secreto-que-no-debe-saltar");
   });
 });

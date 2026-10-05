@@ -1,5 +1,5 @@
-rutas:
+paths:
   vault: ./vault
-  indice: ./data/index.db
-zonaHoraria: Europe/Madrid
-idioma: es
+  index: ./data/index.db
+timeZone: Europe/Madrid
+locale: es
