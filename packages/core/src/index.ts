@@ -4,6 +4,19 @@ export const createId = (prefix?: string): string => {
 };
 
 export {
+  type AppConfig,
+  type AsignacionRol,
+  type Config,
+  ConfigError,
+  type LlmConfig,
+  type LlmRole,
+  type LoadConfigOptions,
+  loadConfig,
+  type Proveedor,
+  ROLES,
+} from "./config/index.js";
+
+export {
   type Catalog,
   type Catalogs,
   catalogs,

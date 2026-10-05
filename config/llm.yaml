@@ -1,0 +1,9 @@
+proveedores:
+  - id: openai
+    baseUrl: https://api.openai.com/v1
+    apiKeyEnv: OPENAI_API_KEY
+roles:
+  conversar: { proveedor: openai, modelo: gpt-4o-mini }
+  recuperar: { proveedor: openai, modelo: gpt-4o-mini }
+  resumir: { proveedor: openai, modelo: gpt-4o-mini }
+  embeddings: { proveedor: openai, modelo: text-embedding-3-small }
