@@ -1,13 +1,21 @@
-# docker-compose.dev.yml — override de desarrollo (hot-reload)
+# docker-compose.dev.yml — override de desarrollo (hot-reload, WSL2/Linux)
+# Uso: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#   web con HMR: http://localhost:5173
+#   API + web:   http://localhost:3000 (sirve apps/web/dist compilado al arrancar)
+#   health:      http://localhost:3000/api/health
 services:
   app:
     build:
       context: .
       target: dev
-    volumes:
-      - vault:/data/vault
-      - appdata:/data/app
-      - ./apps:/app/apps
-      - ./packages:/app/packages
+    ports:
+      - "5173:5173"
     environment:
       NODE_ENV: development
+    volumes:
+      - ./apps:/app/apps
+      - ./packages:/app/packages
+      - ./config:/app/config:ro
+      - ./package.json:/app/package.json:ro
+      - ./pnpm-lock.yaml:/app/pnpm-lock.yaml:ro
+      - ./pnpm-workspace.yaml:/app/pnpm-workspace.yaml:ro
