@@ -14,6 +14,11 @@ export interface ParsedEnv {
 const PATRON_PUERTO = /^\d+$/;
 const ENTRECOMILLADO = /^(['"])(.*)\1$/;
 
+const sinComentario = (valor: string): string => {
+  const corte = valor.search(/\s#/);
+  return (corte === -1 ? valor : valor.slice(0, corte)).trim();
+};
+
 export const parseDotenv = (source: string): ParsedEnv => {
   const entries: EnvEntry[] = [];
   const issues: string[] = [];
@@ -35,9 +40,10 @@ export const parseDotenv = (source: string): ParsedEnv => {
       issues.push(`línea ${numero}: nombre de variable inválido`);
       continue;
     }
-    const bruto = texto.slice(separador + 1).trim();
-    const comillado = ENTRECOMILLADO.exec(bruto);
-    entries.push({ name, value: comillado?.[2] ?? bruto, line: numero });
+    const crudo = texto.slice(separador + 1);
+    const comillado = ENTRECOMILLADO.exec(crudo.trim());
+    const valor = comillado === null ? sinComentario(crudo) : (comillado[2] ?? "");
+    entries.push({ name, value: valor, line: numero });
   }
 
   return { entries, issues };

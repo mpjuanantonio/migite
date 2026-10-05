@@ -1,3 +1,4 @@
+export { clavesApiAusentes } from "./apikeys.js";
 export { ConfigError } from "./errors.js";
 export { type Config, type LoadConfigOptions, loadConfig } from "./load.js";
 export {

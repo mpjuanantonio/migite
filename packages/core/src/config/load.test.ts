@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { clavesApiAusentes } from "./apikeys.js";
 import { ConfigError } from "./errors.js";
 import { loadConfig } from "./load.js";
 
@@ -122,6 +123,33 @@ describe("loadConfig", () => {
         process.env.OPENAI_API_KEY = "sk-original";
         loadConfig({ root });
         expect(process.env.OPENAI_API_KEY).toBe("sk-original");
+      });
+    });
+
+    it("acepta un baseUrl http, no solo https", () => {
+      const root = crearRoot({
+        "config/app.yaml": APP_VALIDO,
+        "config/llm.yaml": LLM_VALIDO.replace(
+          "baseUrl: https://api.openai.com/v1",
+          "baseUrl: http://localhost:4000/v1",
+        ),
+      });
+
+      const config = loadConfig({ root });
+
+      expect(config.llm.proveedores[0]?.baseUrl).toBe("http://localhost:4000/v1");
+    });
+
+    it("arranca aunque falte la clave API y la reporta solo por nombre (RNF-071)", () => {
+      const root = crearRoot({
+        "config/app.yaml": APP_VALIDO,
+        "config/llm.yaml": LLM_VALIDO,
+      });
+
+      conVars(["OPENAI_API_KEY"], () => {
+        const config = loadConfig({ root });
+
+        expect(clavesApiAusentes(config.llm)).toEqual(["OPENAI_API_KEY"]);
       });
     });
   });
@@ -266,6 +294,36 @@ describe("loadConfig", () => {
       expect(error.message).toContain("proveedores");
       expect(error.message).toContain("al menos un proveedor");
     });
+
+    it("rechaza un baseUrl que no es una URL", () => {
+      const root = crearRoot({
+        "config/app.yaml": APP_VALIDO,
+        "config/llm.yaml": LLM_VALIDO.replace(
+          "baseUrl: https://api.openai.com/v1",
+          "baseUrl: api.openai.com/v1",
+        ),
+      });
+
+      const error = capturarConfigError(() => loadConfig({ root }));
+
+      expect(error.message).toContain("proveedores.0.baseUrl");
+      expect(error.message).toContain("debe ser una URL http o https válida");
+    });
+
+    it("rechaza un baseUrl con protocolo distinto de http(s)", () => {
+      const root = crearRoot({
+        "config/app.yaml": APP_VALIDO,
+        "config/llm.yaml": LLM_VALIDO.replace(
+          "baseUrl: https://api.openai.com/v1",
+          "baseUrl: ftp://api.openai.com/v1",
+        ),
+      });
+
+      const error = capturarConfigError(() => loadConfig({ root }));
+
+      expect(error.message).toContain("proveedores.0.baseUrl");
+      expect(error.message).toContain("debe ser una URL http o https válida");
+    });
   });
 
   describe("ficheros ausentes", () => {
@@ -381,6 +439,21 @@ describe("loadConfig", () => {
       const config = loadConfig({ root });
 
       expect(config.envVars).toEqual([]);
+    });
+
+    it("recorta el comentario inline de un valor sin comillas", () => {
+      const root = crearRoot({
+        "config/app.yaml": APP_VALIDO,
+        "config/llm.yaml": LLM_VALIDO,
+        ".env": "PORT=3000 # comentario de la linea\n",
+      });
+
+      conVars(["PORT"], () => {
+        const config = loadConfig({ root });
+
+        expect(config.envVars).toEqual(["PORT"]);
+        expect(process.env.PORT).toBe("3000");
+      });
     });
   });
 });

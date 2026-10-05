@@ -1,7 +1,9 @@
+import { t } from "@migite/core";
+
 export const App = () => (
   <main>
-    <h1>Migite 0.1</h1>
-    <p>Tu mano derecha, siempre para lo que necesites.</p>
-    <p>Monorepo en preparacion (M0).</p>
+    <h1>{t("web.titulo")}</h1>
+    <p>{t("web.lema")}</p>
+    <p>{t("web.estadoM0")}</p>
   </main>
 );

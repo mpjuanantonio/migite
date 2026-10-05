@@ -8,6 +8,7 @@ export {
   type AsignacionRol,
   type Config,
   ConfigError,
+  clavesApiAusentes,
   type LlmConfig,
   type LlmRole,
   type LoadConfigOptions,

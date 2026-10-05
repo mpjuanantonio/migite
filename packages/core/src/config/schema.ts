@@ -22,9 +22,13 @@ const esZonaHorariaValida = (zonaHoraria: string): boolean => {
 
 const zonaHoraria = textoNoVacio.refine(esZonaHorariaValida, "zona horaria IANA no reconocida");
 
+const urlHttp = textoNoVacio.pipe(
+  z.url({ protocol: /^https?$/, error: "debe ser una URL http o https válida" }),
+);
+
 export const proveedorSchema = z.strictObject({
   id: textoNoVacio,
-  baseUrl: textoNoVacio,
+  baseUrl: urlHttp,
   apiKeyEnv: nombreVariable,
 });
 
