@@ -10,11 +10,21 @@
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
-    "lint": "turbo run lint",
+    "lint": "turbo run lint && biome check .",
+    "format": "biome check --write .",
     "typecheck": "turbo run typecheck",
-    "test": "turbo run test"
+    "test": "turbo run test",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx,json}": [
+      "biome check --write --no-errors-on-unmatched --files-ignore-unknown=true"
+    ]
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.6.0",
     "turbo": "^2.5.0",
     "typescript": "^5.9.0"
   }

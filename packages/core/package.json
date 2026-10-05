@@ -14,7 +14,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
-    "lint": "echo \"lint: biome pendiente en T0.3\""
+    "lint": "biome check .",
+    "format": "biome check --write ."
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
