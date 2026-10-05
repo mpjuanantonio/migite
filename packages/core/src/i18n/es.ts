@@ -11,6 +11,7 @@ export const es = {
   "error.genericError": "Se ha producido un error inesperado",
   "error.invalidConfig": "Configuración inválida en {path}",
   "error.invalidEnvVarName": "nombre de variable de entorno inválido",
+  "error.invalidFrontmatter": "frontmatter inválido: {problems}",
   "error.invalidHttpUrl": "debe ser una URL http o https válida",
   "error.invalidPort":
     "PORT inválido: «{value}» no es un entero entre 1 y 65535 (valor por defecto: {defaultValue})",
@@ -22,6 +23,7 @@ export const es = {
   "error.portInUse": "el puerto ya está en uso (EADDRINUSE)",
   "error.portPermissionDenied": "no hay permisos para escuchar en el puerto (EACCES)",
   "error.portUnavailable": "la dirección de red no está disponible (EADDRNOTAVAIL)",
+  "error.reservedAttributeKey": "la clave «{key}» está reservada y no puede usarse como atributo",
   "error.serverStartFailed": "No se pudo iniciar el servidor: {detail}",
   "error.translationKeyMissing":
     'clave "{key}" presente en [{presentIn}] pero ausente en [{absentIn}]',

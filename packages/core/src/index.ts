@@ -18,6 +18,15 @@ export {
 } from "./config/index.js";
 
 export {
+  type ObjectFrontmatter,
+  type ParsedObjectFile,
+  parseObjectFile,
+  RESERVED_KEYS,
+  validateAttributeValue,
+  writeObjectFile,
+} from "./frontmatter/index.js";
+
+export {
   type Catalog,
   type Catalogs,
   catalogs,
@@ -34,6 +43,8 @@ export {
 
 export { NATIVE_TYPE_IDS, seedNativeTypes } from "./native-types/index.js";
 
+export { slugify } from "./slug.js";
+
 export {
   ATTRIBUTE_ROLE_WIRES,
   type AttributeDefinition,
@@ -48,3 +59,5 @@ export {
   WIRE_TO_ATTRIBUTE_ROLE,
   WIRE_TO_FIELD_TYPE,
 } from "./types/index.js";
+
+export { isUlid, newUlid } from "./ulid.js";

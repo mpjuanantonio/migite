@@ -9,6 +9,7 @@ export const en = {
   "error.genericError": "An unexpected error occurred",
   "error.invalidConfig": "Invalid configuration in {path}",
   "error.invalidEnvVarName": "invalid environment variable name",
+  "error.invalidFrontmatter": "invalid frontmatter: {problems}",
   "error.invalidHttpUrl": "must be a valid http or https URL",
   "error.invalidPort":
     "Invalid PORT: {value} is not an integer between 1 and 65535 (default value: {defaultValue})",
@@ -20,6 +21,7 @@ export const en = {
   "error.portInUse": "the port is already in use (EADDRINUSE)",
   "error.portPermissionDenied": "no permission to listen on the port (EACCES)",
   "error.portUnavailable": "the network address is not available (EADDRNOTAVAIL)",
+  "error.reservedAttributeKey": 'reserved key "{key}" cannot be used as an attribute',
   "error.serverStartFailed": "The server could not be started: {detail}",
   "error.translationKeyMissing": 'key "{key}" present in [{presentIn}] but missing in [{absentIn}]',
   "error.typeSeedFailed": "Native types could not be seeded in {path}: {problems}",
