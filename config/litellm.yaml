@@ -1,5 +1,0 @@
-# LiteLLM proxy — configuracion base (F2 se completa)
-# TODO(F2): modelos y fallbacks segun 10-capa-llm-byok
-model_list: []
-litellm_settings:
-  drop_params: true
