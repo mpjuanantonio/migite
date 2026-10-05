@@ -1,10 +1,20 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type ObjectFrontmatter, parseObjectFile } from "../frontmatter/index.js";
 import { t } from "../i18n/index.js";
 import { NATIVE_TYPE_IDS } from "../native-types/index.js";
+import { loadTypeRegistry } from "../types/index.js";
 import { isUlid } from "../ulid.js";
 import {
   bootstrapVault,
@@ -16,6 +26,36 @@ import {
   type ReadObjectResult,
   type UpdateObjectChanges,
 } from "./index.js";
+import { scanVaultFiles } from "./vault.js";
+
+const fsGates = vi.hoisted(() => ({ unlinkError: undefined as string | undefined }));
+
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return {
+    ...actual,
+    unlinkSync: (path: Parameters<typeof actual.unlinkSync>[0]) => {
+      if (fsGates.unlinkError === undefined) {
+        return actual.unlinkSync(path);
+      }
+      const error = new Error(
+        `${fsGates.unlinkError}: injected failure, unlink "${String(path)}"`,
+      ) as NodeJS.ErrnoException;
+      error.code = fsGates.unlinkError;
+      throw error;
+    },
+  };
+});
+
+vi.mock("../types/index.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../types/index.js")>();
+  return { ...actual, loadTypeRegistry: vi.fn(actual.loadTypeRegistry) };
+});
+
+vi.mock("./vault.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./vault.js")>();
+  return { ...actual, scanVaultFiles: vi.fn(actual.scanVaultFiles) };
+});
 
 const roots: string[] = [];
 
@@ -58,6 +98,7 @@ const parseVaultFile = (
 
 afterEach(() => {
   vi.useRealTimers();
+  fsGates.unlinkError = undefined;
   for (const root of roots.splice(0)) {
     rmSync(root, { recursive: true, force: true });
   }
@@ -171,6 +212,18 @@ describe("createObject", () => {
     expect(empty.problems.join(" ")).toContain("title must not be empty");
   });
 
+  it("retries the next candidate when the name is taken between selection and write", () => {
+    const { vaultDir, repo } = setupVault();
+    symlinkSync(join(vaultDir, "no-existe.md"), join(vaultDir, "carrera.md"));
+
+    const record = repo.createObject({ title: "Carrera" });
+
+    expect(record.path).toBe(`carrera-${record.id.slice(0, 4).toLowerCase()}.md`);
+    expect(record.fileName).toMatch(/^carrera-[0-9a-z]{4}\.md$/);
+    expect(parseVaultFile(vaultDir, record.path).frontmatter.id).toBe(record.id);
+    expect(lstatSync(join(vaultDir, "carrera.md")).isSymbolicLink()).toBe(true);
+  });
+
   it("generates timestamps with the offset of the repository time zone", () => {
     const { repo: madrid } = setupVault("Europe/Madrid");
     const { repo: utc } = setupVault("UTC");
@@ -260,6 +313,33 @@ describe("readObject", () => {
 
     expect(error.key).toBe("error.objectNotFound");
     expect(error.message).toBe(t("error.objectNotFound", { id: "no-existe" }));
+  });
+
+  it("throws ambiguousTitle when a title matches several objects", () => {
+    const { vaultDir, repo } = setupVault();
+    const first = repo.createObject({ title: "Duplicada", body: "primera\n" });
+    const second = repo.createObject({
+      title: "Duplicada",
+      folder: "archivadas",
+      body: "segunda\n",
+    });
+
+    expect(second.path).toBe("archivadas/duplicada.md");
+
+    const readError = captureError(() => repo.readObject("Duplicada"));
+
+    expect(readError.key).toBe("error.ambiguousTitle");
+    expect(readError.message).toBe(t("error.ambiguousTitle", { title: "Duplicada" }));
+    expect(captureError(() => repo.updateObject("Duplicada", { body: "nueva\n" })).key).toBe(
+      "error.ambiguousTitle",
+    );
+    expect(captureError(() => repo.deleteObject("Duplicada")).key).toBe("error.ambiguousTitle");
+    expect(parseVaultFile(vaultDir, first.path).body).toBe("primera\n");
+    expect(parseVaultFile(vaultDir, second.path).body).toBe("segunda\n");
+
+    expect(repo.findObjectByTitle("Duplicada")?.path).toBe(first.path);
+    expect(readOk(repo.readObject(first.id)).path).toBe(first.path);
+    expect(readOk(repo.readObject("archivadas/duplicada.md")).id).toBe(second.id);
   });
 
   it("keeps an unreadable file raw, out of the list and out of updates", () => {
@@ -429,6 +509,28 @@ describe("deleteObject", () => {
 
     expect(error.key).toBe("error.objectNotFound");
   });
+
+  it("wraps a filesystem failure of unlink in objectDeleteFailed", () => {
+    const { vaultDir, repo } = setupVault();
+    const note = repo.createObject({ title: "Bloqueada", body: "cuerpo\n" });
+    const text = readFileSync(join(vaultDir, note.path), "utf8");
+    fsGates.unlinkError = "EBUSY";
+
+    const error = captureError(() => repo.deleteObject(note.id));
+
+    expect(error.key).toBe("error.objectDeleteFailed");
+    expect(error.message).toContain("EBUSY");
+    expect(error.message).toContain(note.id);
+    expect(t("error.objectDeleteFailed", { id: "x", detail: "EBUSY" }, "en")).toBe(
+      "could not delete object x: EBUSY",
+    );
+    expect(error.problems.join(" ")).toContain("EBUSY");
+    expect(readFileSync(join(vaultDir, note.path), "utf8")).toBe(text);
+
+    fsGates.unlinkError = undefined;
+    repo.deleteObject(note.id);
+    expect(existsSync(join(vaultDir, note.path))).toBe(false);
+  });
 });
 
 describe("listObjects", () => {
@@ -529,6 +631,51 @@ reservado
   });
 });
 
+describe("object index", () => {
+  it("scans the vault once and only re-scans after a write or a delete", () => {
+    const { repo } = setupVault();
+    vi.mocked(scanVaultFiles).mockClear();
+
+    const note = repo.createObject({ title: "Indexada", body: "cuerpo\n" });
+    expect(vi.mocked(scanVaultFiles).mock.calls).toHaveLength(0);
+
+    expect(readOk(repo.readObject(note.id)).body).toBe("cuerpo\n");
+    expect(readOk(repo.readObject("Indexada")).id).toBe(note.id);
+    expect(readOk(repo.readObject(note.path)).id).toBe(note.id);
+    expect(repo.findObjectByTitle("Indexada")?.path).toBe(note.path);
+    expect(vi.mocked(scanVaultFiles).mock.calls).toHaveLength(1);
+
+    repo.updateObject(note.id, { body: "actualizado\n" });
+    expect(readOk(repo.readObject(note.id)).body).toBe("actualizado\n");
+    expect(vi.mocked(scanVaultFiles).mock.calls).toHaveLength(2);
+
+    repo.deleteObject(note.id);
+    expect(captureError(() => repo.readObject(note.id)).key).toBe("error.objectNotFound");
+    expect(vi.mocked(scanVaultFiles).mock.calls).toHaveLength(3);
+  });
+
+  it("sees a file added to the vault after the index was built", () => {
+    const { vaultDir, repo } = setupVault();
+    const first = repo.createObject({ title: "Primera" });
+    expect(readOk(repo.readObject(first.id)).id).toBe(first.id);
+    writeFileSync(
+      join(vaultDir, "externa.md"),
+      `---
+id: 01J8XK2P4R5S6T7U8V9W0X1Y3Z
+titulo: Externa
+creado: 2026-10-05T14:00:00.000+02:00
+actualizado: 2026-10-05T14:00:00.000+02:00
+---
+escrita fuera del repositorio
+`,
+      "utf8",
+    );
+
+    expect(readOk(repo.readObject("Externa")).body).toBe("escrita fuera del repositorio\n");
+    expect(repo.findObjectByTitle("Externa")?.path).toBe("externa.md");
+  });
+});
+
 describe("type registry access", () => {
   it("seeds the native types and exposes the registry with warnings", () => {
     const vaultDir = mkdtempSync(join(tmpdir(), "migite-objects-"));
@@ -548,6 +695,40 @@ describe("type registry access", () => {
       repo.getType("tarea")?.attributes.find((attribute) => attribute.id === "estado")?.required,
     ).toBe(true);
     expect(repo.getType("inexistente")).toBeUndefined();
+  });
+
+  it("loads the type registry once per instance and re-checks it explicitly", () => {
+    const { vaultDir, repo } = setupVault();
+    vi.mocked(loadTypeRegistry).mockClear();
+
+    expect(repo.getType("tarea")).toBeDefined();
+    const task = repo.createObject({
+      title: "Con tipo",
+      type: "tarea",
+      attributes: { estado: "pendiente" },
+    });
+    repo.updateObject(task.id, { attributes: { estado: "en curso" } });
+
+    expect(vi.mocked(loadTypeRegistry).mock.calls).toHaveLength(1);
+
+    writeFileSync(
+      join(vaultDir, "tipos", "propio.yaml"),
+      "id: propio\nnombre: Propio\natributos: []\n",
+      "utf8",
+    );
+
+    expect(repo.getType("propio")).toBeUndefined();
+    expect(captureError(() => repo.createObject({ title: "X", type: "propio" })).key).toBe(
+      "error.invalidObjectWrite",
+    );
+    expect(vi.mocked(loadTypeRegistry).mock.calls).toHaveLength(1);
+
+    expect(repo.listTypes().map((type) => type.id)).toContain("propio");
+    expect(vi.mocked(loadTypeRegistry).mock.calls).toHaveLength(2);
+    expect(repo.listTypeWarnings()).toEqual([]);
+    expect(vi.mocked(loadTypeRegistry).mock.calls).toHaveLength(3);
+    expect(repo.getType("propio")).toBeDefined();
+    expect(vi.mocked(loadTypeRegistry).mock.calls).toHaveLength(3);
   });
 
   it("resolves an object by title for the wikilink layer", () => {

@@ -1,4 +1,4 @@
-import { type Dirent, existsSync, readdirSync, statSync } from "node:fs";
+import { type Dirent, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
 export const RESERVED_ROOT_DIRS = ["tipos", "vistas", "adjuntos", ".migite"] as const;
@@ -134,16 +134,10 @@ export const resolveVaultPath = (root: string, ref: string): VaultFile | undefin
   return undefined;
 };
 
-export const selectFileName = (dir: string, slug: string, id: string): string | undefined => {
+export const objectFileCandidates = (slug: string, id: string): string[] => {
   const stem = slug === "" ? `objeto-${id.slice(0, 4).toLowerCase()}` : slug;
-  const candidates = [
+  return [
     `${stem}.md`,
     ...[4, 6, 8, 12, 16, 26].map((length) => `${stem}-${id.slice(0, length).toLowerCase()}.md`),
   ];
-  for (const candidate of candidates) {
-    if (!existsSync(join(dir, candidate))) {
-      return candidate;
-    }
-  }
-  return undefined;
 };

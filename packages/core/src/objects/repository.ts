@@ -18,9 +18,9 @@ import { assertTimeZone, formatTimestamp } from "./timestamps.js";
 import { checkAttributes } from "./validate.js";
 import {
   normalizeFolder,
+  objectFileCandidates,
   resolveVaultPath,
   scanVaultFiles,
-  selectFileName,
   type VaultFile,
 } from "./vault.js";
 
@@ -35,12 +35,62 @@ type LocatedObject = {
   result: ReadObjectResult;
 };
 
+type LoadedRegistry = {
+  types: Map<string, TypeDefinition>;
+  warnings: TypeWarning[];
+};
+
+type ObjectIndex = {
+  byId: Map<string, VaultFile>;
+  byTitle: Map<string, VaultFile[]>;
+};
+
+const errorCode = (error: unknown): string | undefined =>
+  typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
+    ? error.code
+    : undefined;
+
+const writeNewFile = (
+  dir: string,
+  candidates: readonly string[],
+  text: string,
+): string | undefined => {
+  for (const candidate of candidates) {
+    try {
+      writeFileSync(join(dir, candidate), text, { encoding: "utf8", flag: "wx" });
+      return candidate;
+    } catch (error) {
+      if (errorCode(error) !== "EEXIST") {
+        throw error;
+      }
+    }
+  }
+  return undefined;
+};
+
 export const createObjectRepository = (
   options: CreateObjectRepositoryOptions,
 ): ObjectRepository => {
   const vaultDir = resolve(options.vaultDir);
   const timeZone = assertTimeZone(options.timeZone ?? "UTC");
   const tiposDir = join(vaultDir, "tipos");
+
+  let registry: LoadedRegistry | undefined;
+  let index: ObjectIndex | undefined;
+
+  const currentRegistry = (): LoadedRegistry => {
+    registry ??= loadTypeRegistry(tiposDir);
+    return registry;
+  };
+
+  const refreshRegistry = (): LoadedRegistry => {
+    registry = loadTypeRegistry(tiposDir);
+    return registry;
+  };
+
+  const invalidateIndex = (): void => {
+    index = undefined;
+  };
 
   const invalidWrite = (problems: readonly string[]): ObjectOperationError =>
     new ObjectOperationError("error.invalidObjectWrite", { problems: problems.join("; ") }, [
@@ -49,6 +99,9 @@ export const createObjectRepository = (
 
   const notFound = (ref: string): ObjectOperationError =>
     new ObjectOperationError("error.objectNotFound", { id: ref });
+
+  const ambiguousTitle = (title: string): ObjectOperationError =>
+    new ObjectOperationError("error.ambiguousTitle", { title });
 
   const missingRequired = (missing: readonly string[]): ObjectOperationError =>
     new ObjectOperationError(
@@ -59,7 +112,7 @@ export const createObjectRepository = (
     );
 
   const requireDefinition = (typeId: string): TypeDefinition => {
-    const definition = loadTypeRegistry(tiposDir).types.get(typeId);
+    const definition = currentRegistry().types.get(typeId);
     if (definition === undefined) {
       throw invalidWrite([`unknown type "${typeId}" (no type definition in ${tiposDir})`]);
     }
@@ -119,14 +172,55 @@ export const createObjectRepository = (
     return { text, result: { ok: true, object: toRecord(file, parsed.frontmatter, parsed.body) } };
   };
 
-  const locate = (ref: string): LocatedObject => {
-    const direct = resolveVaultPath(vaultDir, ref);
-    if (direct !== undefined) {
-      const read = tryRead(direct);
-      return { file: direct, text: read.text, result: read.result };
+  const buildIndex = (): ObjectIndex => {
+    const files = scanVaultFiles(vaultDir);
+    const byId = new Map<string, VaultFile>();
+    const byTitle = new Map<string, VaultFile[]>();
+    for (const file of files) {
+      const read = tryRead(file);
+      if (!read.result.ok) {
+        continue;
+      }
+      const { id, title } = read.result.object;
+      if (!byId.has(id)) {
+        byId.set(id, file);
+      }
+      const titled = byTitle.get(title);
+      if (titled === undefined) {
+        byTitle.set(title, [file]);
+      } else {
+        titled.push(file);
+      }
     }
-    let titleMatch: LocatedObject | undefined;
-    for (const file of scanVaultFiles(vaultDir)) {
+    return { byId, byTitle };
+  };
+
+  const withIndex = <T>(lookup: (current: ObjectIndex) => T | undefined): T | undefined => {
+    const stale = index !== undefined;
+    let current = index;
+    if (current === undefined) {
+      current = buildIndex();
+      index = current;
+    }
+    const found = lookup(current);
+    if (found !== undefined || !stale) {
+      return found;
+    }
+    index = buildIndex();
+    return lookup(index);
+  };
+
+  const candidatesOf = (current: ObjectIndex, ref: string): readonly VaultFile[] => {
+    const direct = current.byId.get(ref);
+    if (direct !== undefined) {
+      return [direct];
+    }
+    return current.byTitle.get(ref) ?? [];
+  };
+
+  const resolveMatches = (ref: string, files: readonly VaultFile[]): LocatedObject | undefined => {
+    const titleMatches: LocatedObject[] = [];
+    for (const file of files) {
       const read = tryRead(file);
       if (!read.result.ok) {
         continue;
@@ -135,14 +229,27 @@ export const createObjectRepository = (
       if (read.result.object.id === ref) {
         return located;
       }
-      if (titleMatch === undefined && read.result.object.title === ref) {
-        titleMatch = located;
+      if (read.result.object.title === ref) {
+        titleMatches.push(located);
       }
     }
-    if (titleMatch !== undefined) {
-      return titleMatch;
+    if (titleMatches.length > 1) {
+      throw ambiguousTitle(ref);
     }
-    throw notFound(ref);
+    return titleMatches[0];
+  };
+
+  const locate = (ref: string): LocatedObject => {
+    const direct = resolveVaultPath(vaultDir, ref);
+    if (direct !== undefined) {
+      const read = tryRead(direct);
+      return { file: direct, text: read.text, result: read.result };
+    }
+    const located = withIndex((current) => resolveMatches(ref, candidatesOf(current, ref)));
+    if (located === undefined) {
+      throw notFound(ref);
+    }
+    return located;
   };
 
   const listObjects = (): ObjectSummary[] => {
@@ -159,7 +266,18 @@ export const createObjectRepository = (
   const readObject = (ref: string): ReadObjectResult => locate(ref).result;
 
   const findObjectByTitle = (title: string): ObjectSummary | undefined =>
-    listObjects().find((summary) => summary.title === title);
+    withIndex((current) => {
+      const matches: ObjectRecord[] = [];
+      for (const file of current.byTitle.get(title) ?? []) {
+        const read = tryRead(file);
+        if (read.result.ok && read.result.object.title === title) {
+          matches.push(read.result.object);
+        }
+      }
+      matches.sort((left, right) => left.id.localeCompare(right.id));
+      const first = matches[0];
+      return first === undefined ? undefined : toSummary(first);
+    });
 
   const createObject = (input: CreateObjectInput): ObjectRecord => {
     const title = input.title;
@@ -190,10 +308,6 @@ export const createObjectRepository = (
     const id = newUlid();
     const now = formatTimestamp(new Date(), timeZone);
     const slug = slugify(title);
-    const fileName = selectFileName(dir, slug, id);
-    if (fileName === undefined) {
-      throw invalidWrite([`no free file name for "${slug}" in folder "${folder}"`]);
-    }
     const body = input.body ?? "";
     const links = input.links ?? [];
     const frontmatter: ObjectFrontmatter = {
@@ -207,7 +321,11 @@ export const createObjectRepository = (
     };
     const text = writeObjectFile(frontmatter, body);
     mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, fileName), text, { encoding: "utf8", flag: "wx" });
+    const fileName = writeNewFile(dir, objectFileCandidates(slug, id), text);
+    if (fileName === undefined) {
+      throw invalidWrite([`no free file name for "${slug}" in folder "${folder}"`]);
+    }
+    invalidateIndex();
     const relativePath = folder === "" ? fileName : `${folder}/${fileName}`;
     return {
       id,
@@ -269,22 +387,28 @@ export const createObjectRepository = (
     };
     const text = writeObjectFile(frontmatter, body, located.text);
     writeFileSync(located.file.absolutePath, text, "utf8");
+    invalidateIndex();
     return toRecord(located.file, frontmatter, body);
   };
 
   const deleteObject = (id: string): void => {
-    unlinkSync(locate(id).file.absolutePath);
+    const located = locate(id);
+    try {
+      unlinkSync(located.file.absolutePath);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new ObjectOperationError("error.objectDeleteFailed", { id, detail }, [detail]);
+    }
+    invalidateIndex();
   };
 
   const listTypes = (): TypeDefinition[] =>
-    [...loadTypeRegistry(tiposDir).types.values()].sort((left, right) =>
-      left.id.localeCompare(right.id),
-    );
+    [...refreshRegistry().types.values()].sort((left, right) => left.id.localeCompare(right.id));
 
-  const listTypeWarnings = (): TypeWarning[] => loadTypeRegistry(tiposDir).warnings;
+  const listTypeWarnings = (): TypeWarning[] => refreshRegistry().warnings;
 
   const getType = (typeId: string): TypeDefinition | undefined =>
-    loadTypeRegistry(tiposDir).types.get(typeId);
+    currentRegistry().types.get(typeId);
 
   return {
     listObjects,
