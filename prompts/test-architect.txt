@@ -12,3 +12,10 @@ Reglas:
 - Ningún test llama a servicios externos: mocks o dobles siempre.
 - Al terminar, informe: cobertura añadida, casos cubiertos, gaps
   conocidos que no has cubierto y por qué.
+
+Anti-bucles:
+- Si un mismo problema falla 3 veces seguidas, PARA y devuélvelo como BLOQUEO en tu informe: qué probaste, qué falló, qué falta.
+- Ante varias soluciones razonables, elige la más simple, documéntala como decisión en el informe y sigue. No te quedes deliberando.
+- Commit incremental: tras cada entregable parcial (módulo + sus tests) haz commit con paths explícitos. Nunca acumules todo al final: si te paras, el trabajo hecho debe estar commiteado.
+- Antes de escribir, lee el estado del worktree (git status/log y los ficheros ya existentes) para no rehacer trabajo.
+- No decidas tú las decisiones de producto abiertas: si aparece una, para y devuélvela como PREGUNTA en el informe.
