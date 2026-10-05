@@ -223,7 +223,42 @@ cuerpo
     );
   });
 
-  it("falls back to a canonical write when the base is not readable", () => {
+  it("keeps the base tipo when the write does not provide one", () => {
+    const text = `---
+id: 01J8XK2P4R5S6T7U8V9W0X1Y2Z
+tipo: registro
+titulo: Factura de luz
+creado: 2026-10-02T18:30:00+02:00
+actualizado: 2026-10-03T09:12:00+02:00
+---
+cuerpo
+`;
+    const parsed = expectOk(text);
+    const withoutType: typeof parsed.frontmatter = { ...parsed.frontmatter, type: undefined };
+
+    const written = writeObjectFile(withoutType, parsed.body, text);
+
+    expect(written).toBe(text);
+    expect(expectOk(written).frontmatter.type).toBe("registro");
+  });
+
+  it("applies an explicit tipo change over the base", () => {
+    const text = `---
+id: 01J8XK2P4R5S6T7U8V9W0X1Y2Z
+tipo: registro
+titulo: Factura de luz
+creado: 2026-10-02T18:30:00+02:00
+actualizado: 2026-10-03T09:12:00+02:00
+---
+cuerpo
+`;
+    const parsed = expectOk(text);
+    const retype: typeof parsed.frontmatter = { ...parsed.frontmatter, type: "gasto" };
+
+    expect(expectOk(writeObjectFile(retype, parsed.body, text)).frontmatter.type).toBe("gasto");
+  });
+
+  it("refuses to regenerate a base with broken yaml", () => {
     const frontmatter = {
       id: "01J8XK2P4R5S6T7U8V9W0X1Y2Z",
       title: "Reparado",
@@ -233,11 +268,19 @@ cuerpo
       attributes: {},
     };
 
-    const written = writeObjectFile(frontmatter, "cuerpo\n", "---\nid: [roto\n---\ncuerpo\n");
-    const parsed = expectOk(written);
-
-    expect(parsed.frontmatter).toEqual({ ...frontmatter, type: "nota" });
-    expect(parsed.body).toBe("cuerpo\n");
+    expect(() => writeObjectFile(frontmatter, "cuerpo\n", "---\nid: [roto\n---\ncuerpo\n")).toThrow(
+      /^frontmatter inválido: invalid YAML syntax/,
+    );
+    expect(() => writeObjectFile(frontmatter, "cuerpo\n", "---\nid: [roto\n")).toThrow(
+      t("error.invalidFrontmatter", {
+        problems: 'unterminated frontmatter: missing closing "---" line',
+      }),
+    );
+    expect(() => writeObjectFile(frontmatter, "cuerpo\n", "sin delimitadores\n")).toThrow(
+      t("error.invalidFrontmatter", {
+        problems: 'missing frontmatter: file must start with "---"',
+      }),
+    );
   });
 
   it("writes an empty body without trailing content", () => {

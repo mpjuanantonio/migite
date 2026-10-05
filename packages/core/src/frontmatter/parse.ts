@@ -1,6 +1,6 @@
-import { DEFAULT_TYPE, isReservedKey } from "./keys.js";
+import { DEFAULT_TYPE, isReservedKey, REQUIRED_KEYS } from "./keys.js";
 import { readFrontmatter } from "./read.js";
-import { splitObjectFile } from "./split.js";
+import { splitObjectFile, splitProblem } from "./split.js";
 import type { ObjectFrontmatter, ParsedObjectFile } from "./types.js";
 import { asString, asStringList, readOwn, writeOwn } from "./values.js";
 
@@ -8,13 +8,15 @@ type FrontmatterBuild =
   | { ok: true; frontmatter: ObjectFrontmatter }
   | { ok: false; problems: string[] };
 
+type RequiredKey = (typeof REQUIRED_KEYS)[number];
+
 const readRequiredString = (
   values: Record<string, unknown>,
   key: string,
   problems: string[],
 ): string | undefined => {
   const raw = readOwn(values, key);
-  if (raw === undefined) {
+  if (raw === undefined || raw === null) {
     problems.push(`missing required key "${key}"`);
     return undefined;
   }
@@ -34,10 +36,13 @@ const buildFrontmatter = (keys: string[], values: Record<string, unknown>): Fron
       writeOwn(attributes, key, readOwn(values, key));
     }
   }
-  const id = readRequiredString(values, "id", problems);
-  const title = readRequiredString(values, "titulo", problems);
-  const created = readRequiredString(values, "creado", problems);
-  const updated = readRequiredString(values, "actualizado", problems);
+  const required: Partial<Record<RequiredKey, string>> = {};
+  for (const key of REQUIRED_KEYS) {
+    const value = readRequiredString(values, key, problems);
+    if (value !== undefined) {
+      required[key] = value;
+    }
+  }
   const rawType = readOwn(values, "tipo");
   let type: string | undefined;
   if (rawType !== undefined && rawType !== null) {
@@ -56,12 +61,13 @@ const buildFrontmatter = (keys: string[], values: Record<string, unknown>): Fron
       links = parsedLinks;
     }
   }
+  const { id, titulo, creado, actualizado } = required;
   if (
     problems.length > 0 ||
     id === undefined ||
-    title === undefined ||
-    created === undefined ||
-    updated === undefined
+    titulo === undefined ||
+    creado === undefined ||
+    actualizado === undefined
   ) {
     return { ok: false, problems };
   }
@@ -70,9 +76,9 @@ const buildFrontmatter = (keys: string[], values: Record<string, unknown>): Fron
     frontmatter: {
       id,
       type: type ?? DEFAULT_TYPE,
-      title,
-      created,
-      updated,
+      title: titulo,
+      created: creado,
+      updated: actualizado,
       links,
       attributes,
     },
@@ -82,11 +88,7 @@ const buildFrontmatter = (keys: string[], values: Record<string, unknown>): Fron
 export const parseObjectFile = (text: string): ParsedObjectFile => {
   const split = splitObjectFile(text);
   if (split.kind !== "ok") {
-    const problems =
-      split.kind === "missing"
-        ? ['missing frontmatter: file must start with "---"']
-        : ['unterminated frontmatter: missing closing "---" line'];
-    return { ok: false, problems, raw: { yamlText: "", body: text } };
+    return { ok: false, problems: [splitProblem(split.kind)], raw: { yamlText: "", body: text } };
   }
   const raw = { yamlText: split.yamlText, body: split.body };
   const read = readFrontmatter(split.yamlText);

@@ -226,6 +226,35 @@ cuerpo
     expect(complex.problems).toEqual(["frontmatter key must be a string"]);
   });
 
+  it("treats an explicit null as an absent reserved key", () => {
+    const parsed = expectOk(`---
+id: 01J8XK2P4R5S6T7U8V9W0X1Y2Z
+tipo:
+titulo: Nulos
+creado: 2026-10-02T18:30:00+02:00
+actualizado: 2026-10-03T09:12:00+02:00
+enlaces:
+---
+cuerpo
+`);
+
+    expect(parsed.frontmatter.type).toBe("nota");
+    expect(parsed.frontmatter.links).toEqual([]);
+  });
+
+  it("reports a null in a required key as a missing key", () => {
+    const failure = expectFailure(`---
+id: 01J8XK2P4R5S6T7U8V9W0X1Y2Z
+titulo: Nulo
+creado:
+actualizado: 2026-10-03T09:12:00+02:00
+---
+cuerpo
+`);
+
+    expect(failure.problems).toEqual(['missing required key "creado"']);
+  });
+
   it("exposes the problems through the invalid frontmatter translation", () => {
     const failure = expectFailure("solo cuerpo\n");
 

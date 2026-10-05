@@ -29,6 +29,11 @@ export const splitObjectFile = (text: string): SplitObjectFile => {
   };
 };
 
+export const splitProblem = (kind: Exclude<SplitKind, "ok">): string =>
+  kind === "missing"
+    ? 'missing frontmatter: file must start with "---"'
+    : 'unterminated frontmatter: missing closing "---" line';
+
 export const joinObjectFile = (yamlText: string, body: string, eol: string): string => {
   const yaml = yamlText === "" || yamlText.endsWith(eol) ? yamlText : `${yamlText}${eol}`;
   return `---${eol}${yaml}---${eol}${body}`;

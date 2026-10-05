@@ -1,8 +1,8 @@
 import { Document } from "yaml";
 import { t } from "../i18n/index.js";
 import { DEFAULT_TYPE, isReservedKey, RESERVED_KEYS, type ReservedKey } from "./keys.js";
-import { readFrontmatter } from "./read.js";
-import { joinObjectFile, splitObjectFile } from "./split.js";
+import { type FrontmatterDocument, readFrontmatter } from "./read.js";
+import { joinObjectFile, splitObjectFile, splitProblem } from "./split.js";
 import type { ObjectFrontmatter } from "./types.js";
 import { isEqual, readOwn } from "./values.js";
 
@@ -61,6 +61,9 @@ const mergeReserved = (
         continue;
       }
       if (plan.value === undefined) {
+        if (wire === "tipo") {
+          continue;
+        }
         document.delete(wire);
       } else {
         document.set(wire, plan.value);
@@ -125,13 +128,22 @@ export const writeObjectFile = (
   baseText?: string,
 ): string => {
   assertAttributes(frontmatter.attributes);
-  const split = baseText === undefined ? undefined : splitObjectFile(baseText);
-  const read =
-    split !== undefined && split.kind === "ok" ? readFrontmatter(split.yamlText) : undefined;
-  const source = read?.ok ? read.source : undefined;
-  const eol = (split?.yamlText ?? "").includes("\r\n") ? "\r\n" : "\n";
+  let base: { document: FrontmatterDocument; yamlText: string } | undefined;
+  if (baseText !== undefined) {
+    const split = splitObjectFile(baseText);
+    if (split.kind !== "ok") {
+      throw new Error(t("error.invalidFrontmatter", { problems: splitProblem(split.kind) }));
+    }
+    const read = readFrontmatter(split.yamlText);
+    if (!read.ok) {
+      throw new Error(t("error.invalidFrontmatter", { problems: read.problems.join("; ") }));
+    }
+    base = { document: read.source, yamlText: split.yamlText };
+  }
+  const eol = (base?.yamlText ?? "").includes("\r\n") ? "\r\n" : "\n";
+  const source = base?.document;
   const document = source?.document ?? new Document();
-  const hasBase = source !== undefined;
+  const hasBase = base !== undefined;
   const values = source?.values ?? {};
   const presentKeys = new Set(source?.keys ?? []);
   const reservedDirty = mergeReserved(document, hasBase, presentKeys, values, frontmatter);
@@ -142,7 +154,8 @@ export const writeObjectFile = (
     values,
     frontmatter.attributes,
   );
-  const unchanged = hasBase && !reservedDirty && !attributesDirty && split !== undefined;
-  const yamlText = unchanged ? split.yamlText : stringifySection(document, eol);
+  const unchanged = hasBase && !reservedDirty && !attributesDirty;
+  const yamlText =
+    unchanged && base !== undefined ? base.yamlText : stringifySection(document, eol);
   return joinObjectFile(yamlText, body, eol);
 };
