@@ -44,9 +44,12 @@ export {
 export { NATIVE_TYPE_IDS, seedNativeTypes } from "./native-types/index.js";
 
 export {
+  type AttributeTray,
+  addAttribute,
   bootstrapVault,
   type CreateObjectInput,
   type CreateObjectRepositoryOptions,
+  createAttributeTray,
   createObjectRepository,
   ObjectOperationError,
   type ObjectRecord,
@@ -54,6 +57,8 @@ export {
   type ObjectSummary,
   RESERVED_ROOT_DIRS,
   type ReadObjectResult,
+  removeAttribute,
+  setAttribute,
   type UpdateObjectChanges,
   type VaultBootstrap,
 } from "./objects/index.js";
