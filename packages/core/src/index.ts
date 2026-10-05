@@ -43,6 +43,21 @@ export {
 
 export { NATIVE_TYPE_IDS, seedNativeTypes } from "./native-types/index.js";
 
+export {
+  bootstrapVault,
+  type CreateObjectInput,
+  type CreateObjectRepositoryOptions,
+  createObjectRepository,
+  ObjectOperationError,
+  type ObjectRecord,
+  type ObjectRepository,
+  type ObjectSummary,
+  RESERVED_ROOT_DIRS,
+  type ReadObjectResult,
+  type UpdateObjectChanges,
+  type VaultBootstrap,
+} from "./objects/index.js";
+
 export { slugify } from "./slug.js";
 
 export {

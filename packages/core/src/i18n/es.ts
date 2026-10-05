@@ -13,6 +13,7 @@ export const es = {
   "error.invalidEnvVarName": "nombre de variable de entorno inválido",
   "error.invalidFrontmatter": "frontmatter inválido: {problems}",
   "error.invalidHttpUrl": "debe ser una URL http o https válida",
+  "error.invalidObjectWrite": "escritura de objeto inválida: {problems}",
   "error.invalidPort":
     "PORT inválido: «{value}» no es un entero entre 1 y 65535 (valor por defecto: {defaultValue})",
   "error.invalidTimeZone": "zona horaria IANA no reconocida",
@@ -20,11 +21,14 @@ export const es = {
   "error.invalidYamlSyntaxAt": "sintaxis YAML inválida ({code}, línea {line}, columna {column})",
   "error.invalidYamlSyntaxCode": "sintaxis YAML inválida ({code})",
   "error.missingProvider": "debe declarar al menos un proveedor",
+  "error.missingRequiredAttribute": "falta el atributo obligatorio: {id}",
+  "error.objectNotFound": "objeto no encontrado: {id}",
   "error.portInUse": "el puerto ya está en uso (EADDRINUSE)",
   "error.portPermissionDenied": "no hay permisos para escuchar en el puerto (EACCES)",
   "error.portUnavailable": "la dirección de red no está disponible (EADDRNOTAVAIL)",
   "error.reservedAttributeKey": "la clave «{key}» está reservada y no puede usarse como atributo",
   "error.serverStartFailed": "No se pudo iniciar el servidor: {detail}",
+  "error.titleChangeRequiresRename": "cambiar el título requiere la operación de renombrar",
   "error.translationKeyMissing":
     'clave "{key}" presente en [{presentIn}] pero ausente en [{absentIn}]',
   "error.typeSeedFailed": "No se pudieron sembrar los tipos nativos en {path}: {problems}",
