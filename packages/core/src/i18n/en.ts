@@ -1,5 +1,6 @@
 export const en = {
   "app.name": "Migite",
+  "error.ambiguousTitle": 'ambiguous title "{title}": it matches several objects',
   "error.configMissingFile": "missing or unreadable file",
   "error.duplicateProviderId": "duplicate provider id: {id}",
   "error.emptyValue": "must not be empty",
@@ -20,6 +21,7 @@ export const en = {
   "error.invalidYamlSyntaxCode": "invalid YAML syntax ({code})",
   "error.missingProvider": "must declare at least one provider",
   "error.missingRequiredAttribute": "missing required attribute: {id}",
+  "error.objectDeleteFailed": "could not delete object {id}: {detail}",
   "error.objectNotFound": "object not found: {id}",
   "error.portInUse": "the port is already in use (EADDRINUSE)",
   "error.portPermissionDenied": "no permission to listen on the port (EACCES)",

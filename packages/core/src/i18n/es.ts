@@ -2,6 +2,7 @@ import type { TranslationKey } from "./en.js";
 
 export const es = {
   "app.name": "Migite",
+  "error.ambiguousTitle": "título ambiguo «{title}»: corresponde a varios objetos",
   "error.configMissingFile": "fichero ausente o ilegible",
   "error.duplicateProviderId": "id de proveedor duplicado: {id}",
   "error.emptyValue": "no puede estar vacío",
@@ -22,6 +23,7 @@ export const es = {
   "error.invalidYamlSyntaxCode": "sintaxis YAML inválida ({code})",
   "error.missingProvider": "debe declarar al menos un proveedor",
   "error.missingRequiredAttribute": "falta el atributo obligatorio: {id}",
+  "error.objectDeleteFailed": "no se pudo eliminar el objeto {id}: {detail}",
   "error.objectNotFound": "objeto no encontrado: {id}",
   "error.portInUse": "el puerto ya está en uso (EADDRINUSE)",
   "error.portPermissionDenied": "no hay permisos para escuchar en el puerto (EACCES)",
