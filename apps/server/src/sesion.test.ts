@@ -119,6 +119,43 @@ describe("POST /api/sesion", () => {
     expect(res.status).toBe(204);
     expect(res.headers.get("set-cookie")).toContain("Secure");
   });
+
+  it("rate limits failed logins and recovers after the window", async () => {
+    const inicio = Date.now();
+    vi.useFakeTimers({ toFake: ["Date"], now: inicio });
+    try {
+      for (let intento = 0; intento < 5; intento += 1) {
+        expect((await login("mala")).status).toBe(401);
+      }
+
+      const bloqueado = await login("mala");
+      expect(bloqueado.status).toBe(429);
+      expect(await bloqueado.json()).toEqual({
+        error: {
+          codigo: "rate_limited",
+          mensaje: "Demasiados intentos. Inténtalo de nuevo más tarde",
+        },
+      });
+      expect((await login()).status).toBe(429);
+
+      vi.setSystemTime(new Date(inicio + 60_001));
+      expect((await login()).status).toBe(204);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("resets the failure counter after a successful login", async () => {
+    for (let intento = 0; intento < 4; intento += 1) {
+      expect((await login("mala")).status).toBe(401);
+    }
+    expect((await login()).status).toBe(204);
+
+    for (let intento = 0; intento < 5; intento += 1) {
+      expect((await login("mala")).status).toBe(401);
+    }
+    expect((await login("mala")).status).toBe(429);
+  });
 });
 
 describe("GET /api/sesion", () => {
@@ -153,6 +190,24 @@ describe("GET /api/sesion", () => {
 });
 
 describe("DELETE /api/sesion", () => {
+  it("rejects a logout without a valid session without invalidating it", async () => {
+    expect(auth.store.generacion()).toBe(0);
+
+    const anonymous = await app.request("/api/sesion", { method: "DELETE" });
+    expect(anonymous.status).toBe(401);
+    expect(await anonymous.json()).toEqual({
+      error: { codigo: "unauthorized", mensaje: "Se requiere autenticación" },
+    });
+
+    const forged = await app.request("/api/sesion", {
+      method: "DELETE",
+      headers: { cookie: `${SESSION_COOKIE}=falsa` },
+    });
+    expect(forged.status).toBe(401);
+
+    expect(auth.store.generacion()).toBe(0);
+  });
+
   it("invalidates every previous cookie and clears it", async () => {
     const oldCookie = cookieFrom(await login());
     expect(auth.store.generacion()).toBe(0);
@@ -190,7 +245,7 @@ describe("session middleware", () => {
     }
   });
 
-  it("keeps health and the session endpoints public", async () => {
+  it("keeps health and the login endpoint public", async () => {
     const health = await app.request("/api/health");
     expect(health.status).toBe(200);
     expect(await health.json()).toEqual({
@@ -199,7 +254,7 @@ describe("session middleware", () => {
     });
 
     expect((await login()).status).toBe(204);
-    expect((await app.request("/api/sesion", { method: "DELETE" })).status).toBe(204);
+    expect((await app.request("/api/sesion", { method: "DELETE" })).status).toBe(401);
   });
 
   it("never logs credentials or the session secret", async () => {

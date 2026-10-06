@@ -20,3 +20,18 @@ describe("GET /api/health", () => {
     });
   });
 });
+
+describe("body limit", () => {
+  it("rejects an oversized body with a bad request", async () => {
+    const res = await createApp({ auth }).request("/api/sesion", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ usuario: "tester", contrasena: "x".repeat(40 * 1024) }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: { codigo: "bad_request", mensaje: "La petición no es válida" },
+    });
+  });
+});

@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 import { serveStatic } from "@hono/node-server/serve-static";
 import type { Locale } from "@migite/core";
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
+import { HTTPException } from "hono/http-exception";
 import type { AuthOptions } from "./auth.js";
 import type { ServerEnv } from "./env.js";
 import { registerErrorHandling } from "./middleware/errors.js";
@@ -18,6 +20,8 @@ import { createSesionRouter } from "./routes/sesion.js";
 import { tiposRouter } from "./routes/tipos.js";
 
 const webDist = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "web", "dist");
+
+const MAX_BODY_BYTES = 32 * 1024;
 
 const isPublicApiPath = (path: string): boolean =>
   path === "/api/health" ||
@@ -35,6 +39,15 @@ export const createApp = (options: CreateAppOptions): Hono<ServerEnv> => {
   const protectApi = requireSession(options.auth);
 
   app.use("*", requestLogger);
+  app.use(
+    "*",
+    bodyLimit({
+      maxSize: MAX_BODY_BYTES,
+      onError: () => {
+        throw new HTTPException(400);
+      },
+    }),
+  );
   registerErrorHandling(app, { fallbackLocale: options.locale });
 
   app.use("/api/*", async (c, next) => {
@@ -46,7 +59,7 @@ export const createApp = (options: CreateAppOptions): Hono<ServerEnv> => {
   });
 
   app.route("/api/health", healthRouter);
-  app.route("/api/sesion", createSesionRouter(options.auth));
+  app.route("/api/sesion", createSesionRouter(options.auth, { locale: options.locale }));
 
   app.route("/api/objetos", objetosRouter);
   app.route("/api/tipos", tiposRouter);

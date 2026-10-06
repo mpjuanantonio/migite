@@ -36,6 +36,7 @@ export const en = {
   "error.portInUse": "the port is already in use (EADDRINUSE)",
   "error.portPermissionDenied": "no permission to listen on the port (EACCES)",
   "error.portUnavailable": "the network address is not available (EADDRNOTAVAIL)",
+  "error.rateLimited": "Too many attempts. Try again later",
   "error.reservedAttributeKey": 'reserved key "{key}" cannot be used as an attribute',
   "error.serverStartFailed": "The server could not be started: {detail}",
   "error.titleChangeRequiresRename": "changing the title requires the rename operation",

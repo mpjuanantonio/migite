@@ -38,6 +38,7 @@ export const es = {
   "error.portInUse": "el puerto ya está en uso (EADDRINUSE)",
   "error.portPermissionDenied": "no hay permisos para escuchar en el puerto (EACCES)",
   "error.portUnavailable": "la dirección de red no está disponible (EADDRNOTAVAIL)",
+  "error.rateLimited": "Demasiados intentos. Inténtalo de nuevo más tarde",
   "error.reservedAttributeKey": "la clave «{key}» está reservada y no puede usarse como atributo",
   "error.serverStartFailed": "No se pudo iniciar el servidor: {detail}",
   "error.titleChangeRequiresRename": "cambiar el título requiere la operación de renombrar",
