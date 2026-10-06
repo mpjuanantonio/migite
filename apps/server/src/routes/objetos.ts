@@ -1,7 +1,10 @@
 import {
   createObjectBodySchema,
+  objectPayloadSchema,
+  objetosPageSchema,
   patchObjectBodySchema,
   renameObjectBodySchema,
+  renameReportSchema,
   searchParamsSchema,
 } from "@migite/contracts";
 import { type Context, Hono } from "hono";
@@ -49,19 +52,21 @@ objetosRouter.get("/", (c) => {
   if (offset === undefined || offset > MAX_LIST_OFFSET) {
     throw new HTTPException(400);
   }
-  return c.json(listObjetos(currentDeps(), params, offset));
+  return c.json(objetosPageSchema.parse(listObjetos(currentDeps(), params, offset)));
 });
 
-objetosRouter.get("/:id", (c) => c.json(getObjeto(currentDeps(), c.req.param("id"))));
+objetosRouter.get("/:id", (c) =>
+  c.json(objectPayloadSchema.parse(getObjeto(currentDeps(), c.req.param("id")))),
+);
 
 objetosRouter.post("/", async (c) => {
   const body = createObjectBodySchema.parse(await readJson(c));
-  return c.json(createObjeto(currentDeps(), body), 201);
+  return c.json(objectPayloadSchema.parse(createObjeto(currentDeps(), body)), 201);
 });
 
 objetosRouter.patch("/:id", async (c) => {
   const body = patchObjectBodySchema.parse(await readJson(c));
-  return c.json(patchObjeto(currentDeps(), c.req.param("id"), body));
+  return c.json(objectPayloadSchema.parse(patchObjeto(currentDeps(), c.req.param("id"), body)));
 });
 
 objetosRouter.delete("/:id", (c) => {
@@ -74,5 +79,7 @@ objetosRouter.delete("/:id", (c) => {
 
 objetosRouter.post("/:id/renombrar", async (c) => {
   const body = renameObjectBodySchema.parse(await readJson(c));
-  return c.json(renameObjeto(currentDeps(), c.req.param("id"), body.nuevoTitulo));
+  return c.json(
+    renameReportSchema.parse(renameObjeto(currentDeps(), c.req.param("id"), body.nuevoTitulo)),
+  );
 });

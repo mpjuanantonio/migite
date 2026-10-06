@@ -1,4 +1,5 @@
 import { getConnInfo } from "@hono/node-server/conninfo";
+import { sesionStatusSchema } from "@migite/contracts";
 import { defaultLocale, type Locale, t } from "@migite/core";
 import type { Context } from "hono";
 import { Hono } from "hono";
@@ -128,7 +129,9 @@ export const createSesionRouter = (
     return c.body(null, 204);
   });
 
-  router.get("/", (c) => c.json({ autenticado: hasValidSession(c, auth) }));
+  router.get("/", (c) =>
+    c.json(sesionStatusSchema.parse({ autenticado: hasValidSession(c, auth) })),
+  );
 
   return router;
 };

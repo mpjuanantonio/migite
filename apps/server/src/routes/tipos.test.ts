@@ -8,6 +8,7 @@ import {
   searchResultsSchema,
   type TipoPayload,
   tipoPayloadSchema,
+  tiposListSchema,
 } from "@migite/contracts";
 import { bootstrapVault, writeObjectFile } from "@migite/core";
 import { buildIndex, type IndexHandle, openIndex } from "@migite/index";
@@ -111,6 +112,14 @@ afterEach(() => {
 });
 
 describe("GET /api/tipos", () => {
+  it("returns the list envelope validated against the shared schema", async () => {
+    const res = await app.request("/api/tipos", { headers: headers() });
+
+    expect(res.status).toBe(200);
+    const body = tiposListSchema.parse(await res.json());
+    expect(body.tipos.map((tipo) => tipo.id)).toEqual(NATIVOS);
+  });
+
   it("lists the native types as consultable payloads", async () => {
     const body = await getJson<TiposBody>("/api/tipos");
 

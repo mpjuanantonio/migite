@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../app.js";
 import { type AuthOptions, createSessionToken, SESSION_COOKIE } from "../auth.js";
 import type { ServerEnv } from "../env.js";
+import { encodeCursor, MAX_LIST_OFFSET } from "../services/objetos.js";
 import { configureBuscar } from "./buscar.js";
 
 const USUARIO = "ana";
@@ -250,6 +251,24 @@ describe("GET /api/buscar", () => {
     });
     expect(invalidCursor.status).toBe(400);
     expect(((await invalidCursor.json()) as ErrorBody).error.codigo).toBe("bad_request");
+  });
+
+  it("rejects cursors beyond the maximum offset and still serves the deepest allowed page", async () => {
+    const beyond = await app.request(
+      `/api/buscar?cursor=${encodeURIComponent(encodeCursor(MAX_LIST_OFFSET + 1))}`,
+      { headers: headers() },
+    );
+    expect(beyond.status).toBe(400);
+    expect(((await beyond.json()) as ErrorBody).error.codigo).toBe("bad_request");
+
+    const deepest = await app.request(
+      `/api/buscar?cursor=${encodeURIComponent(encodeCursor(MAX_LIST_OFFSET))}`,
+      { headers: headers() },
+    );
+    expect(deepest.status).toBe(200);
+    const body = (await deepest.json()) as SearchResults;
+    expect(body.resultados).toEqual([]);
+    expect(body.siguienteCursor).toBeNull();
   });
 
   it("requires a valid session", async () => {

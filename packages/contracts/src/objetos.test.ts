@@ -5,6 +5,7 @@ import {
   objectPayloadSchema,
   patchObjectBodySchema,
   renameObjectBodySchema,
+  renameReportSchema,
 } from "./objetos.js";
 
 const validPayload = {
@@ -135,5 +136,39 @@ describe("renameObjectBodySchema", () => {
     expect(renameObjectBodySchema.safeParse({ nuevoTitulo: "Otro", titulo: "Viejo" }).success).toBe(
       false,
     );
+  });
+});
+
+describe("renameReportSchema", () => {
+  const informe = {
+    reescritos: ["enlaza.md"],
+    omitidos: [{ path: "roto.md", problems: ["yaml invalido"] }],
+    enlacesSinResolver: [{ path: "otra.md", link: "Beta" }],
+  };
+
+  it("accepts a rename report", () => {
+    const body = { objeto: validPayload, informe };
+
+    expect(renameReportSchema.parse(body)).toEqual(body);
+  });
+
+  it("accepts an empty report", () => {
+    const body = {
+      objeto: validPayload,
+      informe: { reescritos: [], omitidos: [], enlacesSinResolver: [] },
+    };
+
+    expect(renameReportSchema.parse(body)).toEqual(body);
+  });
+
+  it("rejects a report without the object or with malformed sections", () => {
+    expect(renameReportSchema.safeParse({ informe }).success).toBe(false);
+    expect(renameReportSchema.safeParse({ objeto: validPayload }).success).toBe(false);
+    expect(
+      renameReportSchema.safeParse({
+        objeto: validPayload,
+        informe: { ...informe, omitidos: [{ path: "roto.md" }] },
+      }).success,
+    ).toBe(false);
   });
 });

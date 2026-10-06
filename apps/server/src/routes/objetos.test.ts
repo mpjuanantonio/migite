@@ -1,7 +1,12 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type ObjectPayload, objectPayloadSchema } from "@migite/contracts";
+import {
+  type ObjectPayload,
+  objectPayloadSchema,
+  objetosPageSchema,
+  renameReportSchema,
+} from "@migite/contracts";
 import { bootstrapVault, writeObjectFile } from "@migite/core";
 import { buildIndex, type IndexHandle, openIndex } from "@migite/index";
 import type { Hono } from "hono";
@@ -208,6 +213,15 @@ describe("GET /api/objetos", () => {
     expect(body.siguienteCursor).toBeNull();
   });
 
+  it("returns a page envelope validated against the shared schema", async () => {
+    const res = await app.request("/api/objetos?limite=1", { headers: headers() });
+
+    expect(res.status).toBe(200);
+    const body = objetosPageSchema.parse(await res.json());
+    expect(body.objetos).toHaveLength(1);
+    expect(body.siguienteCursor).not.toBeNull();
+  });
+
   it("returns complete payloads validated against the shared schema", async () => {
     const body = await getJson<ListBody>("/api/objetos?limite=1");
 
@@ -316,6 +330,15 @@ describe("GET /api/objetos", () => {
 });
 
 describe("GET /api/objetos/:id", () => {
+  it("returns a payload validated against the shared schema", async () => {
+    const res = await app.request(`/api/objetos/${ALFA}`, { headers: headers() });
+
+    expect(res.status).toBe(200);
+    const body = objectPayloadSchema.parse(await res.json());
+    expect(body.id).toBe(ALFA);
+    expect(body.titulo).toBe("Alfa");
+  });
+
   it("reads an object by id", async () => {
     const body = await getJson<ObjectPayload>(`/api/objetos/${ALFA}`);
 
@@ -553,18 +576,10 @@ describe("POST /api/objetos/:id/renombrar", () => {
     });
 
     expect(res.status).toBe(200);
-    const body = (await res.json()) as {
-      objeto: ObjectPayload;
-      informe: {
-        reescritos: string[];
-        omitidos: { path: string; problems: string[] }[];
-        enlacesSinResolver: { path: string; link: string }[];
-      };
-    };
-    const objeto = objectPayloadSchema.parse(body.objeto);
-    expect(objeto.id).toBe(BETA);
-    expect(objeto.titulo).toBe("Beta Nueva");
-    expect(objeto.ruta).toBe("proyectos/beta-nueva.md");
+    const body = renameReportSchema.parse(await res.json());
+    expect(body.objeto.id).toBe(BETA);
+    expect(body.objeto.titulo).toBe("Beta Nueva");
+    expect(body.objeto.ruta).toBe("proyectos/beta-nueva.md");
     expect(body.informe.reescritos).toContain("enlaza.md");
     expect(body.informe.omitidos).toEqual([]);
     expect(body.informe.enlacesSinResolver).toEqual([]);

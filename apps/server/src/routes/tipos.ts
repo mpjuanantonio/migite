@@ -1,4 +1,4 @@
-import { tipoPayloadSchema } from "@migite/contracts";
+import { tipoPayloadSchema, tiposListSchema } from "@migite/contracts";
 import { isReservedTypeId, TypeOperationError } from "@migite/core";
 import { type Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -37,16 +37,16 @@ const patchTipoBodySchema = tipoPayloadSchema.omit({ id: true }).partial();
 
 export const tiposRouter = new Hono<ServerEnv>();
 
-tiposRouter.get("/", (c) => c.json({ tipos: listarTipos(currentDeps()) }));
+tiposRouter.get("/", (c) => c.json(tiposListSchema.parse({ tipos: listarTipos(currentDeps()) })));
 
 tiposRouter.post("/", async (c) => {
   const body = tipoPayloadSchema.parse(await readJson(c));
-  return c.json(crearTipo(currentDeps(), body), 201);
+  return c.json(tipoPayloadSchema.parse(crearTipo(currentDeps(), body)), 201);
 });
 
 tiposRouter.patch("/:id", async (c) => {
   const body = patchTipoBodySchema.parse(await readJson(c));
-  return c.json(actualizarTipo(currentDeps(), c.req.param("id"), body));
+  return c.json(tipoPayloadSchema.parse(actualizarTipo(currentDeps(), c.req.param("id"), body)));
 });
 
 tiposRouter.delete("/:id", (c) => {

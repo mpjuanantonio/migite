@@ -62,3 +62,24 @@ export const renameObjectBodySchema = z.strictObject({
 });
 
 export type RenameObjectBody = z.infer<typeof renameObjectBodySchema>;
+
+export const renameReportSchema = z.object({
+  objeto: objectPayloadSchema,
+  informe: z.object({
+    reescritos: z.array(z.string()),
+    omitidos: z.array(
+      z.object({
+        path: z.string(),
+        problems: z.array(z.string()),
+      }),
+    ),
+    enlacesSinResolver: z.array(
+      z.object({
+        path: z.string(),
+        link: z.string(),
+      }),
+    ),
+  }),
+});
+
+export type RenameReport = z.infer<typeof renameReportSchema>;

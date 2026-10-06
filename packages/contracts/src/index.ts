@@ -1,3 +1,13 @@
+export {
+  type ObjetosPage,
+  objetosPageSchema,
+  type Salud,
+  type SesionStatus,
+  saludSchema,
+  sesionStatusSchema,
+  type TiposList,
+  tiposListSchema,
+} from "./envelopes.js";
 export { type ErrorBody, errorBodySchema } from "./error.js";
 export {
   type CreateObjectBody,
@@ -9,7 +19,9 @@ export {
   type PatchObjectBody,
   patchObjectBodySchema,
   type RenameObjectBody,
+  type RenameReport,
   renameObjectBodySchema,
+  renameReportSchema,
 } from "./objetos.js";
 export { LIMITE_MAX, LIMITE_MIN, type Pagination, paginationSchema } from "./pagination.js";
 export {

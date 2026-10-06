@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { sesionStatusSchema } from "@migite/contracts";
 import { type IndexHandle, openIndex } from "@migite/index";
 import { hash } from "@node-rs/argon2";
 import type { Hono } from "hono";
@@ -191,11 +192,11 @@ describe("GET /api/sesion", () => {
   it("reports the session state without sensitive data", async () => {
     const anonymous = await app.request("/api/sesion");
     expect(anonymous.status).toBe(200);
-    expect(await anonymous.json()).toEqual({ autenticado: false });
+    expect(sesionStatusSchema.parse(await anonymous.json())).toEqual({ autenticado: false });
 
     const cookie = cookieFrom(await login());
     const authenticated = await app.request("/api/sesion", { headers: withCookie(cookie) });
-    expect(await authenticated.json()).toEqual({ autenticado: true });
+    expect(sesionStatusSchema.parse(await authenticated.json())).toEqual({ autenticado: true });
   });
 
   it("rejects tampered and expired cookies", async () => {

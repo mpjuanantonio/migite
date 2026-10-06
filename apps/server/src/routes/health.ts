@@ -1,3 +1,4 @@
+import { saludSchema } from "@migite/contracts";
 import { Hono } from "hono";
 import type { ServerEnv } from "../env.js";
 import { evaluarSalud, type SaludDeps, SIN_RUNTIME } from "../services/salud.js";
@@ -10,4 +11,4 @@ export const configureHealth = (next: SaludDeps): void => {
 
 export const healthRouter = new Hono<ServerEnv>();
 
-healthRouter.get("/", (c) => c.json(evaluarSalud(deps ?? SIN_RUNTIME)));
+healthRouter.get("/", (c) => c.json(saludSchema.parse(evaluarSalud(deps ?? SIN_RUNTIME))));

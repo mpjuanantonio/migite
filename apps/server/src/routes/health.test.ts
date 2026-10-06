@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { type Salud, saludSchema } from "@migite/contracts";
 import { type AppConfig, bootstrapVault, createObjectRepository } from "@migite/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app.js";
@@ -8,16 +9,6 @@ import type { AuthOptions } from "../auth.js";
 import { type AppRuntime, startRuntime } from "../runtime.js";
 import { contarObjetosIndexados } from "../services/salud.js";
 import { configureHealth } from "./health.js";
-
-type HealthBody = {
-  readonly status: "ok" | "degradado";
-  readonly indice: {
-    readonly objetos: number;
-    readonly listo: boolean;
-    readonly ultimoError: string | null;
-  };
-  readonly version?: string;
-};
 
 const config: AppConfig = {
   paths: { vault: "vault", index: "data/index.db" },
@@ -32,10 +23,10 @@ const auth: AuthOptions = {
   store: { generacion: () => 0, invalidar: () => 1 },
 };
 
-const getHealth = async (): Promise<HealthBody> => {
+const getHealth = async (): Promise<Salud> => {
   const res = await createApp({ auth }).request("/api/health");
   expect(res.status).toBe(200);
-  return (await res.json()) as HealthBody;
+  return saludSchema.parse(await res.json());
 };
 
 describe("GET /api/health", () => {
