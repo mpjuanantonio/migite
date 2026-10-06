@@ -227,7 +227,10 @@ const upsertObjectRow = (db: ProjectionDatabase, object: ObjectRecord, hash: str
   db.insert(objetos).values(values).onConflictDoUpdate({ target: objetos.id, set: values }).run();
 };
 
-const clearObjectRows = (db: ProjectionDatabase, objectId: string): void => {
+const clearObjectRows = (db: ProjectionDatabase, objectId: string, fullRebuild: boolean): void => {
+  if (fullRebuild) {
+    return;
+  }
   db.run(sql`DELETE FROM fts_objetos WHERE objeto_id = ${objectId}`);
   db.delete(atributos).where(eq(atributos.objetoId, objectId)).run();
   db.delete(enlaces).where(eq(enlaces.origenId, objectId)).run();
@@ -289,8 +292,10 @@ const projectLinks = (
   }
 };
 
-const projectFts = (db: ProjectionDatabase, object: ObjectRecord): void => {
-  db.run(sql`DELETE FROM fts_objetos WHERE objeto_id = ${object.id}`);
+const projectFts = (db: ProjectionDatabase, object: ObjectRecord, fullRebuild: boolean): void => {
+  if (!fullRebuild) {
+    db.run(sql`DELETE FROM fts_objetos WHERE objeto_id = ${object.id}`);
+  }
   db.run(
     sql`INSERT INTO fts_objetos (objeto_id, titulo, cuerpo, atributos)
         VALUES (${object.id}, ${object.title}, ${object.body}, ${attributeSearchText(object)})`,
@@ -301,13 +306,14 @@ const projectObject = (
   db: ProjectionDatabase,
   object: ObjectRecord,
   options: IndexObjectOptions,
+  fullRebuild = false,
 ): void => {
   const fileText = options.fileText ?? defaultObjectText(object);
-  clearObjectRows(db, object.id);
+  clearObjectRows(db, object.id, fullRebuild);
   upsertObjectRow(db, object, sha256(fileText));
   projectAttributes(db, object, options.definition);
   projectLinks(db, object, options.resolveTitle);
-  projectFts(db, object);
+  projectFts(db, object, fullRebuild);
 };
 
 export const indexObject = (
@@ -369,11 +375,16 @@ export const buildIndex = (db: IndexDatabase, options: BuildIndexOptions): numbe
       upsertObjectRow(tx, entry.object, sha256(entry.fileText));
     }
     for (const entry of entries) {
-      projectObject(tx, entry.object, {
-        fileText: entry.fileText,
-        definition: entry.definition,
-        resolveTitle,
-      });
+      projectObject(
+        tx,
+        entry.object,
+        {
+          fileText: entry.fileText,
+          definition: entry.definition,
+          resolveTitle,
+        },
+        true,
+      );
     }
   });
   return entries.length;
