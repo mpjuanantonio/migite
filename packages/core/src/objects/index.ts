@@ -2,6 +2,7 @@ export { bootstrapVault } from "./bootstrap.js";
 export { ObjectOperationError } from "./errors.js";
 export type {
   CreateObjectInput,
+  DegradationReason,
   IncomingLink,
   ObjectRecord,
   ObjectRepository,

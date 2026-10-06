@@ -60,6 +60,7 @@ export {
   type CreateObjectRepositoryOptions,
   createAttributeTray,
   createObjectRepository,
+  type DegradationReason,
   type IncomingLink,
   ObjectOperationError,
   type ObjectRecord,

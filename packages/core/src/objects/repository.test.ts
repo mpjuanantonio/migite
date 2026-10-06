@@ -380,9 +380,103 @@ cuerpo
     const record = readOk(repo.readObject("crudo.md"));
 
     expect(record.attributes.estado).toBe("no-declarado");
+    expect(record.degraded).toEqual([
+      {
+        kind: "invalidAttribute",
+        key: "estado",
+        problems: ['value "no-declarado" is not one of the declared options'],
+      },
+    ]);
     const error = captureError(() => repo.updateObject(record.id, { body: "nuevo" }));
     expect(error.key).toBe("error.invalidObjectWrite");
     expect(readFileSync(join(vaultDir, "crudo.md"), "utf8")).toBe(raw);
+  });
+});
+
+describe("degraded mode", () => {
+  it("marks a healthy object with no degradation reasons", () => {
+    const { repo } = setupVault();
+    const note = repo.createObject({ title: "Sana", body: "cuerpo\n" });
+
+    expect(note.degraded).toEqual([]);
+    expect(readOk(repo.readObject(note.id)).degraded).toEqual([]);
+    const summary = repo.listObjects().find((item) => item.path === note.path);
+    expect(summary?.degraded).toEqual([]);
+  });
+
+  it("flags a type with no definition as unknownType and keeps the attributes raw", () => {
+    const { vaultDir, repo } = setupVault();
+    writeFileSync(
+      join(vaultDir, "sin-tipo.md"),
+      `---
+id: 01J8XK2P4R5S6T7U8V9W0X1Y2Z
+tipo: fantasma
+titulo: Sin tipo
+creado: 2026-10-05T14:00:00.000+02:00
+actualizado: 2026-10-05T14:00:00.000+02:00
+prioridad: alta
+---
+cuerpo
+`,
+      "utf8",
+    );
+
+    const record = readOk(repo.readObject("sin-tipo.md"));
+
+    expect(record.degraded).toEqual([{ kind: "unknownType", type: "fantasma" }]);
+    expect(record.attributes).toEqual({ prioridad: "alta" });
+    const summary = repo.listObjects().find((item) => item.path === "sin-tipo.md");
+    expect(summary?.degraded).toEqual([{ kind: "unknownType", type: "fantasma" }]);
+  });
+
+  it("flags a type file that exists but cannot be used as brokenType", () => {
+    const { vaultDir, repo } = setupVault();
+    writeFileSync(join(vaultDir, "tipos", "roto.yaml"), "id: roto\nnombre: Roto\n", "utf8");
+    writeFileSync(
+      join(vaultDir, "rota.md"),
+      `---
+id: 01J8XK2P4R5S6T7U8V9W0X1Y2Z
+tipo: roto
+titulo: Rota
+creado: 2026-10-05T14:00:00.000+02:00
+actualizado: 2026-10-05T14:00:00.000+02:00
+---
+cuerpo
+`,
+      "utf8",
+    );
+
+    const [reason] = readOk(repo.readObject("rota.md")).degraded;
+
+    expect(reason?.kind).toBe("brokenType");
+    if (reason?.kind === "brokenType") {
+      expect(reason.type).toBe("roto");
+      expect(reason.problems.join(" ")).toContain('missing required field "atributos"');
+    }
+  });
+
+  it("does not flag free attributes or null values for declared attributes", () => {
+    const { vaultDir, repo } = setupVault();
+    writeFileSync(
+      join(vaultDir, "libre.md"),
+      `---
+id: 01J8XK2P4R5S6T7U8V9W0X1Y2Z
+tipo: tarea
+titulo: Libre
+creado: 2026-10-05T14:00:00.000+02:00
+actualizado: 2026-10-05T14:00:00.000+02:00
+estado: null
+prioridad: alta
+---
+cuerpo
+`,
+      "utf8",
+    );
+
+    const record = readOk(repo.readObject("libre.md"));
+
+    expect(record.degraded).toEqual([]);
+    expect(record.attributes).toEqual({ estado: null, prioridad: "alta" });
   });
 });
 
@@ -577,6 +671,7 @@ reservado
     expect(isUlid(informe.id)).toBe(true);
     const first = list[0];
     expect(Object.keys(first ?? {}).sort()).toEqual([
+      "degraded",
       "folder",
       "id",
       "path",

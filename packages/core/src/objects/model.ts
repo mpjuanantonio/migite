@@ -2,6 +2,11 @@ import type { SeedNativeTypesResult } from "../native-types/seed.js";
 import type { TypeDefinition, TypeWarning } from "../types/index.js";
 import type { VaultFile } from "./vault.js";
 
+export type DegradationReason =
+  | { kind: "unknownType"; type: string }
+  | { kind: "brokenType"; type: string; problems: readonly string[] }
+  | { kind: "invalidAttribute"; key: string; problems: readonly string[] };
+
 export type ObjectSummary = {
   id: string;
   type: string;
@@ -9,6 +14,7 @@ export type ObjectSummary = {
   path: string;
   folder: string;
   updated: string;
+  degraded: DegradationReason[];
 };
 
 export type ObjectRecord = {
@@ -23,6 +29,7 @@ export type ObjectRecord = {
   links: string[];
   attributes: Record<string, unknown>;
   body: string;
+  degraded: DegradationReason[];
 };
 
 export type CreateObjectInput = {

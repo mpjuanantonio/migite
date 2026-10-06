@@ -5,6 +5,7 @@ import { DEFAULT_TYPE } from "../frontmatter/keys.js";
 import { slugify } from "../slug.js";
 import { loadTypeRegistry, type TypeDefinition, type TypeWarning } from "../types/index.js";
 import { newUlid } from "../ulid.js";
+import { degradationReasons } from "./degraded.js";
 import { ObjectOperationError } from "./errors.js";
 import type {
   CreateObjectInput,
@@ -119,19 +120,24 @@ export const createObjectRepository = (
     file: VaultFile,
     frontmatter: ObjectFrontmatter,
     body: string,
-  ): ObjectRecord => ({
-    id: frontmatter.id,
-    type: frontmatter.type ?? DEFAULT_TYPE,
-    title: frontmatter.title,
-    path: file.relativePath,
-    folder: file.folder,
-    fileName: file.fileName,
-    created: frontmatter.created,
-    updated: frontmatter.updated,
-    links: [...frontmatter.links],
-    attributes: { ...frontmatter.attributes },
-    body,
-  });
+  ): ObjectRecord => {
+    const type = frontmatter.type ?? DEFAULT_TYPE;
+    const attributes = { ...frontmatter.attributes };
+    return {
+      id: frontmatter.id,
+      type,
+      title: frontmatter.title,
+      path: file.relativePath,
+      folder: file.folder,
+      fileName: file.fileName,
+      created: frontmatter.created,
+      updated: frontmatter.updated,
+      links: [...frontmatter.links],
+      attributes,
+      body,
+      degraded: degradationReasons(currentRegistry(), type, attributes),
+    };
+  };
 
   const toSummary = (record: ObjectRecord): ObjectSummary => ({
     id: record.id,
@@ -140,6 +146,7 @@ export const createObjectRepository = (
     path: record.path,
     folder: record.folder,
     updated: record.updated,
+    degraded: [...record.degraded],
   });
 
   const tryRead = (file: VaultFile): { text: string; result: ReadObjectResult } => {
@@ -346,6 +353,7 @@ export const createObjectRepository = (
       links: [...links],
       attributes: { ...attributes },
       body,
+      degraded: [],
     };
   };
 
