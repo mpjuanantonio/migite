@@ -131,6 +131,34 @@ describe("loadAuthConfig", () => {
     expect(error.message).toContain("32");
     expect(error.message).not.toContain("corto");
   });
+
+  it("rejects a long but low-entropy session secret without echoing its value", () => {
+    const debil = "a".repeat(32);
+    const error = captureConfigError({ ...validEnv, MIGITE_SESSION_SECRET: debil });
+
+    expect(error.message).toContain("MIGITE_SESSION_SECRET");
+    expect(error.message).toContain("16");
+    expect(error.message).not.toContain(debil);
+  });
+
+  it("rejects a repeated-pattern session secret without echoing its value", () => {
+    const repetido = "abcdefghijklmnop".repeat(2);
+    const error = captureConfigError({ ...validEnv, MIGITE_SESSION_SECRET: repetido });
+
+    expect(error.message).toContain("MIGITE_SESSION_SECRET");
+    expect(error.message).toContain("patrón");
+    expect(error.message).not.toContain(repetido);
+  });
+
+  it("accepts a high-entropy session secret", () => {
+    const fuerte = "0123456789abcdefghijklmnopqrstuvwxyzABCDEF";
+
+    expect(loadAuthConfig("es", { ...validEnv, MIGITE_SESSION_SECRET: fuerte })).toEqual({
+      usuario: "ana",
+      passwordHash: validEnv.MIGITE_PASSWORD_HASH,
+      secretoSesion: fuerte,
+    });
+  });
 });
 
 describe("verifyCredentials", () => {

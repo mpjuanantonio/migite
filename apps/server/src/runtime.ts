@@ -17,10 +17,15 @@ export type AppRuntime = {
 };
 
 const MAX_ERROR_LENGTH = 300;
+const QUOTED_ABSOLUTE_PATH = /(['"])\/[^'"]*\1/g;
+const ABSOLUTE_PATH = /(?<![\w.])(?:\/[^\s/'"`]+)+/g;
+
+export const stripAbsolutePaths = (value: string): string =>
+  value.replace(QUOTED_ABSOLUTE_PATH, "$1[ruta]$1").replace(ABSOLUTE_PATH, "[ruta]");
 
 export const sanitizeWatcherError = (error: unknown, vaultDir: string): string => {
   const raw = error instanceof Error ? error.message : String(error);
-  const plain = raw.replaceAll(vaultDir, ".").replace(/\s+/g, " ").trim();
+  const plain = stripAbsolutePaths(raw).replaceAll(vaultDir, "[ruta]").replace(/\s+/g, " ").trim();
   return plain.length > MAX_ERROR_LENGTH ? `${plain.slice(0, MAX_ERROR_LENGTH)}...` : plain;
 };
 

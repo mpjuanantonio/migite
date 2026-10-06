@@ -65,7 +65,8 @@ chmod 600 .env
 
 ### 3.1 `MIGITE_SESSION_SECRET`
 
-Secreto para firmar la cookie de sesión. Debe tener **al menos 32 caracteres**:
+Secreto para firmar la cookie de sesión. Debe tener **al menos 32 caracteres**, con
+al menos 16 caracteres distintos y sin patrones repetidos:
 
 ```bash
 openssl rand -hex 32
@@ -106,6 +107,9 @@ falta entrecomillarla; si la exportas por shell, usa comillas simples para que
 MIGITE_USER=ana
 MIGITE_PASSWORD_HASH=$argon2id$v=19$m=19456,t=2,p=1$...$...
 MIGITE_SESSION_SECRET=pega_aqui_la_salida_de_openssl_rand_hex_32
+
+# Opcional: fuerza `Secure` en la cookie de sesión aunque no llegue `X-Forwarded-Proto`.
+# MIGITE_SECURE_COOKIES=1
 
 # Opcional (BYOK, ver config/llm.yaml). El arranque avisa si falta, pero no falla.
 # OPENAI_API_KEY=sk-...

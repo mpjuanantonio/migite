@@ -12,8 +12,10 @@ import type { ServerEnv } from "../env.js";
 
 export const sessionTtlMs = (auth: AuthOptions): number => auth.ttlMs ?? DEFAULT_SESSION_TTL_MS;
 
+const forcesSecureCookies = (): boolean => process.env.MIGITE_SECURE_COOKIES === "1";
+
 const isSecureRequest = (c: Context<ServerEnv>): boolean => {
-  if (new URL(c.req.url).protocol === "https:") {
+  if (forcesSecureCookies() || new URL(c.req.url).protocol === "https:") {
     return true;
   }
   const forwarded = c.req.header("x-forwarded-proto");

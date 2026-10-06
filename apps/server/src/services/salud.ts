@@ -1,6 +1,6 @@
 import type { IndexDatabase } from "@migite/index";
 import { sql } from "drizzle-orm";
-import type { WatchStatus } from "../runtime.js";
+import { stripAbsolutePaths, type WatchStatus } from "../runtime.js";
 
 export type SaludDeps = {
   readonly contarObjetos: () => number;
@@ -30,13 +30,14 @@ export const contarObjetosIndexados = (db: IndexDatabase): number =>
 
 export const evaluarSalud = (deps: SaludDeps): SaludPayload => {
   const watcher = deps.estadoWatcher();
-  const degradado = !watcher.listo || watcher.ultimoError !== null;
+  const ultimoError = watcher.ultimoError === null ? null : stripAbsolutePaths(watcher.ultimoError);
+  const degradado = !watcher.listo || ultimoError !== null;
   return {
     status: degradado ? "degradado" : "ok",
     indice: {
       objetos: deps.contarObjetos(),
       listo: watcher.listo,
-      ultimoError: watcher.ultimoError,
+      ultimoError,
     },
     ...(deps.version === undefined ? {} : { version: deps.version }),
   };

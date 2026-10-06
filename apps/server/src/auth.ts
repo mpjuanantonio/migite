@@ -8,6 +8,7 @@ export const DEFAULT_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 
 const TOKEN_VERSION = "v1";
 const MIN_SECRET_LENGTH = 32;
+const MIN_SECRET_DISTINCT_CHARS = 16;
 const ARGON2_PREFIX = "$argon2";
 
 export type SessionStore = {
@@ -56,6 +57,28 @@ const constantTimeEqual = (a: string, b: string): boolean => {
   const digestA = createHash("sha256").update(a, "utf8").digest();
   const digestB = createHash("sha256").update(b, "utf8").digest();
   return timingSafeEqual(digestA, digestB);
+};
+
+const isRepeatedPattern = (value: string): boolean => {
+  for (let size = 1; size <= value.length / 2; size += 1) {
+    if (value.length % size === 0 && value.slice(size) === value.slice(0, value.length - size)) {
+      return true;
+    }
+  }
+  return false;
+};
+
+const secretIssue = (secret: string): string | undefined => {
+  if (secret.length < MIN_SECRET_LENGTH) {
+    return `MIGITE_SESSION_SECRET debe tener al menos ${MIN_SECRET_LENGTH} caracteres`;
+  }
+  if (new Set(secret).size < MIN_SECRET_DISTINCT_CHARS) {
+    return `MIGITE_SESSION_SECRET debe tener al menos ${MIN_SECRET_DISTINCT_CHARS} caracteres distintos`;
+  }
+  if (isRepeatedPattern(secret)) {
+    return "MIGITE_SESSION_SECRET no puede ser un patrón repetido";
+  }
+  return undefined;
 };
 
 const sign = (secret: string, value: string): string =>
@@ -155,8 +178,9 @@ export const loadAuthConfig = (
   }
 
   const secretoSesion = env.MIGITE_SESSION_SECRET ?? "";
-  if (secretoSesion.length < MIN_SECRET_LENGTH) {
-    issues.push(`MIGITE_SESSION_SECRET debe tener al menos ${MIN_SECRET_LENGTH} caracteres`);
+  const issueSecreto = secretIssue(secretoSesion);
+  if (issueSecreto !== undefined) {
+    issues.push(issueSecreto);
   }
 
   if (issues.length > 0) {

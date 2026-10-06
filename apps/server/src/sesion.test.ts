@@ -120,6 +120,35 @@ describe("POST /api/sesion", () => {
     expect(res.headers.get("set-cookie")).toContain("Secure");
   });
 
+  it("forces Secure on login and logout when MIGITE_SECURE_COOKIES is 1", async () => {
+    vi.stubEnv("MIGITE_SECURE_COOKIES", "1");
+    try {
+      const res = await login();
+      expect(res.status).toBe(204);
+      expect(res.headers.get("set-cookie")).toContain("Secure");
+
+      const logout = await app.request("/api/sesion", {
+        method: "DELETE",
+        headers: withCookie(cookieFrom(res)),
+      });
+      expect(logout.status).toBe(204);
+      expect(logout.headers.get("set-cookie")).toContain("Secure");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("does not force Secure for other MIGITE_SECURE_COOKIES values", async () => {
+    vi.stubEnv("MIGITE_SECURE_COOKIES", "true");
+    try {
+      const res = await login();
+      expect(res.status).toBe(204);
+      expect(res.headers.get("set-cookie")).not.toContain("Secure");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("rate limits failed logins and recovers after the window", async () => {
     const inicio = Date.now();
     vi.useFakeTimers({ toFake: ["Date"], now: inicio });
@@ -174,7 +203,7 @@ describe("GET /api/sesion", () => {
     const tampered = `${SESSION_COOKIE}=${token.slice(0, -1)}${token.endsWith("A") ? "B" : "A"}`;
     const expired = `${SESSION_COOKIE}=${createSessionToken({
       usuario: USUARIO,
-      generacion: 0,
+      generacion: auth.store.generacion(),
       secret: SECRETO,
       ttlMs: 1_000,
       now: Date.now() - 5_000,
@@ -191,7 +220,7 @@ describe("GET /api/sesion", () => {
 
 describe("DELETE /api/sesion", () => {
   it("rejects a logout without a valid session without invalidating it", async () => {
-    expect(auth.store.generacion()).toBe(0);
+    const inicial = auth.store.generacion();
 
     const anonymous = await app.request("/api/sesion", { method: "DELETE" });
     expect(anonymous.status).toBe(401);
@@ -205,12 +234,12 @@ describe("DELETE /api/sesion", () => {
     });
     expect(forged.status).toBe(401);
 
-    expect(auth.store.generacion()).toBe(0);
+    expect(auth.store.generacion()).toBe(inicial);
   });
 
   it("invalidates every previous cookie and clears it", async () => {
     const oldCookie = cookieFrom(await login());
-    expect(auth.store.generacion()).toBe(0);
+    const inicial = auth.store.generacion();
 
     const logout = await app.request("/api/sesion", {
       method: "DELETE",
@@ -218,7 +247,7 @@ describe("DELETE /api/sesion", () => {
     });
 
     expect(logout.status).toBe(204);
-    expect(auth.store.generacion()).toBe(1);
+    expect(auth.store.generacion()).toBe(inicial + 1);
     expect(logout.headers.get("set-cookie")).toContain(`${SESSION_COOKIE}=`);
     expect(logout.headers.get("set-cookie")).toContain("Max-Age=0");
 

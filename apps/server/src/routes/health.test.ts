@@ -72,6 +72,20 @@ describe("GET /api/health", () => {
       indice: { objetos: 2, listo: true, ultimoError: "no se pudo indexar ./danado.md" },
     });
   });
+
+  it("sanea las rutas absolutas del ultimoError", async () => {
+    configureHealth({
+      contarObjetos: () => 1,
+      estadoWatcher: () => ({
+        listo: true,
+        ultimoError: "EACCES: permission denied, open '/home/ana/vault/privado.md'",
+      }),
+    });
+
+    const body = await getHealth();
+    expect(body.indice.ultimoError).not.toContain("/home/ana");
+    expect(body.indice.ultimoError).toContain("[ruta]");
+  });
 });
 
 describe("GET /api/health con el runtime real", () => {

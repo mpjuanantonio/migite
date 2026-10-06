@@ -50,7 +50,7 @@ describe("startRuntime", () => {
 });
 
 describe("sanitizeWatcherError", () => {
-  it("sustituye las rutas absolutas del vault", () => {
+  it("elimina rutas absolutas del vault y del resto del servidor", () => {
     const vaultDir = join(tmpdir(), "migite-vault");
     const message = sanitizeWatcherError(
       new Error(`ENOENT: no such file or directory, open '${join(vaultDir, "nota.md")}'`),
@@ -58,7 +58,18 @@ describe("sanitizeWatcherError", () => {
     );
 
     expect(message).not.toContain(vaultDir);
-    expect(message).toContain("nota.md");
+    expect(message).not.toContain("nota.md");
+    expect(message).toContain("[ruta]");
+  });
+
+  it("elimina rutas absolutas ajenas al vault", () => {
+    const message = sanitizeWatcherError(
+      new Error("EACCES: permission denied, scandir '/var/lib/migite/data'"),
+      "/tmp/vault",
+    );
+
+    expect(message).not.toContain("/var/lib/migite");
+    expect(message).toContain("[ruta]");
   });
 
   it("acepta errores que no son Error y limita la longitud", () => {
