@@ -5,6 +5,7 @@ export const es = {
   "error.ambiguousTitle": "título ambiguo «{title}»: corresponde a varios objetos",
   "error.badRequest": "La petición no es válida",
   "error.configMissingFile": "fichero ausente o ilegible",
+  "error.confirmationRequired": "se requiere confirmación explícita (use ?confirmar=1)",
   "error.conflict": "La petición entra en conflicto con el estado actual",
   "error.duplicateProviderId": "id de proveedor duplicado: {id}",
   "error.emptyValue": "no puede estar vacío",

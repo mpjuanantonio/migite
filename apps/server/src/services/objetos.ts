@@ -1,4 +1,10 @@
-import { type ObjectPayload, objectPayloadSchema, type SearchParams } from "@migite/contracts";
+import {
+  type CreateObjectBody,
+  type ObjectPayload,
+  objectPayloadSchema,
+  type PatchObjectBody,
+  type SearchParams,
+} from "@migite/contracts";
 import {
   createObjectRepository,
   ObjectOperationError,
@@ -105,6 +111,78 @@ const payloadOf = (repository: ObjectRepository, id: string): ObjectPayload | un
 export const getObjeto = (deps: ObjetosDeps, ref: string): ObjectPayload => {
   const result = createRepository(deps).readObject(ref);
   return result.ok ? toPayload(result.object) : toDegradedPayload(ref, result);
+};
+
+export type RenameReportPayload = {
+  readonly objeto: ObjectPayload;
+  readonly informe: {
+    readonly reescritos: string[];
+    readonly omitidos: { path: string; problems: string[] }[];
+    readonly enlacesSinResolver: { path: string; link: string }[];
+  };
+};
+
+export const confirmationRequired = (): ObjectOperationError =>
+  new ObjectOperationError("error.confirmationRequired");
+
+export const createObjeto = (deps: ObjetosDeps, input: CreateObjectBody): ObjectPayload =>
+  toPayload(
+    createRepository(deps).createObject({
+      title: input.titulo,
+      type: input.tipo,
+      body: input.cuerpo,
+      attributes: input.atributos,
+      folder: input.carpeta,
+    }),
+  );
+
+export const patchObjeto = (
+  deps: ObjetosDeps,
+  ref: string,
+  changes: PatchObjectBody,
+): ObjectPayload => {
+  const repository = createRepository(deps);
+  if (changes.tipo !== undefined) {
+    const current = repository.readObject(ref);
+    if (!current.ok || current.object.type !== changes.tipo) {
+      throw new ObjectOperationError("error.invalidObjectWrite", {
+        problems: 'the "tipo" field is immutable and cannot be changed',
+      });
+    }
+  }
+  return toPayload(
+    repository.updateObject(ref, {
+      title: changes.titulo,
+      body: changes.cuerpo,
+      attributes: changes.atributos,
+    }),
+  );
+};
+
+export const deleteObjeto = (deps: ObjetosDeps, ref: string): void => {
+  createRepository(deps).deleteObject(ref);
+};
+
+export const renameObjeto = (
+  deps: ObjetosDeps,
+  ref: string,
+  nuevoTitulo: string,
+): RenameReportPayload => {
+  const report = createRepository(deps).renameObject(ref, nuevoTitulo);
+  return {
+    objeto: toPayload(report.object),
+    informe: {
+      reescritos: [...report.rewritten],
+      omitidos: report.skipped.map((entry) => ({
+        path: entry.path,
+        problems: [...entry.problems],
+      })),
+      enlacesSinResolver: report.unresolvedLinks.map((entry) => ({
+        path: entry.path,
+        link: entry.link,
+      })),
+    },
+  };
 };
 
 const filtersOf = (params: SearchParams): ObjectFilters => ({

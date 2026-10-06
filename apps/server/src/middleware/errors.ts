@@ -19,13 +19,16 @@ export type ErrorCode =
   | "ambiguous_title"
   | "bad_request"
   | "config_error"
+  | "confirmation_required"
   | "conflict"
   | "forbidden"
   | "index_error"
   | "internal_error"
   | "invalid_object_write"
+  | "missing_required_attribute"
   | "not_found"
   | "object_not_found"
+  | "reserved_attribute_key"
   | "unauthorized"
   | "validation_error";
 
@@ -33,24 +36,32 @@ const CODE_STATUS: Readonly<Record<ErrorCode, ContentfulStatusCode>> = {
   ambiguous_title: 409,
   bad_request: 400,
   config_error: 500,
+  confirmation_required: 409,
   conflict: 409,
   forbidden: 403,
   index_error: 500,
   internal_error: 500,
   invalid_object_write: 422,
+  missing_required_attribute: 422,
   not_found: 404,
   object_not_found: 404,
+  reserved_attribute_key: 422,
   unauthorized: 401,
   validation_error: 400,
 };
 
 const OBJECT_ERROR_CODES: Readonly<Partial<Record<TranslationKey, ErrorCode>>> = {
   "error.ambiguousTitle": "ambiguous_title",
+  "error.confirmationRequired": "confirmation_required",
+  "error.invalidObjectWrite": "invalid_object_write",
+  "error.missingRequiredAttribute": "missing_required_attribute",
   "error.objectNotFound": "object_not_found",
+  "error.reservedAttributeKey": "reserved_attribute_key",
 };
 
 const CODE_MESSAGES: Readonly<Partial<Record<ErrorCode, TranslationKey>>> = {
   bad_request: "error.badRequest",
+  confirmation_required: "error.confirmationRequired",
   conflict: "error.conflict",
   forbidden: "error.forbidden",
   index_error: "error.indexError",

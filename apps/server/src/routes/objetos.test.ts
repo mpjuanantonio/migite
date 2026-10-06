@@ -1,7 +1,7 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ObjectPayload } from "@migite/contracts";
+import { type ObjectPayload, objectPayloadSchema } from "@migite/contracts";
 import { bootstrapVault, writeObjectFile } from "@migite/core";
 import { buildIndex, type IndexHandle, openIndex } from "@migite/index";
 import type { Hono } from "hono";
@@ -149,6 +149,31 @@ const getJson = async <T>(path: string): Promise<T> => {
   const res = await app.request(path, { headers: headers() });
   expect(res.status).toBe(200);
   return (await res.json()) as T;
+};
+
+const sendJson = async (method: string, path: string, payload: unknown): Promise<Response> =>
+  app.request(path, {
+    method,
+    headers: { ...headers(), "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+const ENLAZA = "01JENLAZA000000000000000000";
+
+const writeEnlaza = (): void => {
+  const text = writeObjectFile(
+    {
+      id: ENLAZA,
+      type: "nota",
+      title: "Enlaza",
+      created: "2026-10-01T09:00:00.000+02:00",
+      updated: "2026-10-01T09:00:00.000+02:00",
+      links: [],
+      attributes: {},
+    },
+    "Enlace a [[Beta]] desde el cuerpo.",
+  );
+  writeFileSync(join(vaultDir, "enlaza.md"), text, "utf8");
 };
 
 const idsOf = (body: ListBody): string[] => body.objetos.map((objeto) => objeto.id);
@@ -325,5 +350,174 @@ describe("GET /api/objetos/:id", () => {
     expect(await res.json()).toEqual({
       error: { codigo: "unauthorized", mensaje: "Se requiere autenticación" },
     });
+  });
+});
+
+describe("POST /api/objetos", () => {
+  it("creates an object and returns 201 with the validated payload", async () => {
+    const res = await sendJson("POST", "/api/objetos", {
+      titulo: "Nueva nota",
+      cuerpo: "Contenido inicial",
+      atributos: { etiquetas: ["api"] },
+    });
+
+    expect(res.status).toBe(201);
+    const body = objectPayloadSchema.parse(await res.json());
+    expect(body.titulo).toBe("Nueva nota");
+    expect(body.tipo).toBe("nota");
+    expect(body.ruta).toBe("nueva-nota.md");
+    expect(body.carpeta).toBe("");
+    expect(body.cuerpo).toBe("Contenido inicial");
+    expect(body.atributos).toEqual({ etiquetas: ["api"] });
+    expect(body.degraded).toEqual([]);
+    expect(existsSync(join(vaultDir, body.ruta))).toBe(true);
+  });
+
+  it("rejects a missing required attribute with its domain code", async () => {
+    const res = await sendJson("POST", "/api/objetos", { titulo: "Tarea", tipo: "tarea" });
+
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as ErrorBody;
+    expect(body.error.codigo).toBe("missing_required_attribute");
+    expect(body.error.mensaje).toContain("estado");
+  });
+
+  it("rejects an invalid attribute value with invalid_object_write", async () => {
+    const res = await sendJson("POST", "/api/objetos", {
+      titulo: "Tarea",
+      tipo: "tarea",
+      atributos: { estado: "inventado" },
+    });
+
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as ErrorBody;
+    expect(body.error.codigo).toBe("invalid_object_write");
+    expect(body.error.mensaje).toContain("estado");
+  });
+
+  it("rejects malformed bodies with validation_error", async () => {
+    const res = await sendJson("POST", "/api/objetos", { titulo: "   " });
+
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as ErrorBody).error.codigo).toBe("validation_error");
+  });
+});
+
+describe("PATCH /api/objetos/:id", () => {
+  it("applies partial changes and returns the validated payload", async () => {
+    const res = await sendJson("PATCH", `/api/objetos/${ALFA}`, {
+      cuerpo: "Cuerpo editado",
+      atributos: { etiquetas: ["trabajo", "api"] },
+    });
+
+    expect(res.status).toBe(200);
+    const body = objectPayloadSchema.parse(await res.json());
+    expect(body.id).toBe(ALFA);
+    expect(body.titulo).toBe("Alfa");
+    expect(body.tipo).toBe("nota");
+    expect(body.cuerpo).toBe("Cuerpo editado");
+    expect(body.atributos).toEqual({ etiquetas: ["trabajo", "api"] });
+  });
+
+  it("rejects changing the title and points to the rename endpoint", async () => {
+    const res = await sendJson("PATCH", `/api/objetos/${ALFA}`, { titulo: "Otro" });
+
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as ErrorBody;
+    expect(body.error.codigo).toBe("invalid_object_write");
+    expect(body.error.mensaje).toContain("renombrar");
+  });
+
+  it("answers object_not_found for unknown objects", async () => {
+    const res = await sendJson("PATCH", "/api/objetos/no-existe", { cuerpo: "x" });
+
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as ErrorBody).error.codigo).toBe("object_not_found");
+  });
+});
+
+describe("DELETE /api/objetos/:id", () => {
+  it("requires explicit confirmation and keeps the object", async () => {
+    const res = await app.request(`/api/objetos/${ALFA}`, {
+      method: "DELETE",
+      headers: headers(),
+    });
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as ErrorBody;
+    expect(body.error.codigo).toBe("confirmation_required");
+    expect(body.error.mensaje).toContain("confirmar=1");
+    expect((await getJson<ObjectPayload>(`/api/objetos/${ALFA}`)).id).toBe(ALFA);
+  });
+
+  it("deletes the object with an explicit confirmation", async () => {
+    const res = await app.request(`/api/objetos/${ALFA}?confirmar=1`, {
+      method: "DELETE",
+      headers: headers(),
+    });
+
+    expect(res.status).toBe(204);
+    expect(await res.text()).toBe("");
+    expect(existsSync(join(vaultDir, "alfa.md"))).toBe(false);
+
+    const gone = await app.request(`/api/objetos/${ALFA}`, { headers: headers() });
+    expect(gone.status).toBe(404);
+    expect(((await gone.json()) as ErrorBody).error.codigo).toBe("object_not_found");
+  });
+});
+
+describe("POST /api/objetos/:id/renombrar", () => {
+  it("renames the object, rewrites backlinks and reports the outcome", async () => {
+    writeEnlaza();
+
+    const res = await sendJson("POST", `/api/objetos/${BETA}/renombrar`, {
+      nuevoTitulo: "Beta Nueva",
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      objeto: ObjectPayload;
+      informe: {
+        reescritos: string[];
+        omitidos: { path: string; problems: string[] }[];
+        enlacesSinResolver: { path: string; link: string }[];
+      };
+    };
+    const objeto = objectPayloadSchema.parse(body.objeto);
+    expect(objeto.id).toBe(BETA);
+    expect(objeto.titulo).toBe("Beta Nueva");
+    expect(objeto.ruta).toBe("proyectos/beta-nueva.md");
+    expect(body.informe.reescritos).toContain("enlaza.md");
+    expect(body.informe.omitidos).toEqual([]);
+    expect(body.informe.enlacesSinResolver).toEqual([]);
+    expect(readFileSync(join(vaultDir, "enlaza.md"), "utf8")).toContain("[[Beta Nueva]]");
+  });
+
+  it("rejects a duplicated title with ambiguous_title", async () => {
+    const res = await sendJson("POST", `/api/objetos/${GAMMA}/renombrar`, {
+      nuevoTitulo: "Alfa",
+    });
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as ErrorBody;
+    expect(body.error.codigo).toBe("ambiguous_title");
+    expect(body.error.mensaje).toContain("Alfa");
+  });
+});
+
+describe("sesión requerida en escrituras", () => {
+  it("rejects POST, PATCH, DELETE and rename without a session cookie", async () => {
+    const cases = [
+      ["POST", "/api/objetos"],
+      ["PATCH", `/api/objetos/${ALFA}`],
+      ["DELETE", `/api/objetos/${ALFA}?confirmar=1`],
+      ["POST", `/api/objetos/${ALFA}/renombrar`],
+    ] as const;
+
+    for (const [method, path] of cases) {
+      const res = await app.request(path, { method });
+      expect(res.status).toBe(401);
+      expect(((await res.json()) as ErrorBody).error.codigo).toBe("unauthorized");
+    }
   });
 });

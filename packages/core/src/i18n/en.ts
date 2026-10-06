@@ -3,6 +3,7 @@ export const en = {
   "error.ambiguousTitle": 'ambiguous title "{title}": it matches several objects',
   "error.badRequest": "The request is invalid",
   "error.configMissingFile": "missing or unreadable file",
+  "error.confirmationRequired": "explicit confirmation is required (use ?confirmar=1)",
   "error.conflict": "The request conflicts with the current state",
   "error.duplicateProviderId": "duplicate provider id: {id}",
   "error.emptyValue": "must not be empty",
