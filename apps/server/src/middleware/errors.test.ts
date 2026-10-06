@@ -1,5 +1,5 @@
 import { createObjectBodySchema, type ErrorBody, errorBodySchema } from "@migite/contracts";
-import { ConfigError, ObjectOperationError } from "@migite/core";
+import { ConfigError, ObjectOperationError, TypeOperationError } from "@migite/core";
 import { IndexError } from "@migite/index";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -157,6 +157,64 @@ describe("registerErrorHandling", () => {
     expect(res.status).toBe(409);
     const body = await errorFrom(res);
     expect(body.error.codigo).toBe("ambiguous_title");
+  });
+
+  it("maps TypeOperationError to stable type codes with localized messages", async () => {
+    const app = testApp();
+    app.get("/tipo/reservado", () => {
+      throw new TypeOperationError("error.typeNotEditable", { id: "nota" });
+    });
+    app.get("/tipo/inmutable", () => {
+      throw new TypeOperationError("error.attributeTypeImmutable", { id: "titulo" });
+    });
+    app.get("/tipo/duplicado", () => {
+      throw new TypeOperationError("error.typeAlreadyExists", { id: "libro" });
+    });
+    app.get("/tipo/ausente", () => {
+      throw new TypeOperationError("error.notFound", { id: "fantasma" });
+    });
+
+    const cases = [
+      {
+        path: "/tipo/reservado",
+        status: 403,
+        codigo: "type_not_editable",
+        mensaje: "el tipo «nota» es nativo y no se puede editar",
+      },
+      {
+        path: "/tipo/inmutable",
+        status: 422,
+        codigo: "attribute_type_immutable",
+        mensaje: "no se puede cambiar el tipo del atributo «titulo»",
+      },
+      {
+        path: "/tipo/duplicado",
+        status: 409,
+        codigo: "type_already_exists",
+        mensaje: "ya existe un tipo con id «libro»",
+      },
+      {
+        path: "/tipo/ausente",
+        status: 404,
+        codigo: "type_not_found",
+        mensaje: "El recurso solicitado no existe",
+      },
+    ] as const;
+
+    for (const { path, status, codigo, mensaje } of cases) {
+      const res = await app.request(path);
+      expect(res.status).toBe(status);
+      const body = await errorFrom(res);
+      expect(body.error.codigo).toBe(codigo);
+      expect(body.error.mensaje).toBe(mensaje);
+    }
+
+    const english = await app.request("/tipo/reservado", {
+      headers: { "accept-language": "en" },
+    });
+    expect((await errorFrom(english)).error.mensaje).toBe(
+      'type "nota" is native and cannot be edited',
+    );
   });
 
   it("maps ConfigError and IndexError to stable codes", async () => {

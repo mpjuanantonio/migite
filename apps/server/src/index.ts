@@ -4,7 +4,9 @@ import { serve } from "@hono/node-server";
 import { loadConfig } from "@migite/core";
 import { createApp } from "./app.js";
 import { loadAuthConfig } from "./auth.js";
+import { configureBuscar } from "./routes/buscar.js";
 import { configureObjetos } from "./routes/objetos.js";
+import { configureTipos } from "./routes/tipos.js";
 import { startRuntime } from "./runtime.js";
 import { createIndexSessionStore } from "./session-store.js";
 import { resolvePort, serverErrorMessage, startupWarnings } from "./startup.js";
@@ -26,6 +28,8 @@ const start = (): void => {
     vaultDir: runtime.vaultDir,
     timeZone: config.app.timeZone,
   });
+  configureTipos({ tiposDir: join(runtime.vaultDir, "tipos") });
+  configureBuscar({ db: runtime.db });
   const app = createApp({
     locale: config.app.locale,
     auth: { ...authConfig, store: createIndexSessionStore(runtime.db) },

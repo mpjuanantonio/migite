@@ -6,6 +6,7 @@ import {
   locales,
   ObjectOperationError,
   type TranslationKey,
+  TypeOperationError,
   t,
 } from "@migite/core";
 import { IndexError } from "@migite/index";
@@ -17,6 +18,7 @@ import { createRequestId, writeLog } from "../logs.js";
 
 export type ErrorCode =
   | "ambiguous_title"
+  | "attribute_type_immutable"
   | "bad_request"
   | "config_error"
   | "confirmation_required"
@@ -29,11 +31,15 @@ export type ErrorCode =
   | "not_found"
   | "object_not_found"
   | "reserved_attribute_key"
+  | "type_already_exists"
+  | "type_not_editable"
+  | "type_not_found"
   | "unauthorized"
   | "validation_error";
 
 const CODE_STATUS: Readonly<Record<ErrorCode, ContentfulStatusCode>> = {
   ambiguous_title: 409,
+  attribute_type_immutable: 422,
   bad_request: 400,
   config_error: 500,
   confirmation_required: 409,
@@ -46,6 +52,9 @@ const CODE_STATUS: Readonly<Record<ErrorCode, ContentfulStatusCode>> = {
   not_found: 404,
   object_not_found: 404,
   reserved_attribute_key: 422,
+  type_already_exists: 409,
+  type_not_editable: 403,
+  type_not_found: 404,
   unauthorized: 401,
   validation_error: 400,
 };
@@ -57,6 +66,14 @@ const OBJECT_ERROR_CODES: Readonly<Partial<Record<TranslationKey, ErrorCode>>> =
   "error.missingRequiredAttribute": "missing_required_attribute",
   "error.objectNotFound": "object_not_found",
   "error.reservedAttributeKey": "reserved_attribute_key",
+};
+
+const TYPE_ERROR_CODES: Readonly<Partial<Record<TranslationKey, ErrorCode>>> = {
+  "error.attributeTypeImmutable": "attribute_type_immutable",
+  "error.notFound": "type_not_found",
+  "error.typeAlreadyExists": "type_already_exists",
+  "error.typeNotEditable": "type_not_editable",
+  "error.validationError": "validation_error",
 };
 
 const CODE_MESSAGES: Readonly<Partial<Record<ErrorCode, TranslationKey>>> = {
@@ -193,6 +210,16 @@ const describeError = (error: Error, locale: Locale): ApiError => {
   }
   if (error instanceof ObjectOperationError) {
     const codigo = OBJECT_ERROR_CODES[error.key] ?? "invalid_object_write";
+    return {
+      codigo,
+      status: CODE_STATUS[codigo],
+      mensaje: t(error.key, error.params, locale),
+      detalle: internalMessage(error),
+      stack: error.stack,
+    };
+  }
+  if (error instanceof TypeOperationError) {
+    const codigo = TYPE_ERROR_CODES[error.key] ?? "validation_error";
     return {
       codigo,
       status: CODE_STATUS[codigo],
