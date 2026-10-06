@@ -14,6 +14,7 @@ import {
   deleteObjeto,
   getObjeto,
   listObjetos,
+  MAX_LIST_OFFSET,
   type ObjetosDeps,
   patchObjeto,
   renameObjeto,
@@ -45,7 +46,7 @@ export const objetosRouter = new Hono<ServerEnv>();
 objetosRouter.get("/", (c) => {
   const params = searchParamsSchema.parse(c.req.query());
   const offset = params.cursor === undefined ? 0 : decodeCursor(params.cursor);
-  if (offset === undefined) {
+  if (offset === undefined || offset > MAX_LIST_OFFSET) {
     throw new HTTPException(400);
   }
   return c.json(listObjetos(currentDeps(), params, offset));

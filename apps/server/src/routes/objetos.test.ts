@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../app.js";
 import { type AuthOptions, createSessionToken, SESSION_COOKIE } from "../auth.js";
 import type { ServerEnv } from "../env.js";
+import { encodeCursor, MAX_LIST_OFFSET } from "../services/objetos.js";
 import { configureObjetos } from "./objetos.js";
 
 const USUARIO = "ana";
@@ -287,6 +288,24 @@ describe("GET /api/objetos", () => {
     expect(((await invalidCursor.json()) as ErrorBody).error.codigo).toBe("bad_request");
   });
 
+  it("rejects cursors beyond the maximum offset and still serves the deepest allowed page", async () => {
+    const beyond = await app.request(
+      `/api/objetos?cursor=${encodeURIComponent(encodeCursor(MAX_LIST_OFFSET + 1))}`,
+      { headers: headers() },
+    );
+    expect(beyond.status).toBe(400);
+    expect(((await beyond.json()) as ErrorBody).error.codigo).toBe("bad_request");
+
+    const deepest = await app.request(
+      `/api/objetos?cursor=${encodeURIComponent(encodeCursor(MAX_LIST_OFFSET))}`,
+      { headers: headers() },
+    );
+    expect(deepest.status).toBe(200);
+    const body = (await deepest.json()) as ListBody;
+    expect(body.objetos).toEqual([]);
+    expect(body.siguienteCursor).toBeNull();
+  });
+
   it("requires a valid session", async () => {
     const res = await app.request("/api/objetos");
     expect(res.status).toBe(401);
@@ -433,6 +452,56 @@ describe("PATCH /api/objetos/:id", () => {
 
     expect(res.status).toBe(404);
     expect(((await res.json()) as ErrorBody).error.codigo).toBe("object_not_found");
+  });
+
+  it("moves the object when carpeta changes and GET reflects it", async () => {
+    const res = await sendJson("PATCH", `/api/objetos/${ALFA}`, { carpeta: "archivo" });
+
+    expect(res.status).toBe(200);
+    const body = objectPayloadSchema.parse(await res.json());
+    expect(body.id).toBe(ALFA);
+    expect(body.carpeta).toBe("archivo");
+    expect(body.ruta).toBe("archivo/alfa.md");
+    expect(existsSync(join(vaultDir, "archivo", "alfa.md"))).toBe(true);
+    expect(existsSync(join(vaultDir, "alfa.md"))).toBe(false);
+
+    const read = await getJson<ObjectPayload>(`/api/objetos/${ALFA}`);
+    expect(read.carpeta).toBe("archivo");
+    expect(read.ruta).toBe("archivo/alfa.md");
+    expect(read.cuerpo).toBe("Primera nota sobre el proyecto migite.");
+  });
+
+  it("keeps the object untouched when carpeta does not change", async () => {
+    const res = await sendJson("PATCH", `/api/objetos/${BETA}`, { carpeta: "proyectos" });
+
+    expect(res.status).toBe(200);
+    const body = objectPayloadSchema.parse(await res.json());
+    expect(body.ruta).toBe("proyectos/beta.md");
+    expect(body.carpeta).toBe("proyectos");
+    expect(body.actualizado).toBe("2026-10-04T09:00:00.000+02:00");
+    expect(existsSync(join(vaultDir, "proyectos", "beta.md"))).toBe(true);
+  });
+
+  it("moves and edits the object in the same patch", async () => {
+    const res = await sendJson("PATCH", `/api/objetos/${GAMMA}`, {
+      carpeta: "archivo",
+      cuerpo: "Nota movida.",
+    });
+
+    expect(res.status).toBe(200);
+    const body = objectPayloadSchema.parse(await res.json());
+    expect(body.id).toBe(GAMMA);
+    expect(body.ruta).toBe("archivo/gamma.md");
+    expect(body.cuerpo).toBe("Nota movida.");
+    expect((await getJson<ObjectPayload>(`/api/objetos/${GAMMA}`)).cuerpo).toBe("Nota movida.");
+  });
+
+  it("rejects moving into a reserved folder with invalid_object_write", async () => {
+    const res = await sendJson("PATCH", `/api/objetos/${ALFA}`, { carpeta: "tipos" });
+
+    expect(res.status).toBe(422);
+    expect(((await res.json()) as ErrorBody).error.codigo).toBe("invalid_object_write");
+    expect(existsSync(join(vaultDir, "alfa.md"))).toBe(true);
   });
 });
 
