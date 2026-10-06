@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { loadConfig } from "@migite/core";
 import { app } from "./app.js";
+import { startRuntime } from "./runtime.js";
 import { resolvePort, serverErrorMessage, startupWarnings } from "./startup.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -14,6 +15,16 @@ const start = (): void => {
   for (const warning of startupWarnings(config)) {
     console.warn(warning);
   }
+
+  const runtime = startRuntime(config.app, root);
+
+  const shutdown = (): void => {
+    void runtime.close().finally(() => {
+      process.exit(0);
+    });
+  };
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
 
   const server = serve({ fetch: app.fetch, port }, (info) => {
     console.log(`Migite listening on http://localhost:${info.port}`);

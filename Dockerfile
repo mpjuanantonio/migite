@@ -47,7 +47,7 @@ COPY packages/llm/package.json packages/llm/package.json
 # install script (gypfile: false): distribuye el binario N-API en prebuilds/,
 # incluido linuxmusl-x64, así que el stage no necesita toolchain de compilación.
 RUN pnpm install --frozen-lockfile --prod --ignore-scripts \
-      --filter @migite/server... --filter @migite/index...
+      --filter @migite/server...
 RUN cd packages/index && node -e "require('better-sqlite3')"
 COPY --from=build --chown=node:node /app/apps/server/dist apps/server/dist
 COPY --from=build --chown=node:node /app/apps/web/dist apps/web/dist
