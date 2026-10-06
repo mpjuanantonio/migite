@@ -5,7 +5,15 @@ export type ObjectFilters = {
   readonly tipo?: string;
   readonly carpeta?: string;
   readonly tag?: string;
+  /**
+   * Instante ISO 8601 (offset incluido). Se normaliza a UTC antes de
+   * comparar con `actualizado`; un valor no parseable no coincide con nada.
+   */
   readonly desde?: string;
+  /**
+   * Instante ISO 8601 (offset incluido). Se normaliza a UTC antes de
+   * comparar con `actualizado`; un valor no parseable no coincide con nada.
+   */
   readonly hasta?: string;
 };
 
@@ -22,8 +30,17 @@ export type SearchResult = IndexedObject & {
 };
 
 export type SearchObjectsOptions = {
+  /**
+   * Texto de búsqueda. Se recorta en silencio a 512 caracteres y a los
+   * 8 primeros términos; el exceso se ignora.
+   */
   readonly query?: string;
   readonly filters?: ObjectFilters;
+  /**
+   * Número máximo de resultados. Los valores válidos van de 1 a
+   * `MAX_SEARCH_LIMIT`; los no válidos usan el límite por defecto y los
+   * demasiado grandes se recortan a `MAX_SEARCH_LIMIT`.
+   */
   readonly limit?: number;
 };
 
@@ -35,6 +52,12 @@ export type ListObjectsIndexedOptions = {
 export const DEFAULT_SEARCH_LIMIT = 100;
 
 export const DEFAULT_LIST_LIMIT = 100;
+
+export const MAX_SEARCH_LIMIT = 500;
+
+const MAX_QUERY_LENGTH = 512;
+
+const MAX_QUERY_TERMS = 8;
 
 type ObjectRow = {
   readonly id: string;
@@ -50,17 +73,23 @@ type SearchRow = ObjectRow & {
 
 const NON_TERM_CHARS = /[^\p{L}\p{N}_]+/gu;
 
-const normalizeLimit = (limit: number | undefined, fallback: number): number =>
-  limit !== undefined && Number.isInteger(limit) && limit > 0 ? limit : fallback;
+const normalizeLimit = (limit: number | undefined, fallback: number): number => {
+  if (limit === undefined || !Number.isSafeInteger(limit) || limit <= 0) {
+    return fallback;
+  }
+  return Math.min(limit, MAX_SEARCH_LIMIT);
+};
 
 const escapeLike = (value: string): string =>
   value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
 
 const queryTerms = (query: string): string[] =>
   query
+    .slice(0, MAX_QUERY_LENGTH)
     .normalize("NFKC")
     .split(NON_TERM_CHARS)
-    .filter((term) => term.length > 0);
+    .filter((term) => term.length > 0)
+    .slice(0, MAX_QUERY_TERMS);
 
 const matchExpression = (terms: readonly string[]): string =>
   terms.map((term) => `"${term.replaceAll('"', '""')}"*`).join(" ");
@@ -82,10 +111,14 @@ const filterConditions = (filters: ObjectFilters | undefined): SQL[] => {
     );
   }
   if (filters.desde !== undefined && filters.desde !== "") {
-    conditions.push(sql`o.actualizado >= ${filters.desde}`);
+    conditions.push(
+      sql`unixepoch(o.actualizado, 'subsec') >= unixepoch(${filters.desde}, 'subsec')`,
+    );
   }
   if (filters.hasta !== undefined && filters.hasta !== "") {
-    conditions.push(sql`o.actualizado <= ${filters.hasta}`);
+    conditions.push(
+      sql`unixepoch(o.actualizado, 'subsec') <= unixepoch(${filters.hasta}, 'subsec')`,
+    );
   }
   return conditions;
 };

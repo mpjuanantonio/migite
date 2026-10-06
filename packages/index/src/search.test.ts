@@ -7,10 +7,17 @@ import {
   type ObjectRecord,
   type ObjectRepository,
 } from "@migite/core";
+import { sql } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { buildIndex } from "./indexer.js";
+import { buildIndex, indexObject } from "./indexer.js";
 import { type IndexHandle, openIndex } from "./open.js";
-import { listObjectsIndexed, type SearchObjectsOptions, searchObjects } from "./search.js";
+import {
+  DEFAULT_LIST_LIMIT,
+  listObjectsIndexed,
+  MAX_SEARCH_LIMIT,
+  type SearchObjectsOptions,
+  searchObjects,
+} from "./search.js";
 
 const CUSTOM_TYPE_YAML = `id: etiquetado
 nombre: Etiquetado
@@ -92,6 +99,20 @@ const listIds = (options: Parameters<typeof listObjectsIndexed>[1] = {}): string
   listObjectsIndexed(handle.db, options)
     .map((result) => result.id)
     .sort();
+
+const pinUpdated = (id: string, actualizado: string): void => {
+  handle.db.run(sql`UPDATE objetos SET actualizado = ${actualizado} WHERE id = ${id}`);
+};
+
+const insertBulkObjects = (count: number): void => {
+  for (let index = 0; index < count; index += 1) {
+    const suffix = String(index).padStart(4, "0");
+    handle.db.run(sql`
+      INSERT INTO objetos (id, tipo_id, titulo, ruta, hash, creado, actualizado)
+      VALUES (${`bulk-${suffix}`}, 'nota', ${`Nota ${suffix}`}, ${`bulk/${suffix}.md`}, 'hash', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')
+    `);
+  }
+};
 
 beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), "migite-search-"));
@@ -192,6 +213,61 @@ describe("searchObjects", () => {
     expect(ids({ query: "busq", filters: { desde: updated } })).toContain(fixtures.doc.id);
   });
 
+  it("compares updated bounds as UTC instants across offsets", () => {
+    const instant = "2026-03-29T01:30:00.000Z";
+    const before = "2026-03-29T01:29:59.999Z";
+    const after = "2026-03-29T01:30:00.001Z";
+    pinUpdated(fixtures.doc.id, "2026-03-29T03:30:00.000+02:00");
+    pinUpdated(fixtures.tarea.id, "2026-03-29T02:30:00.000+01:00");
+    pinUpdated(fixtures.rojo.id, instant);
+    pinUpdated(fixtures.azul.id, "2026-03-28T23:30:00.000-02:00");
+    pinUpdated(fixtures.subrayado.id, after);
+    pinUpdated(fixtures.cruzada.id, before);
+
+    const sameInstant = [
+      fixtures.doc.id,
+      fixtures.tarea.id,
+      fixtures.rojo.id,
+      fixtures.azul.id,
+    ].sort();
+
+    expect(listIds({ filters: { desde: instant, hasta: instant } })).toEqual(sameInstant);
+    expect(
+      listIds({
+        filters: {
+          desde: "2026-03-29T03:30:00.000+02:00",
+          hasta: "2026-03-29T02:30:00.000+01:00",
+        },
+      }),
+    ).toEqual(sameInstant);
+    expect(listIds({ filters: { desde: after } })).toEqual([fixtures.subrayado.id]);
+    expect(listIds({ filters: { hasta: before } })).toEqual([fixtures.cruzada.id]);
+  });
+
+  it("distinguishes repeated wall times at the DST fall-back", () => {
+    pinUpdated(fixtures.rojo.id, "2026-10-25T02:30:00.000+02:00");
+    pinUpdated(fixtures.azul.id, "2026-10-25T02:30:00.000+01:00");
+
+    expect(
+      listIds({
+        filters: {
+          tipo: "etiquetado",
+          desde: "2026-10-25T02:30:00.000+01:00",
+          hasta: "2026-10-25T02:30:00.000+01:00",
+        },
+      }),
+    ).toEqual([fixtures.azul.id]);
+    expect(
+      listIds({
+        filters: {
+          tipo: "etiquetado",
+          desde: "2026-10-25T02:30:00.000+02:00",
+          hasta: "2026-10-25T02:30:00.000+02:00",
+        },
+      }),
+    ).toEqual([fixtures.rojo.id]);
+  });
+
   it("escapes LIKE wildcards in the folder filter", () => {
     expect(listIds({ filters: { carpeta: "a_b" } })).toEqual([fixtures.subrayado.id]);
     expect(listIds({ filters: { carpeta: "a%b" } })).toEqual([]);
@@ -214,6 +290,28 @@ describe("searchObjects", () => {
     expect(searchObjects(handle.db, { query: "a", limit: 2 })).toHaveLength(2);
     expect(searchObjects(handle.db, { limit: 1 })).toHaveLength(1);
   });
+
+  it("truncates the query to 512 characters", () => {
+    expect(ids({ query: `alfa${" ".repeat(600)}beta` })).toEqual(
+      [fixtures.rojo.id, fixtures.azul.id].sort(),
+    );
+    expect(ids({ query: "x".repeat(600) })).toEqual([]);
+    expect(ids({ query: " ".repeat(600) })).toEqual([]);
+  });
+
+  it("requires at most the first eight terms", () => {
+    const terms = ["uno", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho"];
+    const object = repo.createObject({
+      title: "Nota de ocho términos",
+      type: "nota",
+      body: terms.join(" "),
+      folder: "limites",
+    });
+    indexObject(handle.db, object);
+
+    expect(ids({ query: [...terms, "nueve"].join(" ") })).toEqual([object.id]);
+    expect(ids({ query: "ocho nueve" })).toEqual([]);
+  });
 });
 
 describe("listObjectsIndexed", () => {
@@ -227,5 +325,20 @@ describe("listObjectsIndexed", () => {
       [fixtures.rojo.id, fixtures.azul.id].sort(),
     );
     expect(listObjectsIndexed(handle.db, { limit: 0 })).toHaveLength(6);
+  });
+
+  it("clamps huge limits and falls back on invalid ones", () => {
+    insertBulkObjects(600);
+
+    expect(listObjectsIndexed(handle.db, { limit: 10_000 })).toHaveLength(MAX_SEARCH_LIMIT);
+    expect(listObjectsIndexed(handle.db, { limit: Number.MAX_SAFE_INTEGER })).toHaveLength(
+      MAX_SEARCH_LIMIT,
+    );
+    expect(listObjectsIndexed(handle.db, { limit: Number.NaN })).toHaveLength(DEFAULT_LIST_LIMIT);
+    expect(listObjectsIndexed(handle.db, { limit: 1.5 })).toHaveLength(DEFAULT_LIST_LIMIT);
+    expect(listObjectsIndexed(handle.db, { limit: -5 })).toHaveLength(DEFAULT_LIST_LIMIT);
+    expect(searchObjects(handle.db, { limit: Number.MAX_SAFE_INTEGER })).toHaveLength(
+      MAX_SEARCH_LIMIT,
+    );
   });
 });
