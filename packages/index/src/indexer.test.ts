@@ -332,6 +332,32 @@ describe("applyObjectEvent", () => {
     expect(ftsIds("cambiado")).toEqual([]);
   });
 
+  it("refreshes backlinks of linked objects when the target is renamed", () => {
+    const observed = createObjectRepository({
+      vaultDir,
+      timeZone: "UTC",
+      onEvent: (event) => applyObjectEvent(handle.db, event, { vaultDir }),
+    });
+    const destino = observed.createObject({ title: "Titulo viejo", type: "nota" });
+    const origen = observed.createObject({
+      title: "Fuente",
+      type: "nota",
+      body: "alfa [[Titulo viejo]]",
+    });
+    expect(ftsIds("viejo")).toEqual([destino.id, origen.id].sort());
+    expect(linkRows()).toEqual([
+      { origen_id: origen.id, destino_id: destino.id, contexto: "cuerpo" },
+    ]);
+
+    observed.renameObject(destino.id, "Titulo nuevo");
+
+    expect(ftsIds("viejo")).toEqual([]);
+    expect(ftsIds("nuevo")).toEqual([destino.id, origen.id].sort());
+    expect(linkRows()).toEqual([
+      { origen_id: origen.id, destino_id: destino.id, contexto: "cuerpo" },
+    ]);
+  });
+
   it("ignores events for objects that cannot be read", () => {
     applyObjectEvent(
       handle.db,

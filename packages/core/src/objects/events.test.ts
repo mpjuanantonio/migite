@@ -85,6 +85,25 @@ describe("domain events", () => {
     ]);
   });
 
+  it("emits ObjectUpdated for every rewritten backlink on rename", () => {
+    const { events, repo } = setup();
+    const destino = repo.createObject({ title: "Titulo viejo", type: "nota" });
+    const origen = repo.createObject({
+      title: "Fuente",
+      type: "nota",
+      body: "alfa [[Titulo viejo]]",
+    });
+    events.length = 0;
+
+    const report = repo.renameObject(destino.id, "Titulo nuevo");
+
+    expect(report.rewritten).toEqual([origen.path]);
+    expect(events).toEqual([
+      { type: "ObjectUpdated", objectId: destino.id, path: report.object.path },
+      { type: "ObjectUpdated", objectId: origen.id, path: origen.path },
+    ]);
+  });
+
   it("emits ObjectUpdated with the new path on move", () => {
     const { events, repo } = setup();
     const created = repo.createObject({ title: "Nota movible", type: "nota" });

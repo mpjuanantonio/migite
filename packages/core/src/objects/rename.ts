@@ -211,6 +211,7 @@ export const createRenameOperations = (host: RenameHost): RenameOperations => {
     const dir = object.folder === "" ? host.vaultDir : join(host.vaultDir, object.folder);
     const slug = slugify(title);
     const rewritten: string[] = [];
+    const rewrittenObjects: { objectId: string; path: string }[] = [];
     const skipped: { path: string; problems: string[] }[] = [];
     const unresolvedLinks: { path: string; link: string }[] = [];
     let fileName = object.fileName;
@@ -318,6 +319,7 @@ export const createRenameOperations = (host: RenameHost): RenameOperations => {
           const nextText = writeObjectFile(nextFrontmatter, nextBody, current);
           writeFileAtomic(entry.file.absolutePath, nextText);
           rewritten.push(path);
+          rewrittenObjects.push({ objectId: currentObject.id, path });
         } catch (error) {
           skipped.push({ path, problems: [detailOf(error)] });
           collectUnresolved(current, path);
@@ -338,6 +340,9 @@ export const createRenameOperations = (host: RenameHost): RenameOperations => {
       body,
     };
     host.emit({ type: "ObjectUpdated", objectId: object.id, path });
+    for (const entry of rewrittenObjects) {
+      host.emit({ type: "ObjectUpdated", objectId: entry.objectId, path: entry.path });
+    }
     return { object: renamed, rewritten, skipped, unresolvedLinks };
   };
 

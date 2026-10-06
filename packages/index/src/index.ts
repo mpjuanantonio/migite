@@ -35,3 +35,9 @@ export {
   meta,
   objetos,
 } from "./schema.js";
+export {
+  type StartWatcherOptions,
+  startWatcher,
+  type WatcherErrorHandler,
+  type WatcherHandle,
+} from "./watcher.js";

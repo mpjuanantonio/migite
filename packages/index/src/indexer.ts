@@ -207,7 +207,7 @@ const createTitleResolver = (
   const sorted = [...objects].sort((left, right) => left.id.localeCompare(right.id));
   for (const object of sorted) {
     const key = normalizeTitle(object.title);
-    if (key !== "" && !byTitle.has(key)) {
+    if (key !== "" && object.id !== "" && !byTitle.has(key)) {
       byTitle.set(key, object.id);
     }
   }
@@ -261,7 +261,15 @@ const projectLinks = (
   const seen = new Set<string>();
   const project = (title: string, context: LinkContext): void => {
     const destinoId = resolveTitle(title);
-    if (destinoId === undefined) {
+    if (destinoId === undefined || destinoId === "") {
+      return;
+    }
+    const indexed = db
+      .select({ id: objetos.id })
+      .from(objetos)
+      .where(eq(objetos.id, destinoId))
+      .get();
+    if (indexed === undefined) {
       return;
     }
     const key = `${context}:${destinoId}`;
@@ -423,9 +431,15 @@ export const applyObjectEvent = (
   options: ApplyObjectEventOptions,
 ): void => {
   if (event.type === "ObjectDeleted") {
+    const target =
+      db.select({ id: objetos.id }).from(objetos).where(eq(objetos.id, event.objectId)).get() ??
+      db.select({ id: objetos.id }).from(objetos).where(eq(objetos.ruta, event.path)).get();
+    if (target === undefined) {
+      return;
+    }
     db.transaction((tx) => {
-      tx.run(sql`DELETE FROM fts_objetos WHERE objeto_id = ${event.objectId}`);
-      tx.delete(objetos).where(eq(objetos.id, event.objectId)).run();
+      tx.run(sql`DELETE FROM fts_objetos WHERE objeto_id = ${target.id}`);
+      tx.delete(objetos).where(eq(objetos.id, target.id)).run();
     });
     return;
   }
@@ -433,16 +447,19 @@ export const applyObjectEvent = (
     vaultDir: options.vaultDir,
     timeZone: options.timeZone,
   });
-  let read: ReadObjectResult;
-  try {
-    read = repository.readObject(event.objectId);
-  } catch (error) {
-    if (error instanceof ObjectOperationError) {
-      return;
+  const readRef = (ref: string): ReadObjectResult | undefined => {
+    try {
+      return repository.readObject(ref);
+    } catch (error) {
+      if (error instanceof ObjectOperationError) {
+        return undefined;
+      }
+      throw error;
     }
-    throw error;
-  }
-  if (!read.ok) {
+  };
+  const read =
+    readRef(event.objectId) ?? (event.path === event.objectId ? undefined : readRef(event.path));
+  if (read === undefined || !read.ok) {
     return;
   }
   const object = read.object;
