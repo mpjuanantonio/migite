@@ -25,11 +25,13 @@ export type SearchObjectsOptions = {
   readonly query?: string;
   readonly filters?: ObjectFilters;
   readonly limit?: number;
+  readonly offset?: number;
 };
 
 export type ListObjectsIndexedOptions = {
   readonly filters?: ObjectFilters;
   readonly limit?: number;
+  readonly offset?: number;
 };
 
 export const DEFAULT_SEARCH_LIMIT = 100;
@@ -64,6 +66,9 @@ const normalizeLimit = (limit: number | undefined, fallback: number): number => 
   }
   return Math.min(limit, MAX_SEARCH_LIMIT);
 };
+
+const normalizeOffset = (offset: number | undefined): number =>
+  offset === undefined || !Number.isSafeInteger(offset) || offset < 0 ? 0 : offset;
 
 const escapeLike = (value: string): string =>
   value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
@@ -138,6 +143,7 @@ export const listObjectsIndexed = (
     WHERE ${whereClause(filterConditions(options.filters))}
     ORDER BY o.actualizado DESC, o.id ASC
     LIMIT ${normalizeLimit(options.limit, DEFAULT_LIST_LIMIT)}
+    OFFSET ${normalizeOffset(options.offset)}
   `);
   return byRecentUpdate(rows);
 };
@@ -146,18 +152,10 @@ export const searchObjects = (
   db: IndexDatabase,
   options: SearchObjectsOptions = {},
 ): SearchResult[] => {
-  const conditions = filterConditions(options.filters);
-  const limit = normalizeLimit(options.limit, DEFAULT_SEARCH_LIMIT);
   if (options.query === undefined) {
-    const rows = db.all<ObjectRow>(sql`
-      SELECT ${OBJECT_COLUMNS}
-      FROM objetos o
-      WHERE ${whereClause(conditions)}
-      ORDER BY o.actualizado DESC, o.id ASC
-      LIMIT ${limit}
-    `);
-    return byRecentUpdate(rows);
+    return listObjectsIndexed(db, options);
   }
+  const conditions = filterConditions(options.filters);
   const terms = queryTerms(options.query);
   if (terms.length === 0) {
     return [];
@@ -169,7 +167,8 @@ export const searchObjects = (
     WHERE fts_objetos MATCH ${matchExpression(terms)}
       AND ${whereClause(conditions)}
     ORDER BY rank, o.id ASC
-    LIMIT ${limit}
+    LIMIT ${normalizeLimit(options.limit, DEFAULT_SEARCH_LIMIT)}
+    OFFSET ${normalizeOffset(options.offset)}
   `);
   return rows.map(toSearchResult);
 };

@@ -107,9 +107,14 @@ const pinUpdated = (id: string, actualizado: string): void => {
 const insertBulkObjects = (count: number): void => {
   for (let index = 0; index < count; index += 1) {
     const suffix = String(index).padStart(4, "0");
+    const id = `bulk-${suffix}`;
     handle.db.run(sql`
       INSERT INTO objetos (id, tipo_id, titulo, ruta, hash, creado, actualizado)
-      VALUES (${`bulk-${suffix}`}, 'nota', ${`Nota ${suffix}`}, ${`bulk/${suffix}.md`}, 'hash', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')
+      VALUES (${id}, 'nota', ${`Nota ${suffix}`}, ${`bulk/${suffix}.md`}, 'hash', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')
+    `);
+    handle.db.run(sql`
+      INSERT INTO fts_objetos (titulo, cuerpo, atributos, objeto_id)
+      VALUES (${`Nota ${suffix}`}, 'contenido masivo de paginacion', '', ${id})
     `);
   }
 };
@@ -340,5 +345,96 @@ describe("listObjectsIndexed", () => {
     expect(searchObjects(handle.db, { limit: Number.MAX_SAFE_INTEGER })).toHaveLength(
       MAX_SEARCH_LIMIT,
     );
+  });
+});
+
+describe("paginación con offset", () => {
+  it("recorre tres páginas sin duplicados ni pérdidas", () => {
+    const expectedList = listObjectsIndexed(handle.db, {
+      limit: MAX_SEARCH_LIMIT,
+    }).map((result) => result.id);
+    expect(expectedList).toHaveLength(6);
+
+    const listPages = [0, 2, 4].map((offset) =>
+      listObjectsIndexed(handle.db, { limit: 2, offset }).map((result) => result.id),
+    );
+    expect(listPages.map((page) => page.length)).toEqual([2, 2, 2]);
+    expect(listPages.flat()).toEqual(expectedList);
+    expect(new Set(listPages.flat()).size).toBe(expectedList.length);
+    expect(listObjectsIndexed(handle.db, { limit: 2, offset: 6 })).toEqual([]);
+
+    const extra = [1, 2, 3].map((index) =>
+      repo.createObject({
+        title: `Objetivo ${index}`,
+        type: "nota",
+        body: "objetivo común",
+        folder: "objetivos",
+      }),
+    );
+    for (const object of extra) {
+      indexObject(handle.db, object);
+    }
+
+    const expectedSearch = searchObjects(handle.db, { query: "objetivo" }).map(
+      (result) => result.id,
+    );
+    expect(expectedSearch).toHaveLength(3);
+
+    const searchPages = [0, 1, 2].map((offset) =>
+      searchObjects(handle.db, { query: "objetivo", limit: 1, offset }).map((result) => result.id),
+    );
+    expect(searchPages.map((page) => page.length)).toEqual([1, 1, 1]);
+    expect(searchPages.flat()).toEqual(expectedSearch);
+    expect(new Set(searchPages.flat()).size).toBe(expectedSearch.length);
+    expect(ids({ query: "objetivo", offset: 3 })).toEqual([]);
+  });
+
+  it("falls back to zero on invalid offsets and accepts huge ones", () => {
+    const first = listObjectsIndexed(handle.db, { limit: 2 }).map((result) => result.id);
+
+    for (const offset of [-1, 1.5, Number.NaN]) {
+      expect(
+        listObjectsIndexed(handle.db, { limit: 2, offset }).map((result) => result.id),
+      ).toEqual(first);
+      expect(searchObjects(handle.db, { limit: 2, offset }).map((result) => result.id)).toEqual(
+        first,
+      );
+    }
+    expect(listObjectsIndexed(handle.db, { limit: 2, offset: Number.MAX_SAFE_INTEGER })).toEqual(
+      [],
+    );
+  });
+
+  it("pages beyond the 500 result cap through list and search", () => {
+    insertBulkObjects(1200);
+    const total = 1206;
+
+    const expected = [
+      ...listObjectsIndexed(handle.db, { limit: MAX_SEARCH_LIMIT }),
+      ...listObjectsIndexed(handle.db, { limit: MAX_SEARCH_LIMIT, offset: MAX_SEARCH_LIMIT }),
+      ...listObjectsIndexed(handle.db, {
+        limit: MAX_SEARCH_LIMIT,
+        offset: MAX_SEARCH_LIMIT * 2,
+      }),
+    ].map((result) => result.id);
+    expect(expected).toHaveLength(total);
+
+    const listed: string[] = [];
+    for (let offset = 0; offset < total; offset += 100) {
+      const page = listObjectsIndexed(handle.db, { limit: 100, offset });
+      expect(page).toHaveLength(Math.min(100, total - offset));
+      listed.push(...page.map((result) => result.id));
+    }
+    expect(listed).toEqual(expected);
+    expect(new Set(listed).size).toBe(total);
+
+    const found: string[] = [];
+    for (let offset = 0; offset < 1200; offset += 100) {
+      const page = searchObjects(handle.db, { query: "masiv", limit: 100, offset });
+      expect(page).toHaveLength(100);
+      found.push(...page.map((result) => result.id));
+    }
+    expect(new Set(found).size).toBe(1200);
+    expect(searchObjects(handle.db, { query: "masiv", offset: 1200 })).toEqual([]);
   });
 });
