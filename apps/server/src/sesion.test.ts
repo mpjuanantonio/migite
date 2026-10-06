@@ -193,7 +193,10 @@ describe("session middleware", () => {
   it("keeps health and the session endpoints public", async () => {
     const health = await app.request("/api/health");
     expect(health.status).toBe(200);
-    expect(await health.json()).toEqual({ status: "ok" });
+    expect(await health.json()).toEqual({
+      status: "degradado",
+      indice: { objetos: 0, listo: false, ultimoError: null },
+    });
 
     expect((await login()).status).toBe(204);
     expect((await app.request("/api/sesion", { method: "DELETE" })).status).toBe(204);

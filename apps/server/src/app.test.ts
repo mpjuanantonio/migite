@@ -14,6 +14,9 @@ describe("GET /api/health", () => {
     const res = await createApp({ auth }).request("/api/health");
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: "ok" });
+    expect(await res.json()).toEqual({
+      status: "degradado",
+      indice: { objetos: 0, listo: false, ultimoError: null },
+    });
   });
 });

@@ -11,6 +11,7 @@ import { requestLogger } from "./middleware/logs.js";
 import { requireSession } from "./middleware/session.js";
 import { buscarRouter } from "./routes/buscar.js";
 import { exportRouter } from "./routes/export.js";
+import { healthRouter } from "./routes/health.js";
 import { mantenimientoRouter } from "./routes/mantenimiento.js";
 import { objetosRouter } from "./routes/objetos.js";
 import { createSesionRouter } from "./routes/sesion.js";
@@ -44,7 +45,7 @@ export const createApp = (options: CreateAppOptions): Hono<ServerEnv> => {
     await protectApi(c, next);
   });
 
-  app.get("/api/health", (c) => c.json({ status: "ok" }));
+  app.route("/api/health", healthRouter);
   app.route("/api/sesion", createSesionRouter(options.auth));
 
   app.route("/api/objetos", objetosRouter);
