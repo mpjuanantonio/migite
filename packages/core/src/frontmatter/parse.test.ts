@@ -181,7 +181,7 @@ actualizado: 2026-10-03T09:12:00+02:00
 
     const failure = expectFailure("---\nid: uno\n---\ncuerpo\n");
 
-    expect(failure.problems).toEqual(["invalid YAML syntax"]);
+    expect(failure.problems).toEqual([t("error.invalidYamlSyntax")]);
     expect(failure.raw).toEqual({ yamlText: "id: uno\n", body: "cuerpo\n" });
   });
 
@@ -199,7 +199,7 @@ actualizado: 2026-10-03T09:12:00+02:00
     const failure = expectFailure("---\nid: [uno\ntitulo: Roto\n---\ncuerpo\n");
 
     expect(failure.ok).toBe(false);
-    expect(failure.problems[0]).toMatch(/^invalid YAML syntax \(/);
+    expect(failure.problems[0]?.startsWith(`${t("error.invalidYamlSyntax")} (`)).toBe(true);
     expect(failure.raw).toEqual({ yamlText: "id: [uno\ntitulo: Roto\n", body: "cuerpo\n" });
   });
 

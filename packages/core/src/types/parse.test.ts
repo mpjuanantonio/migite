@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { t } from "../i18n/index.js";
 import {
   ATTRIBUTE_ROLE_WIRES,
   FIELD_TYPE_WIRES,
@@ -160,14 +161,14 @@ atributos:
       yamlGate.throwOnParse = true;
 
       expect(parseProblems("id: libro\nnombre: Libro\natributos: []\n")).toEqual([
-        "invalid YAML syntax",
+        t("error.invalidYamlSyntax"),
       ]);
     });
 
     it("reports unreadable YAML without dumping the content", () => {
       const problems = parseProblems("id: libro\n\t nombre: Libro\nSECRETO: sk-filtrado\n");
 
-      expect(problems.join(" ")).toContain("invalid YAML syntax");
+      expect(problems.join(" ")).toContain(t("error.invalidYamlSyntax"));
       expect(problems.join(" ")).not.toContain("sk-filtrado");
     });
 

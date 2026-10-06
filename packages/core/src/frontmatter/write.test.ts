@@ -269,7 +269,7 @@ cuerpo
     };
 
     expect(() => writeObjectFile(frontmatter, "cuerpo\n", "---\nid: [roto\n---\ncuerpo\n")).toThrow(
-      /^frontmatter inválido: invalid YAML syntax/,
+      new RegExp(`^${t("error.invalidFrontmatter", { problems: t("error.invalidYamlSyntax") })}`),
     );
     expect(() => writeObjectFile(frontmatter, "cuerpo\n", "---\nid: [roto\n")).toThrow(
       t("error.invalidFrontmatter", {

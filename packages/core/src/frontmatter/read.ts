@@ -1,5 +1,6 @@
 import type { Document, YAMLError } from "yaml";
 import { isMap, isScalar, parseDocument } from "yaml";
+import { defaultLocale, type Locale, t } from "../i18n/index.js";
 
 export type FrontmatterDocument = {
   document: Document.Parsed;
@@ -11,17 +12,21 @@ export type FrontmatterRead =
   | { ok: true; source: FrontmatterDocument }
   | { ok: false; problems: string[] };
 
-const yamlProblem = (error: YAMLError): string => {
+const yamlProblem = (error: YAMLError, locale: Locale): string => {
   const position = error.linePos?.[0];
   return position === undefined
-    ? `invalid YAML syntax (${error.code})`
-    : `invalid YAML syntax (${error.code}, line ${position.line}, column ${position.col})`;
+    ? t("error.invalidYamlSyntaxCode", { code: error.code }, locale)
+    : t(
+        "error.invalidYamlSyntaxAt",
+        { code: error.code, line: position.line, column: position.col },
+        locale,
+      );
 };
 
-const parseFrontmatter = (yamlText: string): FrontmatterRead => {
+const parseFrontmatter = (yamlText: string, locale: Locale): FrontmatterRead => {
   const document = parseDocument(yamlText);
   if (document.errors.length > 0) {
-    return { ok: false, problems: document.errors.map(yamlProblem) };
+    return { ok: false, problems: document.errors.map((error) => yamlProblem(error, locale)) };
   }
   const contents = document.contents;
   if (contents !== null && !isMap(contents)) {
@@ -71,10 +76,13 @@ const parseFrontmatter = (yamlText: string): FrontmatterRead => {
   return { ok: true, source: { document, keys, values } };
 };
 
-export const readFrontmatter = (yamlText: string): FrontmatterRead => {
+export const readFrontmatter = (
+  yamlText: string,
+  locale: Locale = defaultLocale,
+): FrontmatterRead => {
   try {
-    return parseFrontmatter(yamlText);
+    return parseFrontmatter(yamlText, locale);
   } catch {
-    return { ok: false, problems: ["invalid YAML syntax"] };
+    return { ok: false, problems: [t("error.invalidYamlSyntax", undefined, locale)] };
   }
 };

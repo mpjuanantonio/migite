@@ -1,4 +1,12 @@
-import { existsSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -284,6 +292,30 @@ describe("renameObject", () => {
     expect(report.object.path).toBe("objetivo.md");
     expect(readFileSync(join(vaultDir, "fuente.md"), "utf8")).toBe(before);
     expect(before).toContain("[[Destino]]");
+  });
+
+  it("flags an unreadable object linking to the renamed title as skipped and unresolved", () => {
+    const { vaultDir, repo } = setupVault();
+    const target = repo.createObject({ title: "Destino" });
+    writeFileSync(
+      join(vaultDir, "rota.md"),
+      "---\nid: [roto\ntitulo: Rota\n---\ncuerpo con [[Destino]]\n",
+      "utf8",
+    );
+    writeFileSync(
+      join(vaultDir, "rota-sin-enlaces.md"),
+      "---\nid: [roto\ntitulo: Otra rota\n---\ncuerpo sin enlaces\n",
+      "utf8",
+    );
+
+    const report = repo.renameObject(target.id, "Objetivo");
+
+    expect(report.rewritten).toEqual([]);
+    expect(report.skipped.map((entry) => entry.path)).toEqual(["rota.md"]);
+    expect(report.skipped[0]?.problems.join(" ")).toContain(t("error.invalidYamlSyntax"));
+    expect(report.unresolvedLinks).toEqual([{ path: "rota.md", link: "[[Destino]]" }]);
+    expect(existsSync(join(vaultDir, "objetivo.md"))).toBe(true);
+    expect(readFileSync(join(vaultDir, "rota.md"), "utf8")).toContain("[[Destino]]");
   });
 });
 

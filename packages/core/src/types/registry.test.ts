@@ -98,7 +98,7 @@ describe("loadTypeRegistry", () => {
     expect(registry.types.size).toBe(0);
     const warning = firstWarning(registry.warnings);
     expect(warning.path).toBe(join(dir, "roto.yaml"));
-    expect(warning.problems.join(" ")).toContain("invalid YAML syntax");
+    expect(warning.problems.join(" ")).toContain(t("error.invalidYamlSyntax"));
   });
 
   it("warns and skips a file with missing fields", () => {

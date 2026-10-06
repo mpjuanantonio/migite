@@ -1,4 +1,5 @@
 import { parse as parseYaml, YAMLParseError } from "yaml";
+import { defaultLocale, type Locale, t } from "../i18n/index.js";
 import {
   type AttributeDefinition,
   isReservedTypeId,
@@ -26,14 +27,18 @@ const KNOWN_TYPE_FIELDS = new Set<string>([...REQUIRED_TYPE_FIELDS, "descripcion
 const isMapping = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-const yamlProblem = (error: unknown): string => {
+const yamlProblem = (error: unknown, locale: Locale): string => {
   if (error instanceof YAMLParseError) {
     const position = error.linePos?.[0];
     return position === undefined
-      ? `invalid YAML syntax (${error.code})`
-      : `invalid YAML syntax (${error.code}, line ${position.line}, column ${position.col})`;
+      ? t("error.invalidYamlSyntaxCode", { code: error.code }, locale)
+      : t(
+          "error.invalidYamlSyntaxAt",
+          { code: error.code, line: position.line, column: position.col },
+          locale,
+        );
   }
-  return "invalid YAML syntax";
+  return t("error.invalidYamlSyntax", undefined, locale);
 };
 
 const attributeEntryId = (entry: unknown, index: number): string => {
@@ -43,12 +48,12 @@ const attributeEntryId = (entry: unknown, index: number): string => {
   return `#${index}`;
 };
 
-const parseTypeFile = (text: string): TypeFileDetails => {
+const parseTypeFile = (text: string, locale: Locale): TypeFileDetails => {
   let raw: unknown;
   try {
     raw = parseYaml(text);
   } catch (error) {
-    return { definition: null, fileProblems: [yamlProblem(error)], attributeWarnings: [] };
+    return { definition: null, fileProblems: [yamlProblem(error, locale)], attributeWarnings: [] };
   }
 
   if (!isMapping(raw)) {
@@ -135,18 +140,23 @@ const parseTypeFile = (text: string): TypeFileDetails => {
   };
 };
 
-export const parseTypeDetails = (text: string): TypeFileDetails => {
+export const parseTypeDetails = (text: string, locale: Locale = defaultLocale): TypeFileDetails => {
   try {
-    return parseTypeFile(text);
+    return parseTypeFile(text, locale);
   } catch {
-    return { definition: null, fileProblems: ["invalid YAML syntax"], attributeWarnings: [] };
+    return {
+      definition: null,
+      fileProblems: [t("error.invalidYamlSyntax", undefined, locale)],
+      attributeWarnings: [],
+    };
   }
 };
 
 export const parseTypeYaml = (
   text: string,
+  locale: Locale = defaultLocale,
 ): { ok: true; value: TypeDefinition } | { ok: false; problems: string[] } => {
-  const details = parseTypeDetails(text);
+  const details = parseTypeDetails(text, locale);
   return details.definition === null
     ? { ok: false, problems: [...details.fileProblems] }
     : { ok: true, value: details.definition };
