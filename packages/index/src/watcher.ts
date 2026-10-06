@@ -1,4 +1,4 @@
-import type { Stats } from "node:fs";
+import { lstatSync, type Stats } from "node:fs";
 import { relative, resolve } from "node:path";
 import { RESERVED_ROOT_DIRS } from "@migite/core";
 import { watch } from "chokidar";
@@ -44,6 +44,14 @@ export const startWatcher = (options: StartWatcherOptions): WatcherHandle => {
       console.warn(`watcher: no se pudo indexar "${path}": ${describeError(error)}`);
     });
 
+  const isDirectoryOnDisk = (path: string): boolean => {
+    try {
+      return lstatSync(path).isDirectory();
+    } catch {
+      return false;
+    }
+  };
+
   const isIgnored = (path: string, stats?: Stats): boolean => {
     const relativePath = toPosix(relative(vaultDir, path));
     if (relativePath === "") {
@@ -55,10 +63,13 @@ export const startWatcher = (options: StartWatcherOptions): WatcherHandle => {
     if (reservedAtRoot(relativePath.split("/"))) {
       return true;
     }
-    if (stats?.isDirectory() === true) {
+    if (MARKDOWN_FILE.test(relativePath)) {
       return false;
     }
-    return !MARKDOWN_FILE.test(relativePath);
+    if (stats === undefined ? isDirectoryOnDisk(path) : stats.isDirectory()) {
+      return false;
+    }
+    return true;
   };
 
   const relativePathOf = (path: string): string | undefined => {

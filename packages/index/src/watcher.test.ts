@@ -94,6 +94,26 @@ describe("startWatcher", () => {
     expect(ftsIds("observada")).toEqual([]);
   });
 
+  it("indexes markdown files created, edited and deleted inside nested folders", async () => {
+    const created = repo.createObject({
+      title: "Anidada",
+      type: "nota",
+      body: "raiz",
+      folder: "carpeta/sub",
+    });
+
+    await waitFor(() => objectIds().includes(created.id));
+    expect(ftsIds("anidada")).toEqual([created.id]);
+
+    repo.updateObject(created.id, { body: "anidada cambio" });
+    await waitFor(() => ftsIds("anidada cambio").includes(created.id));
+    expect(ftsIds("raiz")).toEqual([]);
+
+    repo.deleteObject(created.id);
+    await waitFor(() => !objectIds().includes(created.id));
+    expect(ftsIds("anidada cambio")).toEqual([]);
+  });
+
   it("keeps backlinks fresh when a linked target is renamed", async () => {
     const destino = repo.createObject({ title: "Titulo viejo", type: "nota" });
     const origen = repo.createObject({
