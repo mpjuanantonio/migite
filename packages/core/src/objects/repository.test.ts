@@ -3,6 +3,7 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -26,9 +27,23 @@ import {
   type ReadObjectResult,
   type UpdateObjectChanges,
 } from "./index.js";
-import { scanVaultFiles } from "./vault.js";
+import { MAX_OBJECT_BYTES, scanVaultFiles } from "./vault.js";
 
-const fsGates = vi.hoisted(() => ({ unlinkError: undefined as string | undefined }));
+const fsGates = vi.hoisted(() => {
+  const injectedError = (code: string, action: string): NodeJS.ErrnoException => {
+    const error = new Error(`${code}: injected failure, ${action}`) as NodeJS.ErrnoException;
+    error.code = code;
+    return error;
+  };
+  return {
+    unlinkError: undefined as string | undefined,
+    linkError: undefined as string | undefined,
+    fsyncError: undefined as string | undefined,
+    readGate: undefined as { suffix: string; onRead: number; text: string } | undefined,
+    reads: new Map<string, number>(),
+    injectedError,
+  };
+});
 
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
@@ -38,11 +53,36 @@ vi.mock("node:fs", async (importOriginal) => {
       if (fsGates.unlinkError === undefined) {
         return actual.unlinkSync(path);
       }
-      const error = new Error(
-        `${fsGates.unlinkError}: injected failure, unlink "${String(path)}"`,
-      ) as NodeJS.ErrnoException;
-      error.code = fsGates.unlinkError;
-      throw error;
+      throw fsGates.injectedError(fsGates.unlinkError, `unlink "${String(path)}"`);
+    },
+    linkSync: (
+      existingPath: Parameters<typeof actual.linkSync>[0],
+      newPath: Parameters<typeof actual.linkSync>[1],
+    ) => {
+      if (fsGates.linkError === undefined) {
+        return actual.linkSync(existingPath, newPath);
+      }
+      throw fsGates.injectedError(fsGates.linkError, `link "${String(newPath)}"`);
+    },
+    fsyncSync: (fd: number) => {
+      if (fsGates.fsyncError === undefined) {
+        return actual.fsyncSync(fd);
+      }
+      throw fsGates.injectedError(fsGates.fsyncError, "fsync");
+    },
+    readFileSync: (
+      path: Parameters<typeof actual.readFileSync>[0],
+      options?: Parameters<typeof actual.readFileSync>[1],
+    ) => {
+      const key = String(path);
+      const count = (fsGates.reads.get(key) ?? 0) + 1;
+      fsGates.reads.set(key, count);
+      const gate = fsGates.readGate;
+      if (gate !== undefined && key.endsWith(gate.suffix) && count === gate.onRead) {
+        fsGates.readGate = undefined;
+        return gate.text;
+      }
+      return actual.readFileSync(path, options);
     },
   };
 });
@@ -85,6 +125,14 @@ const readOk = (result: ReadObjectResult): ObjectRecord => {
   return result.object;
 };
 
+const objectText = (title: string, body = "cuerpo\n"): string => `---
+id: 01J8XK2P4R5S6T7U8V9W0X1Y2Z
+titulo: ${title}
+creado: 2026-10-05T14:00:00.000+02:00
+actualizado: 2026-10-05T14:00:00.000+02:00
+---
+${body}`;
+
 const parseVaultFile = (
   vaultDir: string,
   path: string,
@@ -99,6 +147,10 @@ const parseVaultFile = (
 afterEach(() => {
   vi.useRealTimers();
   fsGates.unlinkError = undefined;
+  fsGates.linkError = undefined;
+  fsGates.fsyncError = undefined;
+  fsGates.readGate = undefined;
+  fsGates.reads.clear();
   for (const root of roots.splice(0)) {
     rmSync(root, { recursive: true, force: true });
   }
@@ -753,6 +805,132 @@ describe("deleteObject", () => {
   });
 });
 
+describe("vault containment", () => {
+  const setupSymlinks = (): {
+    vaultDir: string;
+    repo: ObjectRepository;
+    outsideDir: string;
+    outsideFile: string;
+  } => {
+    const { vaultDir, repo } = setupVault();
+    const outsideDir = mkdtempSync(join(tmpdir(), "migite-outside-"));
+    roots.push(outsideDir);
+    const outsideFile = join(outsideDir, "secreto.md");
+    writeFileSync(outsideFile, objectText("Secreto", "fuera del vault\n"), "utf8");
+    symlinkSync(outsideDir, join(vaultDir, "enlace"));
+    symlinkSync(outsideFile, join(vaultDir, "enlazado.md"));
+    return { vaultDir, repo, outsideDir, outsideFile };
+  };
+
+  it("refuses to read through a symlinked directory or file", () => {
+    const { repo } = setupSymlinks();
+
+    expect(captureError(() => repo.readObject("enlace/secreto.md")).key).toBe(
+      "error.objectNotFound",
+    );
+    expect(captureError(() => repo.readObject("enlace/secreto")).key).toBe("error.objectNotFound");
+    expect(captureError(() => repo.readObject("enlazado.md")).key).toBe("error.objectNotFound");
+    expect(captureError(() => repo.readObject("enlazado")).key).toBe("error.objectNotFound");
+  });
+
+  it("refuses to update, delete or rename through a symlinked file", () => {
+    const { repo, outsideFile } = setupSymlinks();
+    const outsideText = readFileSync(outsideFile, "utf8");
+
+    expect(captureError(() => repo.updateObject("enlazado.md", { body: "tocado\n" })).key).toBe(
+      "error.objectNotFound",
+    );
+    expect(captureError(() => repo.deleteObject("enlazado.md")).key).toBe("error.objectNotFound");
+    expect(captureError(() => repo.renameObject("enlazado.md", "Otro")).key).toBe(
+      "error.objectNotFound",
+    );
+    expect(readFileSync(outsideFile, "utf8")).toBe(outsideText);
+  });
+
+  it("refuses to create or move into a symlinked directory", () => {
+    const { vaultDir, repo, outsideDir } = setupSymlinks();
+    const note = repo.createObject({ title: "Mover" });
+
+    const created = captureError(() => repo.createObject({ title: "Intruso", folder: "enlace" }));
+    const moved = captureError(() => repo.moveObject(note.id, "enlace"));
+
+    expect(created.key).toBe("error.invalidObjectWrite");
+    expect(created.problems.join(" ")).toContain("not a regular directory inside the vault");
+    expect(moved.key).toBe("error.invalidObjectWrite");
+    expect(moved.problems.join(" ")).toContain("not a regular directory inside the vault");
+    expect(existsSync(join(outsideDir, "intruso.md"))).toBe(false);
+    expect(existsSync(join(outsideDir, "mover.md"))).toBe(false);
+    expect(existsSync(join(vaultDir, "mover.md"))).toBe(true);
+  });
+
+  it("keeps symlinked entries out of the vault listing", () => {
+    const { repo } = setupSymlinks();
+
+    expect(repo.listObjects()).toEqual([]);
+  });
+});
+
+describe("atomic writes", () => {
+  it("keeps the previous content when an update cannot finish the write", () => {
+    const { vaultDir, repo } = setupVault();
+    const note = repo.createObject({ title: "Atomica", body: "original\n" });
+    const before = readFileSync(join(vaultDir, note.path), "utf8");
+    fsGates.fsyncError = "EIO";
+
+    expect(() => repo.updateObject(note.id, { body: "nuevo\n" })).toThrow(/EIO/);
+
+    fsGates.fsyncError = undefined;
+    expect(readFileSync(join(vaultDir, note.path), "utf8")).toBe(before);
+    expect(readdirSync(vaultDir).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+  });
+
+  it("does not leave a partial file when a create cannot finish the write", () => {
+    const { vaultDir, repo } = setupVault();
+    fsGates.fsyncError = "EIO";
+
+    expect(() => repo.createObject({ title: "Parcial" })).toThrow(/EIO/);
+
+    fsGates.fsyncError = undefined;
+    expect(existsSync(join(vaultDir, "parcial.md"))).toBe(false);
+    expect(readdirSync(vaultDir).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+  });
+
+  it("rejects an update when the file changed on disk after it was read", () => {
+    const { vaultDir, repo } = setupVault();
+    const note = repo.createObject({ title: "Concurrente", body: "original\n" });
+    const before = readFileSync(join(vaultDir, note.path), "utf8");
+    fsGates.reads.clear();
+    fsGates.readGate = {
+      suffix: note.path,
+      onRead: 3,
+      text: before.replace("original", "editado fuera"),
+    };
+
+    const error = captureError(() => repo.updateObject(note.id, { body: "nuevo\n" }));
+
+    expect(error.key).toBe("error.invalidObjectWrite");
+    expect(error.problems.join(" ")).toContain("changed on disk since it was read");
+    expect(readFileSync(join(vaultDir, note.path), "utf8")).toBe(before);
+  });
+});
+
+describe("read size limit", () => {
+  it("refuses to read an object larger than the limit", () => {
+    const { vaultDir, repo } = setupVault();
+    writeFileSync(join(vaultDir, "grande.md"), Buffer.alloc(MAX_OBJECT_BYTES + 1, 0x61));
+
+    const result = repo.readObject("grande.md");
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.problems.join(" ")).toContain("read limit");
+      expect(result.degraded.title).toBe("grande");
+    }
+    const summary = repo.listObjects().find((item) => item.path === "grande.md");
+    expect(summary?.degraded[0]?.kind).toBe("unreadableFrontmatter");
+  });
+});
+
 describe("listObjects", () => {
   it("scans every folder except the reserved root names and non markdown files", () => {
     const { vaultDir, repo } = setupVault();
@@ -885,7 +1063,20 @@ describe("object index", () => {
     expect(vi.mocked(scanVaultFiles).mock.calls).toHaveLength(3);
   });
 
-  it("sees a file added to the vault after the index was built", () => {
+  it("does not re-scan the vault on a clean miss", () => {
+    const { repo } = setupVault();
+    const note = repo.createObject({ title: "Indexada", body: "cuerpo\n" });
+    expect(readOk(repo.readObject(note.id)).id).toBe(note.id);
+    vi.mocked(scanVaultFiles).mockClear();
+
+    expect(captureError(() => repo.readObject("no-existe")).key).toBe("error.objectNotFound");
+
+    expect(vi.mocked(scanVaultFiles).mock.calls).toHaveLength(0);
+    expect(readOk(repo.readObject("Indexada")).id).toBe(note.id);
+    expect(vi.mocked(scanVaultFiles).mock.calls).toHaveLength(0);
+  });
+
+  it("picks up an external file once an internal write invalidates the index", () => {
     const { vaultDir, repo } = setupVault();
     const first = repo.createObject({ title: "Primera" });
     expect(readOk(repo.readObject(first.id)).id).toBe(first.id);
@@ -901,6 +1092,10 @@ escrita fuera del repositorio
 `,
       "utf8",
     );
+
+    expect(captureError(() => repo.readObject("Externa")).key).toBe("error.objectNotFound");
+
+    repo.createObject({ title: "Otra" });
 
     expect(readOk(repo.readObject("Externa")).body).toBe("escrita fuera del repositorio\n");
     expect(repo.findObjectByTitle("Externa")?.path).toBe("externa.md");

@@ -1,7 +1,27 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { t } from "../i18n/index.js";
 import { parseObjectFile } from "./parse.js";
+import { salvageObject } from "./salvage.js";
 import type { ParsedObjectFile } from "./types.js";
+
+const yamlGate = vi.hoisted(() => ({ throwOnParse: false }));
+
+vi.mock("yaml", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("yaml")>();
+  return {
+    ...actual,
+    parseDocument: (...args: Parameters<typeof actual.parseDocument>) => {
+      if (yamlGate.throwOnParse) {
+        throw new Error("injected YAML parser failure");
+      }
+      return actual.parseDocument(...args);
+    },
+  };
+});
+
+afterEach(() => {
+  yamlGate.throwOnParse = false;
+});
 
 const EXAMPLE = `---
 id: 01J8XK2P4R5S6T7U8V9W0X1Y2Z
@@ -154,6 +174,25 @@ actualizado: 2026-10-03T09:12:00+02:00
 
     expect(failure.problems).toEqual(['unterminated frontmatter: missing closing "---" line']);
     expect(failure.raw).toEqual({ yamlText: "", body: "---\nid: 01J8XK2P4R5S6T7U8V9W0X1Y2Z\n" });
+  });
+
+  it("degrades to a controlled problem when the parser throws unexpectedly", () => {
+    yamlGate.throwOnParse = true;
+
+    const failure = expectFailure("---\nid: uno\n---\ncuerpo\n");
+
+    expect(failure.problems).toEqual(["invalid YAML syntax"]);
+    expect(failure.raw).toEqual({ yamlText: "id: uno\n", body: "cuerpo\n" });
+  });
+
+  it("salvages an empty attribute map when the parser throws unexpectedly", () => {
+    yamlGate.throwOnParse = true;
+
+    expect(salvageObject("---\ntitulo: Rota\nprioridad: alta\n---\ncuerpo\n")).toEqual({
+      title: "Rota",
+      body: "cuerpo\n",
+      attributes: {},
+    });
   });
 
   it("reports broken yaml keeping the raw sections", () => {

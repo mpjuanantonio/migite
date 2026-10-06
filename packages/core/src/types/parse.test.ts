@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ATTRIBUTE_ROLE_WIRES,
   FIELD_TYPE_WIRES,
@@ -7,6 +7,25 @@ import {
   WIRE_TO_ATTRIBUTE_ROLE,
   WIRE_TO_FIELD_TYPE,
 } from "./index.js";
+
+const yamlGate = vi.hoisted(() => ({ throwOnParse: false }));
+
+vi.mock("yaml", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("yaml")>();
+  return {
+    ...actual,
+    parse: (text: string) => {
+      if (yamlGate.throwOnParse) {
+        throw new Error("injected YAML parser failure");
+      }
+      return actual.parse(text);
+    },
+  };
+});
+
+afterEach(() => {
+  yamlGate.throwOnParse = false;
+});
 
 const VALID_LIBRO = `id: libro
 nombre: Libro
@@ -137,6 +156,14 @@ atributos:
   });
 
   describe("unusable files", () => {
+    it("degrades to a controlled problem when the parser throws unexpectedly", () => {
+      yamlGate.throwOnParse = true;
+
+      expect(parseProblems("id: libro\nnombre: Libro\natributos: []\n")).toEqual([
+        "invalid YAML syntax",
+      ]);
+    });
+
     it("reports unreadable YAML without dumping the content", () => {
       const problems = parseProblems("id: libro\n\t nombre: Libro\nSECRETO: sk-filtrado\n");
 

@@ -1,7 +1,9 @@
-import { type Dirent, readdirSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { type Dirent, lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { isAbsolute, join, relative, sep } from "node:path";
 
 export const RESERVED_ROOT_DIRS = ["tipos", "vistas", "adjuntos", ".migite"] as const;
+
+export const MAX_OBJECT_BYTES = 10 * 1024 * 1024;
 
 const MARKDOWN_FILE = /\.md$/i;
 
@@ -19,12 +21,55 @@ const isReservedRoot = (name: string): boolean =>
 
 const toPosix = (value: string): string => value.replaceAll("\\", "/");
 
-const isRegularFile = (path: string): boolean => {
-  try {
-    return statSync(path).isFile();
-  } catch {
+const escapesRoot = (root: string, absolutePath: string): boolean => {
+  const rel = relative(root, absolutePath);
+  return rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
+};
+
+const isVaultPath = (root: string, absolutePath: string, kind: "file" | "directory"): boolean => {
+  const rel = relative(root, absolutePath);
+  if (rel === "") {
+    return kind === "directory";
+  }
+  if (escapesRoot(root, absolutePath)) {
     return false;
   }
+  const parts = rel.split(sep);
+  let current = root;
+  for (const [index, part] of parts.entries()) {
+    current = join(current, part);
+    let stats: ReturnType<typeof lstatSync>;
+    try {
+      stats = lstatSync(current);
+    } catch {
+      return false;
+    }
+    if (stats.isSymbolicLink()) {
+      return false;
+    }
+    const isLast = index === parts.length - 1;
+    if (isLast) {
+      if (kind === "file" ? !stats.isFile() : !stats.isDirectory()) {
+        return false;
+      }
+    } else if (!stats.isDirectory()) {
+      return false;
+    }
+  }
+  return true;
+};
+
+const isRegularFile = (root: string, path: string): boolean => isVaultPath(root, path, "file");
+
+export const isVaultDirectory = (root: string, path: string): boolean =>
+  isVaultPath(root, path, "directory");
+
+export const readObjectText = (absolutePath: string): string => {
+  const { size } = statSync(absolutePath);
+  if (size > MAX_OBJECT_BYTES) {
+    throw new Error(`object file exceeds the ${MAX_OBJECT_BYTES} byte read limit`);
+  }
+  return readFileSync(absolutePath, "utf8");
 };
 
 const relativeSegments = (relativePath: string): string[] =>
@@ -126,7 +171,7 @@ export const resolveVaultPath = (root: string, ref: string): VaultFile | undefin
       continue;
     }
     const absolutePath = join(root, ...name);
-    if (!isRegularFile(absolutePath)) {
+    if (!isRegularFile(root, absolutePath)) {
       continue;
     }
     return toVaultFile(root, absolutePath);

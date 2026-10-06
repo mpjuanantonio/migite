@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -152,6 +160,21 @@ describe("seedNativeTypes", () => {
     expect(result.created).toEqual(["tarea", "recordatorio", "evento", "proyecto"]);
     expect(result.skipped).toEqual(["nota"]);
     expect(readFileSync(join(tiposDir, "nota.yaml"), "utf8")).toBe(edited);
+  });
+
+  it("treats a symlinked target as skipped and never writes through it", () => {
+    const root = createRoot();
+    const tiposDir = join(root, "tipos");
+    mkdirSync(tiposDir, { recursive: true });
+    const outside = join(root, "fuera.yaml");
+    writeFileSync(outside, "contenido externo\n", "utf8");
+    symlinkSync(outside, join(tiposDir, "nota.yaml"));
+
+    const result = seedNativeTypes(tiposDir);
+
+    expect(result.created).toEqual(["tarea", "recordatorio", "evento", "proyecto"]);
+    expect(result.skipped).toEqual(["nota"]);
+    expect(readFileSync(outside, "utf8")).toBe("contenido externo\n");
   });
 
   it("reports a filesystem failure with error.typeSeedFailed", () => {

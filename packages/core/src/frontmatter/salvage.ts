@@ -25,26 +25,25 @@ const salvageAttributes = (yamlText: string): Record<string, unknown> => {
   if (yamlText.trim() === "") {
     return {};
   }
-  const document = parseDocument(yamlText);
-  if (!isMap(document.contents)) {
-    return {};
-  }
-  let resolved: unknown;
   try {
-    resolved = document.toJS();
+    const document = parseDocument(yamlText);
+    if (!isMap(document.contents)) {
+      return {};
+    }
+    const resolved: unknown = document.toJS();
+    if (typeof resolved !== "object" || resolved === null || Array.isArray(resolved)) {
+      return {};
+    }
+    const attributes: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(resolved)) {
+      if (!isReservedKey(key)) {
+        attributes[key] = value;
+      }
+    }
+    return attributes;
   } catch {
     return {};
   }
-  if (typeof resolved !== "object" || resolved === null || Array.isArray(resolved)) {
-    return {};
-  }
-  const attributes: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(resolved)) {
-    if (!isReservedKey(key)) {
-      attributes[key] = value;
-    }
-  }
-  return attributes;
 };
 
 export const salvageObject = (text: string): SalvagedObject => {

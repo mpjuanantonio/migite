@@ -18,7 +18,7 @@ const yamlProblem = (error: YAMLError): string => {
     : `invalid YAML syntax (${error.code}, line ${position.line}, column ${position.col})`;
 };
 
-export const readFrontmatter = (yamlText: string): FrontmatterRead => {
+const parseFrontmatter = (yamlText: string): FrontmatterRead => {
   const document = parseDocument(yamlText);
   if (document.errors.length > 0) {
     return { ok: false, problems: document.errors.map(yamlProblem) };
@@ -69,4 +69,12 @@ export const readFrontmatter = (yamlText: string): FrontmatterRead => {
     return { ok: false, problems };
   }
   return { ok: true, source: { document, keys, values } };
+};
+
+export const readFrontmatter = (yamlText: string): FrontmatterRead => {
+  try {
+    return parseFrontmatter(yamlText);
+  } catch {
+    return { ok: false, problems: ["invalid YAML syntax"] };
+  }
 };

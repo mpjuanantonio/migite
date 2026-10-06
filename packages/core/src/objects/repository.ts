@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, unlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
   type ObjectFrontmatter,
@@ -10,6 +10,7 @@ import { DEFAULT_TYPE } from "../frontmatter/keys.js";
 import { slugify } from "../slug.js";
 import { loadTypeRegistry, type TypeDefinition, type TypeWarning } from "../types/index.js";
 import { newUlid } from "../ulid.js";
+import { createFileExclusive, writeFileAtomic } from "./atomic.js";
 import { degradationReasons, isTypeDegraded } from "./degraded.js";
 import { ObjectOperationError } from "./errors.js";
 import type {
@@ -26,8 +27,10 @@ import { createRenameOperations, type RenameOperations } from "./rename.js";
 import { assertTimeZone, formatTimestamp } from "./timestamps.js";
 import { checkAttributeSafety, checkAttributes } from "./validate.js";
 import {
+  isVaultDirectory,
   normalizeFolder,
   objectFileCandidates,
+  readObjectText,
   resolveVaultPath,
   scanVaultFiles,
   type VaultFile,
@@ -60,7 +63,7 @@ const writeNewFile = (
 ): string | undefined => {
   for (const candidate of candidates) {
     try {
-      writeFileSync(join(dir, candidate), text, { encoding: "utf8", flag: "wx" });
+      createFileExclusive(join(dir, candidate), text);
       return candidate;
     } catch (error) {
       if (errorCode(error) !== "EEXIST") {
@@ -167,7 +170,7 @@ export const createObjectRepository = (
   const tryRead = (file: VaultFile): { text: string; result: ReadObjectResult } => {
     let text: string;
     try {
-      text = readFileSync(file.absolutePath, "utf8");
+      text = readObjectText(file.absolutePath);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return {
@@ -221,17 +224,9 @@ export const createObjectRepository = (
   };
 
   const withIndex = <T>(lookup: (current: ObjectIndex) => T | undefined): T | undefined => {
-    const stale = index !== undefined;
-    let current = index;
-    if (current === undefined) {
-      current = buildIndex();
-      index = current;
+    if (index === undefined) {
+      index = buildIndex();
     }
-    const found = lookup(current);
-    if (found !== undefined || !stale) {
-      return found;
-    }
-    index = buildIndex();
     return lookup(index);
   };
 
@@ -305,9 +300,7 @@ export const createObjectRepository = (
     const scanned: LocatedObject[] = [];
     for (const file of scanVaultFiles(vaultDir)) {
       const read = tryRead(file);
-      if (read.result.ok) {
-        scanned.push({ file, text: read.text, result: read.result });
-      }
+      scanned.push({ file, text: read.text, result: read.result });
     }
     return scanned;
   };
@@ -370,6 +363,9 @@ export const createObjectRepository = (
     };
     const text = writeObjectFile(frontmatter, body);
     mkdirSync(dir, { recursive: true });
+    if (!isVaultDirectory(vaultDir, dir)) {
+      throw invalidWrite([`folder "${folder}" is not a regular directory inside the vault`]);
+    }
     const fileName = writeNewFile(dir, objectFileCandidates(slug, id), text);
     if (fileName === undefined) {
       throw invalidWrite([`no free file name for "${slug}" in folder "${folder}"`]);
@@ -443,7 +439,19 @@ export const createObjectRepository = (
       attributes,
     };
     const text = writeObjectFile(frontmatter, body, located.text);
-    writeFileSync(located.file.absolutePath, text, "utf8");
+    let current: string;
+    try {
+      current = readObjectText(located.file.absolutePath);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw invalidWrite([`unreadable object file "${located.file.relativePath}"`, detail]);
+    }
+    if (current !== located.text) {
+      throw invalidWrite([
+        `object file "${located.file.relativePath}" changed on disk since it was read`,
+      ]);
+    }
+    writeFileAtomic(located.file.absolutePath, text);
     invalidateIndex();
     return toRecord(located.file, frontmatter, body);
   };

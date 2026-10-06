@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -11,10 +11,20 @@ import {
   type ObjectRepository,
 } from "./index.js";
 
-const fsGates = vi.hoisted(() => ({
-  mutate: undefined as { suffix: string; onRead: number; text: string } | undefined,
-  reads: new Map<string, number>(),
-}));
+const fsGates = vi.hoisted(() => {
+  const injectedError = (code: string, action: string): NodeJS.ErrnoException => {
+    const error = new Error(`${code}: injected failure, ${action}`) as NodeJS.ErrnoException;
+    error.code = code;
+    return error;
+  };
+  return {
+    mutate: undefined as { suffix: string; onRead: number; text: string } | undefined,
+    reads: new Map<string, number>(),
+    linkError: undefined as string | undefined,
+    fsyncError: undefined as string | undefined,
+    injectedError,
+  };
+});
 
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
@@ -33,6 +43,21 @@ vi.mock("node:fs", async (importOriginal) => {
         return gate.text;
       }
       return actual.readFileSync(path, options);
+    },
+    linkSync: (
+      existingPath: Parameters<typeof actual.linkSync>[0],
+      newPath: Parameters<typeof actual.linkSync>[1],
+    ) => {
+      if (fsGates.linkError === undefined) {
+        return actual.linkSync(existingPath, newPath);
+      }
+      throw fsGates.injectedError(fsGates.linkError, `link "${String(newPath)}"`);
+    },
+    fsyncSync: (fd: number) => {
+      if (fsGates.fsyncError === undefined) {
+        return actual.fsyncSync(fd);
+      }
+      throw fsGates.injectedError(fsGates.fsyncError, "fsync");
     },
   };
 });
@@ -72,6 +97,8 @@ const parseVaultFile = (
 afterEach(() => {
   fsGates.mutate = undefined;
   fsGates.reads.clear();
+  fsGates.linkError = undefined;
+  fsGates.fsyncError = undefined;
   for (const root of roots.splice(0)) {
     rmSync(root, { recursive: true, force: true });
   }
@@ -220,6 +247,21 @@ describe("renameObject", () => {
     expect(readFileSync(join(vaultDir, "objetivo.md"), "utf8")).toContain("Otra");
   });
 
+  it("keeps the old name and title when the new content cannot be written", () => {
+    const { vaultDir, repo } = setupVault();
+    const target = repo.createObject({ title: "Destino", body: "contenido\n" });
+    const before = readFileSync(join(vaultDir, "destino.md"), "utf8");
+    fsGates.linkError = "EIO";
+
+    const error = captureError(() => repo.renameObject(target.id, "Objetivo"));
+
+    expect(error.key).toBe("error.objectRenameFailed");
+    expect(existsSync(join(vaultDir, "destino.md"))).toBe(true);
+    expect(existsSync(join(vaultDir, "objetivo.md"))).toBe(false);
+    expect(readFileSync(join(vaultDir, "destino.md"), "utf8")).toBe(before);
+    expect(readdirSync(vaultDir).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+  });
+
   it("skips an incoming file modified on disk after the scan and reports the broken links", () => {
     const { vaultDir, repo } = setupVault();
     const target = repo.createObject({ title: "Destino" });
@@ -287,6 +329,32 @@ describe("moveObject", () => {
 
     expect(moved.path).toBe(`notas/mover-${root.id.slice(0, 4).toLowerCase()}.md`);
     expect(existsSync(join(vaultDir, "notas/mover.md"))).toBe(true);
+  });
+
+  it("propagates a non-EXDEV link failure without falling back", () => {
+    const { vaultDir, repo } = setupVault();
+    const record = repo.createObject({ title: "Mover" });
+    fsGates.linkError = "EPERM";
+
+    const error = captureError(() => repo.moveObject(record.id, "notas"));
+
+    expect(error.key).toBe("error.objectRenameFailed");
+    expect(error.problems.join(" ")).toContain("EPERM");
+    expect(existsSync(join(vaultDir, "mover.md"))).toBe(true);
+    expect(existsSync(join(vaultDir, "notas/mover.md"))).toBe(false);
+  });
+
+  it("falls back to a copy only for cross-device links", () => {
+    const { vaultDir, repo } = setupVault();
+    const record = repo.createObject({ title: "Mover", body: "cuerpo\n" });
+    fsGates.linkError = "EXDEV";
+
+    const moved = repo.moveObject(record.id, "notas");
+
+    fsGates.linkError = undefined;
+    expect(moved.path).toBe("notas/mover.md");
+    expect(existsSync(join(vaultDir, "mover.md"))).toBe(false);
+    expect(parseVaultFile(vaultDir, moved.path).body).toBe("cuerpo\n");
   });
 
   it("rejects a reserved or absolute folder without moving the file", () => {

@@ -43,7 +43,7 @@ const attributeEntryId = (entry: unknown, index: number): string => {
   return `#${index}`;
 };
 
-export const parseTypeDetails = (text: string): TypeFileDetails => {
+const parseTypeFile = (text: string): TypeFileDetails => {
   let raw: unknown;
   try {
     raw = parseYaml(text);
@@ -133,6 +133,14 @@ export const parseTypeDetails = (text: string): TypeFileDetails => {
     fileProblems,
     attributeWarnings,
   };
+};
+
+export const parseTypeDetails = (text: string): TypeFileDetails => {
+  try {
+    return parseTypeFile(text);
+  } catch {
+    return { definition: null, fileProblems: ["invalid YAML syntax"], attributeWarnings: [] };
+  }
 };
 
 export const parseTypeYaml = (

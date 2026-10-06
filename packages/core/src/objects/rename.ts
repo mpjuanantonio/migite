@@ -1,12 +1,4 @@
-import {
-  existsSync,
-  linkSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { constants, copyFileSync, linkSync, mkdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { type ObjectFrontmatter, writeObjectFile } from "../frontmatter/index.js";
 import {
@@ -18,10 +10,17 @@ import {
   type WikiLinkTarget,
 } from "../links/index.js";
 import { slugify } from "../slug.js";
+import { removeFileQuietly, writeFileAtomic, writeTempFile } from "./atomic.js";
 import { ObjectOperationError } from "./errors.js";
 import type { IncomingLink, LocatedObject, ObjectRecord, RenameReport } from "./model.js";
 import { formatTimestamp } from "./timestamps.js";
-import { normalizeFolder, objectFileCandidates, type VaultFile } from "./vault.js";
+import {
+  isVaultDirectory,
+  normalizeFolder,
+  objectFileCandidates,
+  readObjectText,
+  type VaultFile,
+} from "./vault.js";
 
 export type RenameHost = {
   vaultDir: string;
@@ -53,31 +52,30 @@ const errorCode = (error: unknown): string | undefined =>
 const detailOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
-const tryLink = (source: string, target: string): "linked" | "taken" | "failed" => {
-  try {
-    linkSync(source, target);
-    return "linked";
-  } catch (error) {
-    return errorCode(error) === "EEXIST" ? "taken" : "failed";
-  }
-};
-
 const moveFile = (source: string, target: string): boolean => {
   if (source === target) {
     return true;
   }
-  const linked = tryLink(source, target);
-  if (linked === "taken") {
-    return false;
+  try {
+    linkSync(source, target);
+  } catch (error) {
+    const code = errorCode(error);
+    if (code === "EEXIST") {
+      return false;
+    }
+    if (code !== "EXDEV") {
+      throw error;
+    }
+    try {
+      copyFileSync(source, target, constants.COPYFILE_EXCL);
+    } catch (copyError) {
+      if (errorCode(copyError) === "EEXIST") {
+        return false;
+      }
+      throw copyError;
+    }
   }
-  if (linked === "linked") {
-    unlinkSync(source);
-    return true;
-  }
-  if (existsSync(target)) {
-    return false;
-  }
-  renameSync(source, target);
+  unlinkSync(source);
   return true;
 };
 
@@ -121,17 +119,51 @@ export const createRenameOperations = (host: RenameHost): RenameOperations => {
 
   const readText = (file: VaultFile): string => {
     try {
-      return readFileSync(file.absolutePath, "utf8");
+      return readObjectText(file.absolutePath);
     } catch (error) {
       throw renameFailed(file.relativePath, detailOf(error));
     }
   };
 
-  const writeText = (file: VaultFile, text: string): void => {
+  const writeAndClaim = (
+    source: string,
+    dir: string,
+    displayPath: string,
+    candidates: readonly string[],
+    text: string,
+  ): string | undefined => {
+    let temp: string | undefined;
     try {
-      writeFileSync(file.absolutePath, text, "utf8");
+      for (const candidate of candidates) {
+        const target = join(dir, candidate);
+        if (target === source) {
+          writeFileAtomic(target, text);
+          return candidate;
+        }
+        temp ??= writeTempFile(dir, text);
+        try {
+          linkSync(temp, target);
+        } catch (error) {
+          if (errorCode(error) === "EEXIST") {
+            continue;
+          }
+          throw error;
+        }
+        try {
+          unlinkSync(source);
+        } catch (error) {
+          removeFileQuietly(target);
+          throw error;
+        }
+        return candidate;
+      }
+      return undefined;
     } catch (error) {
-      throw renameFailed(file.relativePath, detailOf(error));
+      throw renameFailed(displayPath, detailOf(error));
+    } finally {
+      if (temp !== undefined) {
+        removeFileQuietly(temp);
+      }
     }
   };
 
@@ -144,8 +176,14 @@ export const createRenameOperations = (host: RenameHost): RenameOperations => {
     if (title === object.title) {
       return { object, rewritten: [], skipped: [], unresolvedLinks: [] };
     }
-    const scanned = scanReadable();
-    const collisions = scanned.filter(
+    const scanned = host.scanObjects();
+    const readable: ScannedObject[] = [];
+    for (const entry of scanned) {
+      if (entry.result.ok) {
+        readable.push({ file: entry.file, text: entry.text, object: entry.result.object });
+      }
+    }
+    const collisions = readable.filter(
       (entry) =>
         entry.object.id !== object.id &&
         normalizeTitle(entry.object.title) === normalizeTitle(title),
@@ -169,15 +207,6 @@ export const createRenameOperations = (host: RenameHost): RenameOperations => {
       if (ownText !== located.text) {
         throw renameFailed(located.file.relativePath, "file changed on disk since it was read");
       }
-      const claimed = claimFileName(
-        located.file.absolutePath,
-        dir,
-        objectFileCandidates(slug, object.id),
-      );
-      if (claimed === undefined) {
-        throw host.invalidWrite([`no free file name for "${slug}" in folder "${object.folder}"`]);
-      }
-      fileName = claimed;
       const frontmatter: ObjectFrontmatter = {
         id: object.id,
         type: object.type,
@@ -187,17 +216,21 @@ export const createRenameOperations = (host: RenameHost): RenameOperations => {
         links,
         attributes: object.attributes,
       };
+      const claimed = writeAndClaim(
+        located.file.absolutePath,
+        dir,
+        located.file.relativePath,
+        objectFileCandidates(slug, object.id),
+        writeObjectFile(frontmatter, body, ownText),
+      );
+      if (claimed === undefined) {
+        throw host.invalidWrite([`no free file name for "${slug}" in folder "${object.folder}"`]);
+      }
+      fileName = claimed;
       const renamedPath = object.folder === "" ? fileName : `${object.folder}/${fileName}`;
-      const target: VaultFile = {
-        ...located.file,
-        absolutePath: join(dir, fileName),
-        relativePath: renamedPath,
-        fileName,
-      };
-      writeText(target, writeObjectFile(frontmatter, body, ownText));
 
       const targets = new Map<string, WikiLinkTarget>();
-      for (const entry of scanned) {
+      for (const entry of readable) {
         if (entry.object.id !== object.id) {
           const key = normalizeTitle(entry.object.title);
           if (!targets.has(key)) {
@@ -216,22 +249,36 @@ export const createRenameOperations = (host: RenameHost): RenameOperations => {
       };
 
       for (const entry of scanned) {
-        if (entry.object.id === object.id) {
+        const path = entry.file.relativePath;
+        if (!entry.result.ok) {
+          const affected = findUnresolvedWikiLinks(entry.text, resolve).filter(
+            (link) => normalizeTitle(link.title) === oldNorm,
+          );
+          if (affected.length === 0) {
+            continue;
+          }
+          skipped.push({ path, problems: [...entry.result.problems] });
+          for (const link of affected) {
+            unresolvedLinks.push({ path, link: link.raw });
+          }
           continue;
         }
-        const linksInBody = parseWikiLinks(entry.object.body).some(
+        const currentObject = entry.result.object;
+        if (currentObject.id === object.id) {
+          continue;
+        }
+        const linksInBody = parseWikiLinks(currentObject.body).some(
           (link) => normalizeTitle(link.title) === oldNorm,
         );
-        const linksInFrontmatter = entry.object.links.some((value) =>
+        const linksInFrontmatter = currentObject.links.some((value) =>
           parseWikiLinks(value).some((link) => normalizeTitle(link.title) === oldNorm),
         );
         if (!linksInBody && !linksInFrontmatter) {
           continue;
         }
-        const path = entry.file.relativePath;
         let current: string;
         try {
-          current = readFileSync(entry.file.absolutePath, "utf8");
+          current = readObjectText(entry.file.absolutePath);
         } catch (error) {
           skipped.push({ path, problems: [detailOf(error)] });
           collectUnresolved(entry.text, path);
@@ -243,21 +290,21 @@ export const createRenameOperations = (host: RenameHost): RenameOperations => {
           continue;
         }
         try {
-          const nextBody = rewriteWikiLinks(entry.object.body, oldTitle, title);
-          const nextLinks = entry.object.links.map((link) =>
+          const nextBody = rewriteWikiLinks(currentObject.body, oldTitle, title);
+          const nextLinks = currentObject.links.map((link) =>
             rewriteWikiLinks(link, oldTitle, title),
           );
           const nextFrontmatter: ObjectFrontmatter = {
-            id: entry.object.id,
-            type: entry.object.type,
-            title: entry.object.title,
-            created: entry.object.created,
-            updated: entry.object.updated,
+            id: currentObject.id,
+            type: currentObject.type,
+            title: currentObject.title,
+            created: currentObject.created,
+            updated: currentObject.updated,
             links: nextLinks,
-            attributes: entry.object.attributes,
+            attributes: currentObject.attributes,
           };
           const nextText = writeObjectFile(nextFrontmatter, nextBody, current);
-          writeFileSync(entry.file.absolutePath, nextText, "utf8");
+          writeFileAtomic(entry.file.absolutePath, nextText);
           rewritten.push(path);
         } catch (error) {
           skipped.push({ path, problems: [detailOf(error)] });
@@ -296,12 +343,18 @@ export const createRenameOperations = (host: RenameHost): RenameOperations => {
     let fileName: string | undefined;
     try {
       mkdirSync(dir, { recursive: true });
+      if (!isVaultDirectory(host.vaultDir, dir)) {
+        throw host.invalidWrite([`folder "${target}" is not a regular directory inside the vault`]);
+      }
       fileName = claimFileName(
         located.file.absolutePath,
         dir,
         objectFileCandidates(stem, object.id),
       );
     } catch (error) {
+      if (error instanceof ObjectOperationError) {
+        throw error;
+      }
       throw renameFailed(object.path, detailOf(error));
     } finally {
       host.invalidateIndex();
