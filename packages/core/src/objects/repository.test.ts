@@ -342,9 +342,9 @@ describe("readObject", () => {
     expect(readOk(repo.readObject("archivadas/duplicada.md")).id).toBe(second.id);
   });
 
-  it("keeps an unreadable file raw, out of the list and out of updates", () => {
+  it("keeps an unreadable file raw, lists it as degraded and out of updates", () => {
     const { vaultDir, repo } = setupVault();
-    const broken = "---\nid: [roto\n---\ncuerpo\n";
+    const broken = "---\nid: [roto\ntitulo: Rota\nprioridad: alta\n---\ncuerpo\n";
     writeFileSync(join(vaultDir, "roto.md"), broken, "utf8");
 
     const result = repo.readObject("roto.md");
@@ -353,14 +353,45 @@ describe("readObject", () => {
     if (!result.ok) {
       expect(result.path).toBe("roto.md");
       expect(result.raw.body).toBe("cuerpo\n");
+      expect(result.raw.yamlText).toBe("id: [roto\ntitulo: Rota\nprioridad: alta\n");
       expect(result.problems.length).toBeGreaterThan(0);
+      expect(result.degraded.title).toBe("Rota");
+      expect(result.degraded.body).toBe("cuerpo\n");
+      expect(result.degraded.attributes).toEqual({ prioridad: "alta" });
     }
-    expect(repo.listObjects().some((summary) => summary.path === "roto.md")).toBe(false);
+    const summary = repo.listObjects().find((item) => item.path === "roto.md");
+
+    expect(summary).toMatchObject({
+      id: "",
+      type: "",
+      title: "Rota",
+      path: "roto.md",
+      folder: "",
+      updated: "",
+    });
+    expect(summary?.degraded).toHaveLength(1);
+    expect(summary?.degraded[0]?.kind).toBe("unreadableFrontmatter");
 
     const error = captureError(() => repo.updateObject("roto.md", { body: "nuevo" }));
 
     expect(error.key).toBe("error.invalidObjectWrite");
     expect(readFileSync(join(vaultDir, "roto.md"), "utf8")).toBe(broken);
+  });
+
+  it("falls back to the file name and an empty attribute map when no YAML is readable", () => {
+    const { vaultDir, repo } = setupVault();
+    writeFileSync(join(vaultDir, "leeme.md"), "sin frontmatter\n", "utf8");
+
+    const result = repo.readObject("leeme.md");
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.degraded).toEqual({
+        title: "leeme",
+        body: "sin frontmatter\n",
+        attributes: {},
+      });
+    }
   });
 
   it("reads a value that fails validation without destroying it", () => {
@@ -655,8 +686,18 @@ reservado
 
     expect(list.map((summary) => summary.path).sort()).toEqual([
       "en-la-raiz.md",
+      "leeme.md",
       "proyectos/2026/informe-anual.md",
       "proyectos/tipos/apunte-de-tipos.md",
+    ]);
+    const broken = list.find((summary) => summary.path === "leeme.md");
+
+    expect(broken).toMatchObject({ id: "", type: "", title: "leeme", updated: "" });
+    expect(broken?.degraded).toEqual([
+      {
+        kind: "unreadableFrontmatter",
+        problems: ['missing frontmatter: file must start with "---"'],
+      },
     ]);
     const informe = list.find((summary) => summary.title === "Informe anual");
     if (informe === undefined) {

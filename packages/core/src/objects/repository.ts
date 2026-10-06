@@ -1,6 +1,11 @@
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { type ObjectFrontmatter, parseObjectFile, writeObjectFile } from "../frontmatter/index.js";
+import {
+  type ObjectFrontmatter,
+  parseObjectFile,
+  salvageObject,
+  writeObjectFile,
+} from "../frontmatter/index.js";
 import { DEFAULT_TYPE } from "../frontmatter/keys.js";
 import { slugify } from "../slug.js";
 import { loadTypeRegistry, type TypeDefinition, type TypeWarning } from "../types/index.js";
@@ -9,6 +14,7 @@ import { degradationReasons } from "./degraded.js";
 import { ObjectOperationError } from "./errors.js";
 import type {
   CreateObjectInput,
+  DegradedObjectView,
   LocatedObject,
   ObjectRecord,
   ObjectRepository,
@@ -149,6 +155,15 @@ export const createObjectRepository = (
     degraded: [...record.degraded],
   });
 
+  const degradedView = (file: VaultFile, text: string): DegradedObjectView => {
+    const salvaged = salvageObject(text);
+    return {
+      title: salvaged.title ?? file.fileName.replace(/\.md$/i, ""),
+      body: salvaged.body,
+      attributes: salvaged.attributes,
+    };
+  };
+
   const tryRead = (file: VaultFile): { text: string; result: ReadObjectResult } => {
     let text: string;
     try {
@@ -162,6 +177,7 @@ export const createObjectRepository = (
           path: file.relativePath,
           problems: [message],
           raw: { yamlText: "", body: "" },
+          degraded: degradedView(file, ""),
         },
       };
     }
@@ -169,7 +185,13 @@ export const createObjectRepository = (
     if (!parsed.ok) {
       return {
         text,
-        result: { ok: false, path: file.relativePath, problems: parsed.problems, raw: parsed.raw },
+        result: {
+          ok: false,
+          path: file.relativePath,
+          problems: parsed.problems,
+          raw: parsed.raw,
+          degraded: degradedView(file, text),
+        },
       };
     }
     return { text, result: { ok: true, object: toRecord(file, parsed.frontmatter, parsed.body) } };
@@ -255,13 +277,26 @@ export const createObjectRepository = (
     return located;
   };
 
+  const toDegradedSummary = (
+    file: VaultFile,
+    result: Extract<ReadObjectResult, { ok: false }>,
+  ): ObjectSummary => ({
+    id: "",
+    type: "",
+    title: result.degraded.title,
+    path: result.path,
+    folder: file.folder,
+    updated: "",
+    degraded: [{ kind: "unreadableFrontmatter", problems: [...result.problems] }],
+  });
+
   const listObjects = (): ObjectSummary[] => {
     const summaries: ObjectSummary[] = [];
     for (const file of scanVaultFiles(vaultDir)) {
       const read = tryRead(file);
-      if (read.result.ok) {
-        summaries.push(toSummary(read.result.object));
-      }
+      summaries.push(
+        read.result.ok ? toSummary(read.result.object) : toDegradedSummary(file, read.result),
+      );
     }
     return summaries.sort((left, right) => left.id.localeCompare(right.id));
   };

@@ -61,6 +61,7 @@ export {
   createAttributeTray,
   createObjectRepository,
   type DegradationReason,
+  type DegradedObjectView,
   type IncomingLink,
   ObjectOperationError,
   type ObjectRecord,

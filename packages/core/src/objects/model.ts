@@ -5,7 +5,14 @@ import type { VaultFile } from "./vault.js";
 export type DegradationReason =
   | { kind: "unknownType"; type: string }
   | { kind: "brokenType"; type: string; problems: readonly string[] }
-  | { kind: "invalidAttribute"; key: string; problems: readonly string[] };
+  | { kind: "invalidAttribute"; key: string; problems: readonly string[] }
+  | { kind: "unreadableFrontmatter"; problems: readonly string[] };
+
+export type DegradedObjectView = {
+  title: string;
+  body: string;
+  attributes: Record<string, unknown>;
+};
 
 export type ObjectSummary = {
   id: string;
@@ -56,6 +63,7 @@ export type ReadObjectResult =
       path: string;
       problems: readonly string[];
       raw: { yamlText: string; body: string };
+      degraded: DegradedObjectView;
     };
 
 export type LocatedObject = {

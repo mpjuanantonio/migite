@@ -3,6 +3,7 @@ export { ObjectOperationError } from "./errors.js";
 export type {
   CreateObjectInput,
   DegradationReason,
+  DegradedObjectView,
   IncomingLink,
   ObjectRecord,
   ObjectRepository,
