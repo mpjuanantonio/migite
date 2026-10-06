@@ -637,8 +637,8 @@ describe("updateObject", () => {
 
     const error = captureError(() => repo.updateObject(note.id, changes as UpdateObjectChanges));
 
-    expect(error.key).toBe("error.invalidObjectWrite");
-    expect(error.problems.join(" ")).toContain('"tipo" field is immutable');
+    expect(error.key).toBe("error.typeImmutable");
+    expect(error.message).toBe(t("error.typeImmutable"));
   });
 
   it("validates the merged result so option values cannot become invalid", () => {

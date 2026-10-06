@@ -45,6 +45,7 @@ export const es = {
   "error.translationKeyMissing":
     'clave "{key}" presente en [{presentIn}] pero ausente en [{absentIn}]',
   "error.typeAlreadyExists": "ya existe un tipo con id «{id}»",
+  "error.typeImmutable": "el campo «tipo» es inmutable y no se puede cambiar",
   "error.typeNotEditable": "el tipo «{id}» es nativo y no se puede editar",
   "error.typeSeedFailed": "No se pudieron sembrar los tipos nativos en {path}: {problems}",
   "error.unauthorized": "Se requiere autenticación",

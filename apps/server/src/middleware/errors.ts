@@ -30,6 +30,7 @@ export type ErrorCode =
   | "missing_required_attribute"
   | "not_found"
   | "object_not_found"
+  | "rate_limited"
   | "reserved_attribute_key"
   | "type_already_exists"
   | "type_not_editable"
@@ -51,6 +52,7 @@ const CODE_STATUS: Readonly<Record<ErrorCode, ContentfulStatusCode>> = {
   missing_required_attribute: 422,
   not_found: 404,
   object_not_found: 404,
+  rate_limited: 429,
   reserved_attribute_key: 422,
   type_already_exists: 409,
   type_not_editable: 403,
@@ -84,6 +86,7 @@ const CODE_MESSAGES: Readonly<Partial<Record<ErrorCode, TranslationKey>>> = {
   index_error: "error.indexError",
   internal_error: "error.internalError",
   not_found: "error.notFound",
+  rate_limited: "error.rateLimited",
   unauthorized: "error.unauthorized",
   validation_error: "error.validationError",
 };
@@ -95,6 +98,7 @@ const HTTP_ERROR_CODES: Readonly<Partial<Record<number, ErrorCode>>> = {
   404: "not_found",
   409: "conflict",
   422: "validation_error",
+  429: "rate_limited",
 };
 
 const MAX_DETAIL_LENGTH = 300;
@@ -185,6 +189,7 @@ type ApiError = {
   readonly status: ContentfulStatusCode;
   readonly mensaje: string;
   readonly detalle: string;
+  readonly problems: readonly string[];
   readonly stack?: string;
 };
 
@@ -192,6 +197,14 @@ const internalMessage = (error: Error): string => {
   const name = error.name.trim().length > 0 ? error.name.trim() : "Error";
   const message = error.message.trim();
   return message.length > 0 ? `${name}: ${message}` : name;
+};
+
+const withProblems = (message: string, problems: readonly string[]): string => {
+  const pending = problems.filter(
+    (problem) => problem.trim().length > 0 && !message.includes(problem),
+  );
+  const detail = pending.join("; ");
+  return detail.length > 0 ? `${message} (${detail})` : message;
 };
 
 const codeMessage = (codigo: ErrorCode, locale: Locale): string =>
@@ -205,6 +218,7 @@ const describeError = (error: Error, locale: Locale): ApiError => {
       status: CODE_STATUS.validation_error,
       mensaje: detail.length > 0 ? detail : codeMessage("validation_error", locale),
       detalle: internalMessage(error),
+      problems: [],
       stack: error.stack,
     };
   }
@@ -213,8 +227,9 @@ const describeError = (error: Error, locale: Locale): ApiError => {
     return {
       codigo,
       status: CODE_STATUS[codigo],
-      mensaje: t(error.key, error.params, locale),
+      mensaje: withProblems(t(error.key, error.params, locale), error.problems),
       detalle: internalMessage(error),
+      problems: [...error.problems],
       stack: error.stack,
     };
   }
@@ -223,8 +238,9 @@ const describeError = (error: Error, locale: Locale): ApiError => {
     return {
       codigo,
       status: CODE_STATUS[codigo],
-      mensaje: t(error.key, error.params, locale),
+      mensaje: withProblems(t(error.key, error.params, locale), error.problems),
       detalle: internalMessage(error),
+      problems: [...error.problems],
       stack: error.stack,
     };
   }
@@ -234,6 +250,7 @@ const describeError = (error: Error, locale: Locale): ApiError => {
       status: CODE_STATUS.config_error,
       mensaje: t("error.invalidConfig", { path: error.path }, locale),
       detalle: internalMessage(error),
+      problems: [],
       stack: error.stack,
     };
   }
@@ -243,6 +260,7 @@ const describeError = (error: Error, locale: Locale): ApiError => {
       status: CODE_STATUS.index_error,
       mensaje: codeMessage("index_error", locale),
       detalle: internalMessage(error),
+      problems: [],
       stack: error.stack,
     };
   }
@@ -254,6 +272,7 @@ const describeError = (error: Error, locale: Locale): ApiError => {
       status: mapped === undefined && error.status < 500 ? error.status : CODE_STATUS[codigo],
       mensaje: codeMessage(codigo, locale),
       detalle: `HTTP ${error.status} ${internalMessage(error)}`,
+      problems: [],
       stack: error.stack,
     };
   }
@@ -262,16 +281,18 @@ const describeError = (error: Error, locale: Locale): ApiError => {
     status: CODE_STATUS.internal_error,
     mensaje: codeMessage("internal_error", locale),
     detalle: internalMessage(error),
+    problems: [],
     stack: error.stack,
   };
 };
 
 const logError = (c: Context<ServerEnv>, api: ApiError): void => {
+  const problems = api.problems.length > 0 ? ` problems: ${api.problems.join("; ")}` : "";
   writeLog({
     event: "error",
     requestId: c.get("requestId") ?? createRequestId(),
     codigo: api.codigo,
-    mensaje: api.detalle,
+    mensaje: `${api.detalle}${problems}`,
     stack: api.stack,
   });
 };

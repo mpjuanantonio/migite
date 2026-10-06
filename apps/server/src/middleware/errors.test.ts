@@ -217,6 +217,53 @@ describe("registerErrorHandling", () => {
     );
   });
 
+  it("appends TypeOperationError problems to the message and the log", async () => {
+    const app = testApp();
+    app.get("/tipo/invalido", () => {
+      throw new TypeOperationError("error.validationError", {}, [
+        'attribute "titulo": missing required field "nombre"',
+      ]);
+    });
+
+    const res = await app.request("/tipo/invalido", { headers: { "accept-language": "en" } });
+
+    expect(res.status).toBe(400);
+    const body = await errorFrom(res);
+    expect(body.error.codigo).toBe("validation_error");
+    expect(body.error.mensaje).toContain("The data provided is not valid");
+    expect(body.error.mensaje).toContain('missing required field "nombre"');
+
+    const errorEntry = logEntries().find((entry) => entry.event === "error");
+    expect(String(errorEntry?.mensaje)).toContain('missing required field "nombre"');
+  });
+
+  it("does not duplicate problems already present in the localized message", async () => {
+    const app = testApp();
+    app.get("/objeto/invalido", () => {
+      throw new ObjectOperationError("error.invalidObjectWrite", { problems: "bad folder" }, [
+        "bad folder",
+      ]);
+    });
+
+    const body = await errorFrom(await app.request("/objeto/invalido"));
+    expect(body.error.mensaje).toContain("bad folder");
+    expect(body.error.mensaje.match(/bad folder/g)).toHaveLength(1);
+  });
+
+  it("maps HTTP 429 to rate_limited", async () => {
+    const app = testApp();
+    app.get("/limitado", () => {
+      throw new HTTPException(429);
+    });
+
+    const res = await app.request("/limitado", { headers: { "accept-language": "en" } });
+
+    expect(res.status).toBe(429);
+    const body = await errorFrom(res);
+    expect(body.error.codigo).toBe("rate_limited");
+    expect(body.error.mensaje).toBe("Too many attempts. Try again later");
+  });
+
   it("maps ConfigError and IndexError to stable codes", async () => {
     const app = testApp();
     app.get("/config", () => {

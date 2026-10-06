@@ -146,9 +146,7 @@ export const patchObjeto = (
   const repository = createRepository(deps);
   const current = repository.readObject(ref);
   if (changes.tipo !== undefined && (!current.ok || current.object.type !== changes.tipo)) {
-    throw new ObjectOperationError("error.invalidObjectWrite", {
-      problems: 'the "tipo" field is immutable and cannot be changed',
-    });
+    throw new ObjectOperationError("error.typeImmutable");
   }
 
   let effectiveRef = ref;

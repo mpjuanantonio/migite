@@ -447,6 +447,15 @@ describe("PATCH /api/objetos/:id", () => {
     expect(body.error.mensaje).toContain("renombrar");
   });
 
+  it("rejects changing tipo with a localized immutable-write error", async () => {
+    const res = await sendJson("PATCH", `/api/objetos/${ALFA}`, { tipo: "tarea" });
+
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as ErrorBody;
+    expect(body.error.codigo).toBe("invalid_object_write");
+    expect(body.error.mensaje).toBe("el campo «tipo» es inmutable y no se puede cambiar");
+  });
+
   it("answers object_not_found for unknown objects", async () => {
     const res = await sendJson("PATCH", "/api/objetos/no-existe", { cuerpo: "x" });
 

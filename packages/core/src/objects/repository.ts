@@ -1,5 +1,5 @@
 import { unlinkSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import {
   type ObjectFrontmatter,
   parseObjectFile,
@@ -82,6 +82,7 @@ export const createObjectRepository = (
   const vaultDir = resolve(options.vaultDir);
   const timeZone = assertTimeZone(options.timeZone ?? "UTC");
   const tiposDir = join(vaultDir, "tipos");
+  const sanitizePath = (message: string): string => message.replaceAll(vaultDir, ".");
 
   const emit = (event: DomainEvent): void => {
     options.onEvent?.(event);
@@ -126,7 +127,9 @@ export const createObjectRepository = (
   const requireDefinition = (typeId: string): TypeDefinition => {
     const definition = currentRegistry().types.get(typeId);
     if (definition === undefined) {
-      throw invalidWrite([`unknown type "${typeId}" (no type definition in ${tiposDir})`]);
+      throw invalidWrite([
+        `unknown type "${typeId}" (no type definition in ${basename(tiposDir)})`,
+      ]);
     }
     return definition;
   };
@@ -184,7 +187,7 @@ export const createObjectRepository = (
         result: {
           ok: false,
           path: file.relativePath,
-          problems: [message],
+          problems: [sanitizePath(message)],
           raw: { yamlText: "", body: "" },
           degraded: degradedView(file, ""),
         },
@@ -408,7 +411,7 @@ export const createObjectRepository = (
     }
     const requestedType: unknown = changes.type;
     if (requestedType !== undefined && requestedType !== object.type) {
-      throw invalidWrite(['the "tipo" field is immutable; updateObject cannot change it']);
+      throw new ObjectOperationError("error.typeImmutable");
     }
     const merged = { ...object.attributes, ...(changes.attributes ?? {}) };
     const attributes: Record<string, unknown> = {};
@@ -469,7 +472,7 @@ export const createObjectRepository = (
     try {
       unlinkSync(located.file.absolutePath);
     } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
+      const detail = errorCode(error) ?? "unknown filesystem error";
       throw new ObjectOperationError("error.objectDeleteFailed", { id, detail }, [detail]);
     }
     invalidateIndex();

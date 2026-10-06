@@ -42,6 +42,7 @@ export const en = {
   "error.titleChangeRequiresRename": "changing the title requires the rename operation",
   "error.translationKeyMissing": 'key "{key}" present in [{presentIn}] but missing in [{absentIn}]',
   "error.typeAlreadyExists": 'type "{id}" already exists',
+  "error.typeImmutable": 'the "tipo" field is immutable and cannot be changed',
   "error.typeNotEditable": 'type "{id}" is native and cannot be edited',
   "error.typeSeedFailed": "Native types could not be seeded in {path}: {problems}",
   "error.unauthorized": "Authentication is required",
