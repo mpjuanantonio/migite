@@ -16,6 +16,7 @@ import { ObjectOperationError } from "./errors.js";
 import type {
   CreateObjectInput,
   DegradedObjectView,
+  DomainEvent,
   LocatedObject,
   ObjectRecord,
   ObjectRepository,
@@ -39,6 +40,7 @@ import {
 export type CreateObjectRepositoryOptions = {
   vaultDir: string;
   timeZone?: string;
+  onEvent?: (event: DomainEvent) => void;
 };
 
 type LoadedRegistry = {
@@ -80,6 +82,10 @@ export const createObjectRepository = (
   const vaultDir = resolve(options.vaultDir);
   const timeZone = assertTimeZone(options.timeZone ?? "UTC");
   const tiposDir = join(vaultDir, "tipos");
+
+  const emit = (event: DomainEvent): void => {
+    options.onEvent?.(event);
+  };
 
   let registry: LoadedRegistry | undefined;
   let index: ObjectIndex | undefined;
@@ -371,6 +377,7 @@ export const createObjectRepository = (
     }
     invalidateIndex();
     const relativePath = folder === "" ? fileName : `${folder}/${fileName}`;
+    emit({ type: "ObjectCreated", objectId: id, path: relativePath });
     return {
       id,
       type: typeId,
@@ -452,11 +459,13 @@ export const createObjectRepository = (
     }
     writeFileAtomic(located.file.absolutePath, text);
     invalidateIndex();
+    emit({ type: "ObjectUpdated", objectId: object.id, path: located.file.relativePath });
     return toRecord(located.file, frontmatter, body);
   };
 
   const deleteObject = (id: string): void => {
     const located = locate(id);
+    const objectId = located.result.ok ? located.result.object.id : id;
     try {
       unlinkSync(located.file.absolutePath);
     } catch (error) {
@@ -464,6 +473,7 @@ export const createObjectRepository = (
       throw new ObjectOperationError("error.objectDeleteFailed", { id, detail }, [detail]);
     }
     invalidateIndex();
+    emit({ type: "ObjectDeleted", objectId, path: located.file.relativePath });
   };
 
   const listTypes = (): TypeDefinition[] =>
@@ -482,6 +492,7 @@ export const createObjectRepository = (
     invalidateIndex,
     invalidWrite,
     ambiguousTitle,
+    emit,
   });
 
   return {

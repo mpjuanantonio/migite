@@ -12,7 +12,13 @@ import {
 import { slugify } from "../slug.js";
 import { removeFileQuietly, writeFileAtomic, writeTempFile } from "./atomic.js";
 import { ObjectOperationError } from "./errors.js";
-import type { IncomingLink, LocatedObject, ObjectRecord, RenameReport } from "./model.js";
+import type {
+  DomainEvent,
+  IncomingLink,
+  LocatedObject,
+  ObjectRecord,
+  RenameReport,
+} from "./model.js";
 import { formatTimestamp } from "./timestamps.js";
 import {
   ensureVaultDirectory,
@@ -30,6 +36,7 @@ export type RenameHost = {
   invalidateIndex: () => void;
   invalidWrite: (problems: readonly string[]) => ObjectOperationError;
   ambiguousTitle: (title: string) => ObjectOperationError;
+  emit: (event: DomainEvent) => void;
 };
 
 export type RenameOperations = {
@@ -330,6 +337,7 @@ export const createRenameOperations = (host: RenameHost): RenameOperations => {
       links,
       body,
     };
+    host.emit({ type: "ObjectUpdated", objectId: object.id, path });
     return { object: renamed, rewritten, skipped, unresolvedLinks };
   };
 
@@ -367,6 +375,7 @@ export const createRenameOperations = (host: RenameHost): RenameOperations => {
       throw host.invalidWrite([`no free file name for "${stem}" in folder "${target}"`]);
     }
     const path = target === "" ? fileName : `${target}/${fileName}`;
+    host.emit({ type: "ObjectUpdated", objectId: object.id, path });
     return { ...object, path, folder: target, fileName };
   };
 

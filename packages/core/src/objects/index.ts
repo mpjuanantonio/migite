@@ -4,6 +4,7 @@ export type {
   CreateObjectInput,
   DegradationReason,
   DegradedObjectView,
+  DomainEvent,
   IncomingLink,
   ObjectRecord,
   ObjectRepository,

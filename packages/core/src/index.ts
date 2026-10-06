@@ -62,6 +62,7 @@ export {
   createObjectRepository,
   type DegradationReason,
   type DegradedObjectView,
+  type DomainEvent,
   type IncomingLink,
   ObjectOperationError,
   type ObjectRecord,

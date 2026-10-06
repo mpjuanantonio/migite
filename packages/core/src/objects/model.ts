@@ -2,6 +2,12 @@ import type { SeedNativeTypesResult } from "../native-types/seed.js";
 import type { TypeDefinition, TypeWarning } from "../types/index.js";
 import type { VaultFile } from "./vault.js";
 
+export type DomainEvent = {
+  type: "ObjectCreated" | "ObjectUpdated" | "ObjectDeleted";
+  objectId: string;
+  path: string;
+};
+
 export type DegradationReason =
   | { kind: "unknownType"; type: string }
   | { kind: "brokenType"; type: string; problems: readonly string[] }
