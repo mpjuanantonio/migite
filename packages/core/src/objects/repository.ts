@@ -453,7 +453,10 @@ export const createObjectRepository = (
       current = readObjectText(located.file.absolutePath);
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
-      throw invalidWrite([`unreadable object file "${located.file.relativePath}"`, detail]);
+      throw invalidWrite([
+        `unreadable object file "${located.file.relativePath}"`,
+        sanitizePath(detail),
+      ]);
     }
     if (current !== located.text) {
       throw invalidWrite([
@@ -472,7 +475,7 @@ export const createObjectRepository = (
     try {
       unlinkSync(located.file.absolutePath);
     } catch (error) {
-      const detail = errorCode(error) ?? "unknown filesystem error";
+      const detail = sanitizePath(errorCode(error) ?? "unknown filesystem error");
       throw new ObjectOperationError("error.objectDeleteFailed", { id, detail }, [detail]);
     }
     invalidateIndex();

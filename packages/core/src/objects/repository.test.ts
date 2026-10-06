@@ -39,6 +39,7 @@ const fsGates = vi.hoisted(() => {
     unlinkError: undefined as string | undefined,
     linkError: undefined as string | undefined,
     fsyncError: undefined as string | undefined,
+    readError: undefined as { suffix: string; onRead: number; code: string } | undefined,
     readGate: undefined as { suffix: string; onRead: number; text: string } | undefined,
     reads: new Map<string, number>(),
     injectedError,
@@ -77,6 +78,11 @@ vi.mock("node:fs", async (importOriginal) => {
       const key = String(path);
       const count = (fsGates.reads.get(key) ?? 0) + 1;
       fsGates.reads.set(key, count);
+      const failure = fsGates.readError;
+      if (failure !== undefined && key.endsWith(failure.suffix) && count === failure.onRead) {
+        fsGates.readError = undefined;
+        throw fsGates.injectedError(failure.code, `read "${key}"`);
+      }
       const gate = fsGates.readGate;
       if (gate !== undefined && key.endsWith(gate.suffix) && count === gate.onRead) {
         fsGates.readGate = undefined;
@@ -149,6 +155,7 @@ afterEach(() => {
   fsGates.unlinkError = undefined;
   fsGates.linkError = undefined;
   fsGates.fsyncError = undefined;
+  fsGates.readError = undefined;
   fsGates.readGate = undefined;
   fsGates.reads.clear();
   for (const root of roots.splice(0)) {
@@ -752,6 +759,22 @@ cuerpo
     expect(unsafe.problems.join(" ")).toContain('attribute "cuando"');
     expect(reserved.key).toBe("error.invalidObjectWrite");
     expect(reserved.problems.join(" ")).toContain('reserved key "titulo"');
+  });
+
+  it("sanitizes the vault path when the pre-write read fails", () => {
+    const { vaultDir, repo } = setupVault();
+    const note = repo.createObject({ title: "Interceptada", body: "cuerpo\n" });
+    fsGates.reads.clear();
+    fsGates.readError = { suffix: note.path, onRead: 2, code: "EACCES" };
+
+    const error = captureError(() => repo.updateObject(note.path, { body: "nuevo\n" }));
+
+    expect(error.key).toBe("error.invalidObjectWrite");
+    const problems = error.problems.join(" ");
+    expect(problems).toContain("EACCES");
+    expect(problems).toContain(note.path);
+    expect(problems).not.toContain(vaultDir);
+    expect(problems).not.toContain("/tmp/");
   });
 });
 

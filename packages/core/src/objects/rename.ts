@@ -56,9 +56,6 @@ const errorCode = (error: unknown): string | undefined =>
     ? error.code
     : undefined;
 
-const detailOf = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
-
 const moveFile = (source: string, target: string): boolean => {
   if (source === target) {
     return true;
@@ -105,6 +102,11 @@ const claimFileName = (
 };
 
 export const createRenameOperations = (host: RenameHost): RenameOperations => {
+  const detailOf = (error: unknown): string => {
+    const message = error instanceof Error ? error.message : String(error);
+    return message.replaceAll(host.vaultDir, ".");
+  };
+
   const renameFailed = (path: string, detail: string): ObjectOperationError =>
     new ObjectOperationError("error.objectRenameFailed", { path }, [detail]);
 
