@@ -1,0 +1,489 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "faf38f3b-98ac-4270-a9cd-565985190041",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "tables": {
+    "acciones": {
+      "name": "acciones",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "tipo_accion": {
+          "name": "tipo_accion",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "payload": {
+          "name": "payload",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "estado": {
+          "name": "estado",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "creada": {
+          "name": "creada",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "acciones_estado_idx": {
+          "name": "acciones_estado_idx",
+          "columns": ["estado"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "atributos": {
+      "name": "atributos",
+      "columns": {
+        "objeto_id": {
+          "name": "objeto_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "clave": {
+          "name": "clave",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "valor_texto": {
+          "name": "valor_texto",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "valor_numero": {
+          "name": "valor_numero",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "valor_fecha": {
+          "name": "valor_fecha",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "atributos_objeto_id_idx": {
+          "name": "atributos_objeto_id_idx",
+          "columns": ["objeto_id"],
+          "isUnique": false
+        },
+        "atributos_clave_valor_texto_idx": {
+          "name": "atributos_clave_valor_texto_idx",
+          "columns": ["clave", "valor_texto"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "atributos_objeto_id_objetos_id_fk": {
+          "name": "atributos_objeto_id_objetos_id_fk",
+          "tableFrom": "atributos",
+          "tableTo": "objetos",
+          "columnsFrom": ["objeto_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "conversaciones": {
+      "name": "conversaciones",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "titulo": {
+          "name": "titulo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "creada": {
+          "name": "creada",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "embeddings": {
+      "name": "embeddings",
+      "columns": {
+        "fragmento_id": {
+          "name": "fragmento_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "modelo": {
+          "name": "modelo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "vector": {
+          "name": "vector",
+          "type": "blob",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "embeddings_fragmento_id_fragmentos_id_fk": {
+          "name": "embeddings_fragmento_id_fragmentos_id_fk",
+          "tableFrom": "embeddings",
+          "tableTo": "fragmentos",
+          "columnsFrom": ["fragmento_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "embeddings_fragmento_id_modelo_pk": {
+          "columns": ["fragmento_id", "modelo"],
+          "name": "embeddings_fragmento_id_modelo_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "enlaces": {
+      "name": "enlaces",
+      "columns": {
+        "origen_id": {
+          "name": "origen_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "destino_id": {
+          "name": "destino_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "contexto": {
+          "name": "contexto",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "enlaces_origen_id_idx": {
+          "name": "enlaces_origen_id_idx",
+          "columns": ["origen_id"],
+          "isUnique": false
+        },
+        "enlaces_destino_id_idx": {
+          "name": "enlaces_destino_id_idx",
+          "columns": ["destino_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "enlaces_origen_id_objetos_id_fk": {
+          "name": "enlaces_origen_id_objetos_id_fk",
+          "tableFrom": "enlaces",
+          "tableTo": "objetos",
+          "columnsFrom": ["origen_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "enlaces_destino_id_objetos_id_fk": {
+          "name": "enlaces_destino_id_objetos_id_fk",
+          "tableFrom": "enlaces",
+          "tableTo": "objetos",
+          "columnsFrom": ["destino_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "fragmentos": {
+      "name": "fragmentos",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "objeto_id": {
+          "name": "objeto_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "encabezado": {
+          "name": "encabezado",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "texto": {
+          "name": "texto",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "orden": {
+          "name": "orden",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "fragmentos_objeto_id_idx": {
+          "name": "fragmentos_objeto_id_idx",
+          "columns": ["objeto_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "fragmentos_objeto_id_objetos_id_fk": {
+          "name": "fragmentos_objeto_id_objetos_id_fk",
+          "tableFrom": "fragmentos",
+          "tableTo": "objetos",
+          "columnsFrom": ["objeto_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "mensajes": {
+      "name": "mensajes",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "conversacion_id": {
+          "name": "conversacion_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "rol": {
+          "name": "rol",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "contenido": {
+          "name": "contenido",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "creada": {
+          "name": "creada",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "mensajes_conversacion_id_idx": {
+          "name": "mensajes_conversacion_id_idx",
+          "columns": ["conversacion_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "mensajes_conversacion_id_conversaciones_id_fk": {
+          "name": "mensajes_conversacion_id_conversaciones_id_fk",
+          "tableFrom": "mensajes",
+          "tableTo": "conversaciones",
+          "columnsFrom": ["conversacion_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "meta": {
+      "name": "meta",
+      "columns": {
+        "clave": {
+          "name": "clave",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "valor": {
+          "name": "valor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "objetos": {
+      "name": "objetos",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "tipo_id": {
+          "name": "tipo_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "titulo": {
+          "name": "titulo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ruta": {
+          "name": "ruta",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "hash": {
+          "name": "hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "creado": {
+          "name": "creado",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "actualizado": {
+          "name": "actualizado",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "objetos_tipo_id_idx": {
+          "name": "objetos_tipo_id_idx",
+          "columns": ["tipo_id"],
+          "isUnique": false
+        },
+        "objetos_ruta_unique": {
+          "name": "objetos_ruta_unique",
+          "columns": ["ruta"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}
