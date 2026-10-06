@@ -55,6 +55,8 @@ export const DEFAULT_LIST_LIMIT = 100;
 
 export const MAX_SEARCH_LIMIT = 500;
 
+export const TAGS_ATTRIBUTE_KEY = "etiquetas";
+
 const MAX_QUERY_LENGTH = 512;
 
 const MAX_QUERY_TERMS = 8;
@@ -107,7 +109,7 @@ const filterConditions = (filters: ObjectFilters | undefined): SQL[] => {
   }
   if (filters.tag !== undefined && filters.tag !== "") {
     conditions.push(
-      sql`o.id IN (SELECT a.objeto_id FROM atributos a WHERE a.clave = 'etiquetas' AND a.valor_texto = ${filters.tag})`,
+      sql`o.id IN (SELECT a.objeto_id FROM atributos a WHERE a.clave = ${TAGS_ATTRIBUTE_KEY} AND a.valor_texto = ${filters.tag})`,
     );
   }
   if (filters.desde !== undefined && filters.desde !== "") {

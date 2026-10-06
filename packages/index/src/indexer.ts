@@ -364,10 +364,7 @@ const projectLinks = (
   }
 };
 
-const projectFts = (db: ProjectionDatabase, object: ObjectRecord, fullRebuild: boolean): void => {
-  if (!fullRebuild) {
-    db.run(sql`DELETE FROM fts_objetos WHERE objeto_id = ${object.id}`);
-  }
+const projectFts = (db: ProjectionDatabase, object: ObjectRecord): void => {
   db.run(
     sql`INSERT INTO fts_objetos (objeto_id, titulo, cuerpo, atributos)
         VALUES (${object.id}, ${object.title}, ${object.body}, ${attributeSearchText(object)})`,
@@ -385,7 +382,7 @@ const projectObject = (
   upsertObjectRow(db, object, sha256(fileText));
   projectAttributes(db, object, options.definition);
   projectLinks(db, object, options.resolveTitle);
-  projectFts(db, object, fullRebuild);
+  projectFts(db, object);
 };
 
 export const indexObject = (

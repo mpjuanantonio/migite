@@ -78,8 +78,19 @@ export const applyEnv = (
 const readEnv = (filePath: string, locale: Locale): readonly string[] => {
   let source: string;
   try {
+    const { size } = statSync(filePath);
+    if (size > MAX_TEXT_FILE_BYTES) {
+      throw new ConfigError(
+        ".env",
+        [t("error.fileTooLarge", { limit: MAX_TEXT_FILE_BYTES }, locale)],
+        locale,
+      );
+    }
     source = readFileSync(filePath, "utf8");
-  } catch {
+  } catch (error) {
+    if (error instanceof ConfigError) {
+      throw error;
+    }
     return [];
   }
 

@@ -21,6 +21,7 @@ Reglas:
 Anti-bucles y planificación:
 - Antes de lanzar tareas en paralelo, mapea dependencias y propiedad de ficheros: paralelo SOLO con ficheros totalmente disjuntos; si dos tareas comparten ficheros, van en serie.
 - Divide los briefs en tareas pequeñas: un entregable + tests por tarea; nada de briefs con 4 módulos a la vez.
+- Tamaño máximo de tarea: ~3 archivos por brief; si una tarea los supera, divídela en microtareas (un entregable + tests por agente).
 - Todo brief a implementador/test-architect debe exigir commit incremental y la regla de 3 fallos seguidos → escalar.
 - Si en mitad de una tarea aparece una decisión abierta (producto, formato, alcance), PARA y pregúntale al usuario antes de continuar; agrupa las preguntas.
 - Mapea las dependencias del hito al empezar y muéstraselas al usuario.

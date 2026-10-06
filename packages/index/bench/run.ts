@@ -8,6 +8,7 @@ import {
   openIndex,
   searchObjects,
   startWatcher,
+  type WatcherHandle,
 } from "../src/index.js";
 import {
   BUILD_LIMIT_MS,
@@ -32,6 +33,7 @@ const main = async (): Promise<void> => {
   const watcherDbPath = join(directory, "watcher.db");
   let handle: IndexHandle | undefined;
   let watcherHandle: IndexHandle | undefined;
+  let watcher: WatcherHandle | undefined;
   let failures = 0;
 
   try {
@@ -101,7 +103,7 @@ const main = async (): Promise<void> => {
     process.stdout.write(`Tamaño del índice:      ${formatMb(statSync(dbPath).size)}\n`);
 
     watcherHandle = openIndex({ dbPath: watcherDbPath });
-    const watcher = startWatcher({
+    watcher = startWatcher({
       db: watcherHandle.db,
       vaultDir,
       timeZone: "UTC",
@@ -126,6 +128,7 @@ const main = async (): Promise<void> => {
       `watcher synced (build): ${formatMs(syncedMs)} (RNF-013 < 30 min: ${verdict(syncedOk)})\n`,
     );
     await watcher.close();
+    watcher = undefined;
     watcherHandle.close();
     watcherHandle = undefined;
 
@@ -134,6 +137,7 @@ const main = async (): Promise<void> => {
     );
     process.exitCode = failures === 0 ? 0 : 1;
   } finally {
+    await watcher?.close();
     watcherHandle?.close();
     handle?.close();
     if (config.keep) {
