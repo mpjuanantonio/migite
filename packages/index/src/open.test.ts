@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { eq, sql } from "drizzle-orm";
@@ -143,5 +143,40 @@ describe("openIndex", () => {
     writeFileSync(corrupt, "this is not a sqlite database");
 
     expect(() => openIndex({ dbPath: corrupt })).toThrow(IndexError);
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "restricts permissions of the database directory and files",
+    () => {
+      const nested = join(directory, "nested");
+      const path = join(nested, "index.db");
+      open(path);
+
+      expect(statSync(nested).mode & 0o777).toBe(0o700);
+      for (const file of [path, `${path}-wal`, `${path}-shm`]) {
+        expect(existsSync(file)).toBe(true);
+        expect(statSync(file).mode & 0o777).toBe(0o600);
+      }
+    },
+  );
+
+  it("does not expose absolute paths in public error messages", () => {
+    const notADirectory = join(directory, "not-a-directory");
+    writeFileSync(notADirectory, "text");
+    const corrupt = join(directory, "corrupt.db");
+    writeFileSync(corrupt, "this is not a sqlite database");
+
+    for (const path of [join(notADirectory, "index.db"), corrupt]) {
+      try {
+        openIndex({ dbPath: path });
+        expect.unreachable("openIndex should have thrown");
+      } catch (error) {
+        expect(error).toBeInstanceOf(IndexError);
+        expect(error).toHaveProperty("cause");
+        const message = error instanceof Error ? error.message : "";
+        expect(message).not.toContain(path);
+        expect(message).not.toContain(directory);
+      }
+    }
   });
 });

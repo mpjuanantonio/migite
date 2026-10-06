@@ -1,5 +1,5 @@
-import { mkdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { chmodSync, mkdirSync } from "node:fs";
+import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 import { type BetterSQLite3Database, drizzle } from "drizzle-orm/better-sqlite3";
@@ -12,9 +12,6 @@ export const SCHEMA_VERSION = 1;
 export const SCHEMA_VERSION_KEY = "schema_version";
 
 const MIGRATIONS_FOLDER = fileURLToPath(new URL("../drizzle", import.meta.url));
-
-const describeError = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
 
 export class IndexError extends Error {
   constructor(message: string, options?: ErrorOptions) {
@@ -35,15 +32,30 @@ export type IndexHandle = {
   readonly close: () => void;
 };
 
+const restrictPermissions = (path: string, mode: number): void => {
+  try {
+    chmodSync(path, mode);
+  } catch {
+    return;
+  }
+};
+
+const restrictIndexFiles = (dbPath: string): void => {
+  restrictPermissions(dirname(dbPath), 0o700);
+  for (const suffix of ["", "-wal", "-shm"]) {
+    restrictPermissions(`${dbPath}${suffix}`, 0o600);
+  }
+};
+
 const prepareDirectory = (dbPath: string): void => {
   try {
     mkdirSync(dirname(dbPath), { recursive: true });
   } catch (error) {
-    throw new IndexError(
-      `No se pudo crear el directorio del índice "${dirname(dbPath)}": ${describeError(error)}`,
-      { cause: error },
-    );
+    throw new IndexError(`No se pudo crear el directorio del índice "${basename(dbPath)}".`, {
+      cause: error,
+    });
   }
+  restrictIndexFiles(dbPath);
 };
 
 const configure = (connection: Database.Database): void => {
@@ -71,17 +83,18 @@ export const openIndex = ({ dbPath }: OpenIndexOptions): IndexHandle => {
   try {
     connection = new Database(resolved);
   } catch (error) {
-    throw new IndexError(
-      `No se pudo abrir la base de datos del índice en "${resolved}": ${describeError(error)}`,
-      { cause: error },
-    );
+    throw new IndexError(`No se pudo abrir la base de datos del índice "${basename(resolved)}".`, {
+      cause: error,
+    });
   }
+  restrictIndexFiles(resolved);
 
   try {
     configure(connection);
     const db = drizzle(connection, { schema });
     migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
     seedSchemaVersion(db);
+    restrictIndexFiles(resolved);
     return {
       db,
       dbPath: resolved,
@@ -98,9 +111,8 @@ export const openIndex = ({ dbPath }: OpenIndexOptions): IndexHandle => {
     if (error instanceof IndexError) {
       throw error;
     }
-    throw new IndexError(
-      `No se pudo inicializar el índice en "${resolved}": ${describeError(error)}`,
-      { cause: error },
-    );
+    throw new IndexError(`No se pudo inicializar el índice "${basename(resolved)}".`, {
+      cause: error,
+    });
   }
 };
