@@ -36,6 +36,17 @@ export {
   objetos,
 } from "./schema.js";
 export {
+  DEFAULT_LIST_LIMIT,
+  DEFAULT_SEARCH_LIMIT,
+  type IndexedObject,
+  type ListObjectsIndexedOptions,
+  listObjectsIndexed,
+  type ObjectFilters,
+  type SearchObjectsOptions,
+  type SearchResult,
+  searchObjects,
+} from "./search.js";
+export {
   type StartWatcherOptions,
   startWatcher,
   type WatcherErrorHandler,
