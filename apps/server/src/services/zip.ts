@@ -15,6 +15,33 @@ const DOS_DATE = 0x21;
 const DOS_TIME = 0;
 const MAX_ENTRIES = 0xffff;
 
+const ABSOLUTE_WINDOWS = /^[a-z]:/i;
+
+const hasControlChar = (value: string): boolean => {
+  for (const character of value) {
+    const code = character.codePointAt(0) ?? 0;
+    if (code < 0x20 || code === 0x7f) {
+      return true;
+    }
+  }
+  return false;
+};
+
+export const sanitizeZipName = (name: string): string | undefined => {
+  const normalized = name.replaceAll("\\", "/");
+  if (normalized.length === 0 || normalized.startsWith("/") || ABSOLUTE_WINDOWS.test(normalized)) {
+    return undefined;
+  }
+  if (hasControlChar(normalized)) {
+    return undefined;
+  }
+  const segments = normalized.split("/");
+  if (segments.some((segment) => segment.length === 0 || segment === "..")) {
+    return undefined;
+  }
+  return normalized;
+};
+
 const concat = (chunks: readonly Uint8Array[]): Uint8Array<ArrayBuffer> => {
   const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
   const output = new Uint8Array(total);
