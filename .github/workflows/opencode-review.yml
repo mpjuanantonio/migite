@@ -40,8 +40,7 @@ jobs:
           share: false
           prompt: |
             Eres el revisor de codigo de este repositorio. Solo analizas:
-            no editas nada. Revisa este pull request contra AGENTS.md y
-            devuelve tus hallazgos como comentario del PR:
+            no editas nada. Limitate a revisar los cambios del PR y no el resto del repositorio. Responde y clasifica los hallazgos en 3 categorias en caso de que los haya:
 
             1. **Bloqueantes** - bugs, fugas de secretos, perdida de datos
             2. **Importantes** - diseno, rendimiento, edge cases
