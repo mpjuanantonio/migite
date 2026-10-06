@@ -66,11 +66,12 @@ afterEach(async () => {
 });
 
 describe("startWatcher", () => {
-  it("resolves ready after indexing the vault at startup", async () => {
+  it("resolves ready when listening and synced after the startup reindex", async () => {
     const created = repo.createObject({ title: "Arranque", type: "nota", body: "inicial" });
     const started = startWatcher({ db: handle.db, vaultDir, timeZone: "UTC" });
 
     await started.ready;
+    await started.synced;
 
     expect(objectIds()).toContain(created.id);
     expect(ftsIds("inicial")).toEqual([created.id]);

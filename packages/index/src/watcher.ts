@@ -18,6 +18,7 @@ export type StartWatcherOptions = {
 export type WatcherHandle = {
   readonly close: () => Promise<void>;
   readonly ready: Promise<void>;
+  readonly synced: Promise<void>;
 };
 
 type PendingKind = "add" | "change" | "unlink";
@@ -74,8 +75,12 @@ export const startWatcher = (options: StartWatcherOptions): WatcherHandle => {
   let closed = false;
   let queue: Promise<void> = Promise.resolve();
   let markReady: () => void = () => {};
+  let markSynced: () => void = () => {};
   const readyPromise = new Promise<void>((resolve) => {
     markReady = resolve;
+  });
+  const syncedPromise = new Promise<void>((resolve) => {
+    markSynced = resolve;
   });
 
   const applyPending = (relativePath: string, kind: PendingKind): void => {
@@ -137,13 +142,14 @@ export const startWatcher = (options: StartWatcherOptions): WatcherHandle => {
     if (closed) {
       return;
     }
-    try {
-      runReindex(options.db, { vaultDir, timeZone: options.timeZone });
-    } catch (error) {
-      reportError(error, vaultDir);
-    }
     ready = true;
     markReady();
+    queue = queue
+      .then(() => {
+        runReindex(options.db, { vaultDir, timeZone: options.timeZone });
+      })
+      .catch((error) => reportError(error, vaultDir))
+      .finally(markSynced);
   });
 
   const close = async (): Promise<void> => {
@@ -157,9 +163,10 @@ export const startWatcher = (options: StartWatcherOptions): WatcherHandle => {
     }
     pending.clear();
     markReady();
+    markSynced();
     await watcher.close();
     await queue;
   };
 
-  return { close, ready: readyPromise };
+  return { close, ready: readyPromise, synced: syncedPromise };
 };

@@ -78,7 +78,7 @@ const filterConditions = (filters: ObjectFilters | undefined): SQL[] => {
   }
   if (filters.tag !== undefined && filters.tag !== "") {
     conditions.push(
-      sql`EXISTS (SELECT 1 FROM atributos a WHERE a.objeto_id = o.id AND a.clave = 'etiquetas' AND a.valor_texto = ${filters.tag})`,
+      sql`o.id IN (SELECT a.objeto_id FROM atributos a WHERE a.clave = 'etiquetas' AND a.valor_texto = ${filters.tag})`,
     );
   }
   if (filters.desde !== undefined && filters.desde !== "") {
