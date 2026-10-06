@@ -1,6 +1,7 @@
 export const en = {
   "app.name": "Migite",
   "error.ambiguousTitle": 'ambiguous title "{title}": it matches several objects',
+  "error.attributeTypeImmutable": 'the type of attribute "{id}" cannot be changed',
   "error.badRequest": "The request is invalid",
   "error.configMissingFile": "missing or unreadable file",
   "error.confirmationRequired": "explicit confirmation is required (use ?confirmar=1)",
@@ -39,6 +40,8 @@ export const en = {
   "error.serverStartFailed": "The server could not be started: {detail}",
   "error.titleChangeRequiresRename": "changing the title requires the rename operation",
   "error.translationKeyMissing": 'key "{key}" present in [{presentIn}] but missing in [{absentIn}]',
+  "error.typeAlreadyExists": 'type "{id}" already exists',
+  "error.typeNotEditable": 'type "{id}" is native and cannot be edited',
   "error.typeSeedFailed": "Native types could not be seeded in {path}: {problems}",
   "error.unauthorized": "Authentication is required",
   "error.undeclaredProvider": "provider {provider} is not declared in providers",

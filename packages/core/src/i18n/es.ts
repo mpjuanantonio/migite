@@ -3,6 +3,7 @@ import type { TranslationKey } from "./en.js";
 export const es = {
   "app.name": "Migite",
   "error.ambiguousTitle": "título ambiguo «{title}»: corresponde a varios objetos",
+  "error.attributeTypeImmutable": "no se puede cambiar el tipo del atributo «{id}»",
   "error.badRequest": "La petición no es válida",
   "error.configMissingFile": "fichero ausente o ilegible",
   "error.confirmationRequired": "se requiere confirmación explícita (use ?confirmar=1)",
@@ -42,6 +43,8 @@ export const es = {
   "error.titleChangeRequiresRename": "cambiar el título requiere la operación de renombrar",
   "error.translationKeyMissing":
     'clave "{key}" presente en [{presentIn}] pero ausente en [{absentIn}]',
+  "error.typeAlreadyExists": "ya existe un tipo con id «{id}»",
+  "error.typeNotEditable": "el tipo «{id}» es nativo y no se puede editar",
   "error.typeSeedFailed": "No se pudieron sembrar los tipos nativos en {path}: {problems}",
   "error.unauthorized": "Se requiere autenticación",
   "error.undeclaredProvider": "el proveedor {provider} no está declarado en proveedores",
