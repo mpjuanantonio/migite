@@ -5,9 +5,25 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app.js";
+import { type AuthOptions, createSessionToken, SESSION_COOKIE } from "../auth.js";
 import type { ServerEnv } from "../env.js";
 import { registerErrorHandling } from "./errors.js";
 import { requestLogger } from "./logs.js";
+
+const testAuth: AuthOptions = {
+  usuario: "tester",
+  passwordHash: "$argon2id$test",
+  secretoSesion: "secreto-de-test-suficientemente-largo",
+  store: { generacion: () => 0, invalidar: () => 1 },
+};
+
+const sessionHeaders = (): Record<string, string> => ({
+  cookie: `${SESSION_COOKIE}=${createSessionToken({
+    usuario: testAuth.usuario,
+    generacion: 0,
+    secret: testAuth.secretoSesion,
+  })}`,
+});
 
 const testApp = (): Hono<ServerEnv> => {
   const app = new Hono<ServerEnv>();
@@ -30,8 +46,8 @@ beforeEach(() => {
 
 describe("registerErrorHandling", () => {
   it("answers unknown routes with a localized not_found ErrorBody", async () => {
-    const res = await createApp().request("/api/desconocido", {
-      headers: { "accept-language": "en" },
+    const res = await createApp({ auth: testAuth }).request("/api/desconocido", {
+      headers: { ...sessionHeaders(), "accept-language": "en" },
     });
 
     expect(res.status).toBe(404);
@@ -122,12 +138,12 @@ describe("registerErrorHandling", () => {
   });
 
   it("uses the configured locale when the header is absent", async () => {
-    const app = createApp({ locale: "en" });
+    const app = createApp({ locale: "en", auth: testAuth });
     app.get("/api/objeto", () => {
       throw new ObjectOperationError("error.objectNotFound", { id: "abc" });
     });
 
-    const body = await errorFrom(await app.request("/api/objeto"));
+    const body = await errorFrom(await app.request("/api/objeto", { headers: sessionHeaders() }));
     expect(body.error.mensaje).toBe("object not found: abc");
   });
 

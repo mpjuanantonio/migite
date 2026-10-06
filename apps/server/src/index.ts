@@ -3,7 +3,9 @@ import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { loadConfig } from "@migite/core";
 import { createApp } from "./app.js";
+import { loadAuthConfig } from "./auth.js";
 import { startRuntime } from "./runtime.js";
+import { createIndexSessionStore } from "./session-store.js";
 import { resolvePort, serverErrorMessage, startupWarnings } from "./startup.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -11,13 +13,17 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const start = (): void => {
   const config = loadConfig({ root });
   const port = resolvePort(process.env.PORT);
-  const app = createApp({ locale: config.app.locale });
+  const authConfig = loadAuthConfig(config.app.locale);
 
   for (const warning of startupWarnings(config)) {
     console.warn(warning);
   }
 
   const runtime = startRuntime(config.app, root);
+  const app = createApp({
+    locale: config.app.locale,
+    auth: { ...authConfig, store: createIndexSessionStore(runtime.db) },
+  });
 
   const shutdown = (): void => {
     void runtime.close().finally(() => {
