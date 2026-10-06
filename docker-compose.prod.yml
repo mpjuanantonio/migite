@@ -1,11 +1,16 @@
 # docker-compose.prod.yml — override de producción (servidor propio, 8 GB RAM)
-# La imagen la publica la CI en ghcr.io/mpjuanantonio/migite y se despliega por tag:
-#   VERSION=vX.Y.Z docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --pull always
-# Actualización/rollback: cambia VERSION y repite el mismo comando.
-# `build: !reset null` descarta el build de la base: aquí solo se despliega la imagen publicada.
+# Despliega SIEMPRE una imagen etiquetada por versión:
+#   a) Construir en el servidor (no requiere registro de imágenes):
+#        export VERSION=vX.Y.Z
+#        docker compose -f docker-compose.yml -f docker-compose.prod.yml build
+#        docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#   b) Usar la imagen publicada en ghcr.io/mpjuanantonio/migite (workflow Release):
+#        export VERSION=vX.Y.Z
+#        docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --pull always
+# Actualización/rollback: cambia VERSION y repite el mismo comando. Si la imagen de
+# la versión anterior sigue en la caché local, el rollback solo necesita `up -d`.
 services:
   app:
-    build: !reset null
     image: ghcr.io/mpjuanantonio/migite:${VERSION:?Define VERSION=vX.Y.Z}
     restart: unless-stopped
     environment:

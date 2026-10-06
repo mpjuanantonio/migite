@@ -45,12 +45,15 @@ COPY packages/contracts/package.json packages/contracts/package.json
 COPY packages/core/package.json packages/core/package.json
 COPY packages/index/package.json packages/index/package.json
 COPY packages/llm/package.json packages/llm/package.json
-# --ignore-scripts protege del prepare de husky. better-sqlite3 13 no tiene
-# install script (gypfile: false): distribuye el binario N-API en prebuilds/,
-# incluido linuxmusl-x64, así que el stage no necesita toolchain de compilación.
+# --ignore-scripts protege del prepare de husky. Los dos nativos que usa el
+# server se resuelven con binarios precompilados, sin toolchain:
+#   - better-sqlite3 13 (gypfile: false) trae prebuilds/linuxmusl-x64.node.
+#   - @node-rs/argon2 2 trae el opcional @node-rs/argon2-linux-x64-musl.
+# Los smoke-checks siguientes hacen fallar el build si alguno no carga en musl.
 RUN pnpm install --frozen-lockfile --prod --ignore-scripts \
       --filter @migite/server...
 RUN cd packages/index && node -e "require('better-sqlite3')"
+RUN cd apps/server && node -e "require('@node-rs/argon2')"
 COPY --from=build --chown=node:node /app/apps/server/dist apps/server/dist
 COPY --from=build --chown=node:node /app/apps/web/dist apps/web/dist
 COPY --from=build --chown=node:node /app/packages/contracts/dist packages/contracts/dist
