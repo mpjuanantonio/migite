@@ -14,6 +14,7 @@ FROM base AS deps
 COPY --chown=node:node package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY --chown=node:node apps/server/package.json apps/server/package.json
 COPY --chown=node:node apps/web/package.json apps/web/package.json
+COPY --chown=node:node packages/contracts/package.json packages/contracts/package.json
 COPY --chown=node:node packages/core/package.json packages/core/package.json
 COPY --chown=node:node packages/index/package.json packages/index/package.json
 COPY --chown=node:node packages/llm/package.json packages/llm/package.json
@@ -40,6 +41,7 @@ ENV NODE_ENV=production
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/server/package.json apps/server/package.json
 COPY apps/web/package.json apps/web/package.json
+COPY packages/contracts/package.json packages/contracts/package.json
 COPY packages/core/package.json packages/core/package.json
 COPY packages/index/package.json packages/index/package.json
 COPY packages/llm/package.json packages/llm/package.json
@@ -51,6 +53,7 @@ RUN pnpm install --frozen-lockfile --prod --ignore-scripts \
 RUN cd packages/index && node -e "require('better-sqlite3')"
 COPY --from=build --chown=node:node /app/apps/server/dist apps/server/dist
 COPY --from=build --chown=node:node /app/apps/web/dist apps/web/dist
+COPY --from=build --chown=node:node /app/packages/contracts/dist packages/contracts/dist
 COPY --from=build --chown=node:node /app/packages/core/dist packages/core/dist
 COPY --from=build --chown=node:node /app/packages/index/dist packages/index/dist
 COPY --from=build --chown=node:node /app/packages/index/drizzle packages/index/drizzle
