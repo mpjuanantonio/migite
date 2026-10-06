@@ -17,6 +17,7 @@ export type StartWatcherOptions = {
 
 export type WatcherHandle = {
   readonly close: () => Promise<void>;
+  readonly ready: Promise<void>;
 };
 
 type PendingKind = "add" | "change" | "unlink";
@@ -72,6 +73,10 @@ export const startWatcher = (options: StartWatcherOptions): WatcherHandle => {
   let ready = false;
   let closed = false;
   let queue: Promise<void> = Promise.resolve();
+  let markReady: () => void = () => {};
+  const readyPromise = new Promise<void>((resolve) => {
+    markReady = resolve;
+  });
 
   const applyPending = (relativePath: string, kind: PendingKind): void => {
     applyObjectEvent(
@@ -138,6 +143,7 @@ export const startWatcher = (options: StartWatcherOptions): WatcherHandle => {
       reportError(error, vaultDir);
     }
     ready = true;
+    markReady();
   });
 
   const close = async (): Promise<void> => {
@@ -150,9 +156,10 @@ export const startWatcher = (options: StartWatcherOptions): WatcherHandle => {
       timer = undefined;
     }
     pending.clear();
+    markReady();
     await watcher.close();
     await queue;
   };
 
-  return { close };
+  return { close, ready: readyPromise };
 };

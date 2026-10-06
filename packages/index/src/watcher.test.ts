@@ -66,6 +66,18 @@ afterEach(async () => {
 });
 
 describe("startWatcher", () => {
+  it("resolves ready after indexing the vault at startup", async () => {
+    const created = repo.createObject({ title: "Arranque", type: "nota", body: "inicial" });
+    const started = startWatcher({ db: handle.db, vaultDir, timeZone: "UTC" });
+
+    await started.ready;
+
+    expect(objectIds()).toContain(created.id);
+    expect(ftsIds("inicial")).toEqual([created.id]);
+
+    await started.close();
+  });
+
   it("indexes files created, edited and deleted after startup", async () => {
     const created = repo.createObject({ title: "Observada", type: "nota", body: "alfa" });
     await waitFor(() => objectIds().includes(created.id));
