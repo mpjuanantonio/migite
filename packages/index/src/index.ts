@@ -5,6 +5,12 @@ export {
   buildIndex,
   type IndexObjectOptions,
   indexObject,
+  type ReconcileOptions,
+  type ReconcileSummary,
+  type ReindexOptions,
+  type ReindexSummary,
+  reconcileIndex,
+  runReindex,
 } from "./indexer.js";
 export {
   type IndexDatabase,

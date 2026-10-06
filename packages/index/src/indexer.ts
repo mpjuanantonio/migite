@@ -39,6 +39,23 @@ export type ApplyObjectEventOptions = {
   readonly timeZone?: string;
 };
 
+export type ReconcileOptions = {
+  readonly vaultDir: string;
+  readonly timeZone?: string;
+};
+
+export type ReconcileSummary = {
+  readonly created: number;
+  readonly updated: number;
+  readonly deleted: number;
+};
+
+export type ReindexOptions = BuildIndexOptions;
+
+export type ReindexSummary = {
+  readonly total: number;
+};
+
 type AttributeRow = {
   readonly clave: string;
   readonly valorTexto: string | null;
@@ -295,11 +312,11 @@ export const indexObject = (
   });
 };
 
-export const buildIndex = (db: IndexDatabase, options: BuildIndexOptions): number => {
-  const repository = createObjectRepository({
-    vaultDir: options.vaultDir,
-    timeZone: options.timeZone,
-  });
+const collectProjectionEntries = (
+  vaultDir: string,
+  timeZone: string | undefined,
+): ProjectionEntry[] => {
+  const repository = createObjectRepository({ vaultDir, timeZone });
   const entries: ProjectionEntry[] = [];
   for (const summary of repository.listObjects()) {
     if (summary.id === "") {
@@ -309,7 +326,7 @@ export const buildIndex = (db: IndexDatabase, options: BuildIndexOptions): numbe
     if (!read.ok) {
       continue;
     }
-    const fileText = readObjectFile(options.vaultDir, read.object.path);
+    const fileText = readObjectFile(vaultDir, read.object.path);
     if (fileText === undefined) {
       continue;
     }
@@ -319,6 +336,21 @@ export const buildIndex = (db: IndexDatabase, options: BuildIndexOptions): numbe
       fileText,
     });
   }
+  return entries;
+};
+
+const dedupeEntriesById = (entries: readonly ProjectionEntry[]): ProjectionEntry[] => {
+  const byId = new Map<string, ProjectionEntry>();
+  for (const entry of entries) {
+    if (!byId.has(entry.object.id)) {
+      byId.set(entry.object.id, entry);
+    }
+  }
+  return [...byId.values()];
+};
+
+export const buildIndex = (db: IndexDatabase, options: BuildIndexOptions): number => {
+  const entries = collectProjectionEntries(options.vaultDir, options.timeZone);
   const resolveTitle = createTitleResolver(entries.map((entry) => entry.object));
   db.transaction((tx) => {
     tx.run(sql`DELETE FROM fts_objetos`);
@@ -337,6 +369,52 @@ export const buildIndex = (db: IndexDatabase, options: BuildIndexOptions): numbe
     }
   });
   return entries.length;
+};
+
+export const runReindex = (db: IndexDatabase, options: ReindexOptions): ReindexSummary => ({
+  total: buildIndex(db, options),
+});
+
+export const reconcileIndex = (db: IndexDatabase, options: ReconcileOptions): ReconcileSummary => {
+  const entries = dedupeEntriesById(collectProjectionEntries(options.vaultDir, options.timeZone));
+  const indexed = db
+    .select({ id: objetos.id, ruta: objetos.ruta, hash: objetos.hash })
+    .from(objetos)
+    .all();
+  const indexedById = new Map(indexed.map((row) => [row.id, row]));
+  const byId = new Map(entries.map((entry) => [entry.object.id, entry]));
+  const createdEntries: ProjectionEntry[] = [];
+  const updatedEntries: ProjectionEntry[] = [];
+  for (const entry of entries) {
+    const row = indexedById.get(entry.object.id);
+    if (row === undefined) {
+      createdEntries.push(entry);
+      continue;
+    }
+    if (row.hash !== sha256(entry.fileText) || row.ruta !== entry.object.path) {
+      updatedEntries.push(entry);
+    }
+  }
+  const deletedIds = indexed.filter((row) => !byId.has(row.id)).map((row) => row.id);
+  const resolveTitle = createTitleResolver(entries.map((entry) => entry.object));
+  db.transaction((tx) => {
+    for (const objectId of deletedIds) {
+      tx.run(sql`DELETE FROM fts_objetos WHERE objeto_id = ${objectId}`);
+      tx.delete(objetos).where(eq(objetos.id, objectId)).run();
+    }
+    for (const entry of [...createdEntries, ...updatedEntries]) {
+      projectObject(tx, entry.object, {
+        fileText: entry.fileText,
+        definition: entry.definition,
+        resolveTitle,
+      });
+    }
+  });
+  return {
+    created: createdEntries.length,
+    updated: updatedEntries.length,
+    deleted: deletedIds.length,
+  };
 };
 
 export const applyObjectEvent = (
