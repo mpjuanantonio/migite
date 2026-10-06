@@ -64,6 +64,7 @@ export {
   type DegradedObjectView,
   type DomainEvent,
   type IncomingLink,
+  MAX_OBJECT_BYTES,
   ObjectOperationError,
   type ObjectRecord,
   type ObjectRepository,

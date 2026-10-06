@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { lstatSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   type AttributeDefinition,
   createObjectRepository,
   type DomainEvent,
   type FieldType,
+  MAX_OBJECT_BYTES,
   normalizeTitle,
   ObjectOperationError,
   type ObjectRecord,
@@ -29,20 +30,30 @@ export type IndexObjectOptions = {
   readonly resolveTitle?: (title: string) => string | undefined;
 };
 
+export type IndexWarning = {
+  readonly path: string;
+  readonly problems: readonly string[];
+};
+
+export type IndexWarningHandler = (warning: IndexWarning) => void;
+
 export type BuildIndexOptions = {
   readonly vaultDir: string;
   readonly timeZone?: string;
+  readonly onWarning?: IndexWarningHandler;
 };
 
 export type ApplyObjectEventOptions = {
   readonly vaultDir: string;
   readonly timeZone?: string;
   readonly titleCache?: TitleCache;
+  readonly onWarning?: IndexWarningHandler;
 };
 
 export type ReconcileOptions = {
   readonly vaultDir: string;
   readonly timeZone?: string;
+  readonly onWarning?: IndexWarningHandler;
 };
 
 export type ReconcileSummary = {
@@ -198,10 +209,52 @@ const defaultObjectText = (object: ObjectRecord): string =>
     object.body,
   );
 
-const readObjectFile = (vaultDir: string, relativePath: string): string | undefined => {
+const defaultWarning: IndexWarningHandler = (warning) => {
+  console.warn(`indexer: se omite "${warning.path}": ${warning.problems.join("; ")}`);
+};
+
+const reportWarning = (
+  onWarning: IndexWarningHandler | undefined,
+  path: string,
+  problems: readonly string[],
+): void => {
+  (onWarning ?? defaultWarning)({ path, problems });
+};
+
+const errorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+const readObjectFile = (
+  vaultDir: string,
+  relativePath: string,
+  onWarning: IndexWarningHandler | undefined,
+): string | undefined => {
+  const absolutePath = join(vaultDir, relativePath);
+  let stats: ReturnType<typeof lstatSync>;
   try {
-    return readFileSync(join(vaultDir, relativePath), "utf8");
-  } catch {
+    stats = lstatSync(absolutePath);
+  } catch (error) {
+    reportWarning(onWarning, relativePath, [errorMessage(error)]);
+    return undefined;
+  }
+  if (stats.isSymbolicLink()) {
+    reportWarning(onWarning, relativePath, ["file is a symbolic link"]);
+    return undefined;
+  }
+  if (!stats.isFile()) {
+    reportWarning(onWarning, relativePath, ["file is not a regular file"]);
+    return undefined;
+  }
+  if (stats.size > MAX_OBJECT_BYTES) {
+    reportWarning(onWarning, relativePath, [
+      `file exceeds the ${MAX_OBJECT_BYTES} byte read limit`,
+    ]);
+    return undefined;
+  }
+  try {
+    return readFileSync(absolutePath, "utf8");
+  } catch (error) {
+    reportWarning(onWarning, relativePath, [errorMessage(error)]);
     return undefined;
   }
 };
@@ -348,6 +401,7 @@ export const indexObject = (
 const collectProjectionEntries = (
   vaultDir: string,
   timeZone: string | undefined,
+  onWarning: IndexWarningHandler | undefined,
 ): ProjectionEntry[] => {
   const repository = createObjectRepository({ vaultDir, timeZone });
   const entries: ProjectionEntry[] = [];
@@ -359,7 +413,7 @@ const collectProjectionEntries = (
     if (!read.ok) {
       continue;
     }
-    const fileText = readObjectFile(vaultDir, read.object.path);
+    const fileText = readObjectFile(vaultDir, read.object.path, onWarning);
     if (fileText === undefined) {
       continue;
     }
@@ -383,7 +437,9 @@ const dedupeEntriesById = (entries: readonly ProjectionEntry[]): ProjectionEntry
 };
 
 export const buildIndex = (db: IndexDatabase, options: BuildIndexOptions): number => {
-  const entries = dedupeEntriesById(collectProjectionEntries(options.vaultDir, options.timeZone));
+  const entries = dedupeEntriesById(
+    collectProjectionEntries(options.vaultDir, options.timeZone, options.onWarning),
+  );
   const resolveTitle = createTitleResolver(entries.map((entry) => entry.object));
   db.transaction((tx) => {
     tx.run(sql`DELETE FROM fts_objetos`);
@@ -414,7 +470,9 @@ export const runReindex = (db: IndexDatabase, options: ReindexOptions): ReindexS
 });
 
 export const reconcileIndex = (db: IndexDatabase, options: ReconcileOptions): ReconcileSummary => {
-  const entries = dedupeEntriesById(collectProjectionEntries(options.vaultDir, options.timeZone));
+  const entries = dedupeEntriesById(
+    collectProjectionEntries(options.vaultDir, options.timeZone, options.onWarning),
+  );
   const indexed = db
     .select({ id: objetos.id, ruta: objetos.ruta, hash: objetos.hash })
     .from(objetos)
@@ -498,7 +556,7 @@ export const applyObjectEvent = (
     return;
   }
   const object = read.object;
-  const fileText = readObjectFile(options.vaultDir, object.path);
+  const fileText = readObjectFile(options.vaultDir, object.path, options.onWarning);
   if (fileText === undefined) {
     return;
   }

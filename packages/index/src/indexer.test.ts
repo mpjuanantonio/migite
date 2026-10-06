@@ -1,11 +1,19 @@
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  truncateSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   bootstrapVault,
   createObjectRepository,
   type DomainEvent,
+  MAX_OBJECT_BYTES,
   type ObjectRepository,
 } from "@migite/core";
 import { eq, sql } from "drizzle-orm";
@@ -14,13 +22,17 @@ import {
   applyObjectEvent,
   buildIndex,
   createTitleCache,
+  type IndexWarning,
   indexObject,
   reconcileIndex,
 } from "./indexer.js";
 import { type IndexHandle, openIndex } from "./open.js";
 import { objetos } from "./schema.js";
 
-const coreMocks = vi.hoisted(() => ({ listObjectsCalls: 0 }));
+const coreMocks = vi.hoisted(() => ({
+  listObjectsCalls: 0,
+  afterReadObject: undefined as ((ref: string) => void) | undefined,
+}));
 
 vi.mock("@migite/core", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@migite/core")>();
@@ -31,11 +43,17 @@ vi.mock("@migite/core", async (importOriginal) => {
     ): ReturnType<typeof actual.createObjectRepository> => {
       const repository = actual.createObjectRepository(options);
       const listObjects = repository.listObjects;
+      const readObject = repository.readObject;
       return {
         ...repository,
         listObjects: () => {
           coreMocks.listObjectsCalls += 1;
           return listObjects();
+        },
+        readObject: (ref: string) => {
+          const result = readObject(ref);
+          coreMocks.afterReadObject?.(ref);
+          return result;
         },
       };
     },
@@ -141,6 +159,7 @@ beforeEach(() => {
   writeFileSync(join(vaultDir, "tipos", "etiquetado.yaml"), CUSTOM_TYPE_YAML, "utf8");
   repo = createObjectRepository({ vaultDir, timeZone: "UTC" });
   handle = openIndex({ dbPath: dbPath() });
+  coreMocks.afterReadObject = undefined;
 });
 
 afterEach(() => {
@@ -260,6 +279,53 @@ describe("buildIndex", () => {
     expect(objectRows().map((row) => row.titulo)).toEqual(["Raro"]);
     expect(ftsIds("raro")).toEqual(["01J8XK2P4R5S6T7U8V9W0X1Y2Z"]);
     expect(attributeTuples("01J8XK2P4R5S6T7U8V9W0X1Y2Z")).toEqual([["libre", null, 5, null]]);
+  });
+
+  it("skips objects replaced by a symlink before the file re-read", () => {
+    const externo = join(directory, "externo.md");
+    writeFileSync(externo, "---\ntitulo: Externo\n---\ncontenido externo\n", "utf8");
+    const seguro = repo.createObject({ title: "Seguro", type: "nota" });
+    const enlazado = repo.createObject({ title: "Enlazado", type: "nota" });
+    const warnings: IndexWarning[] = [];
+    coreMocks.afterReadObject = (ref) => {
+      if (ref === enlazado.id) {
+        rmSync(join(vaultDir, enlazado.path));
+        symlinkSync(externo, join(vaultDir, enlazado.path));
+      }
+    };
+
+    const count = buildIndex(handle.db, {
+      vaultDir,
+      onWarning: (warning) => warnings.push(warning),
+    });
+
+    expect(count).toBe(1);
+    expect(objectRows().map((row) => row.id)).toEqual([seguro.id]);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.path).toBe(enlazado.path);
+    expect(warnings[0]?.problems.join(" ")).toContain("symbolic link");
+  });
+
+  it("skips files that grow past the read limit before the file re-read", () => {
+    const seguro = repo.createObject({ title: "Seguro", type: "nota" });
+    const grande = repo.createObject({ title: "Grande", type: "nota" });
+    const warnings: IndexWarning[] = [];
+    coreMocks.afterReadObject = (ref) => {
+      if (ref === grande.id) {
+        truncateSync(join(vaultDir, grande.path), MAX_OBJECT_BYTES + 1);
+      }
+    };
+
+    const count = buildIndex(handle.db, {
+      vaultDir,
+      onWarning: (warning) => warnings.push(warning),
+    });
+
+    expect(count).toBe(1);
+    expect(objectRows().map((row) => row.id)).toEqual([seguro.id]);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.path).toBe(grande.path);
+    expect(warnings[0]?.problems.join(" ")).toContain("read limit");
   });
 
   it("deduplicates files that declare the same id", () => {
