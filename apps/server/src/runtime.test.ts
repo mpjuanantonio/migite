@@ -30,6 +30,7 @@ describe("startRuntime", () => {
     runtime = startRuntime(config, root);
 
     expect(runtime.dbPath).toBe(join(root, "data", "index.db"));
+    expect(runtime.vaultDir).toBe(join(root, "vault"));
     expect(existsSync(runtime.dbPath)).toBe(true);
     expect(existsSync(join(root, "vault"))).toBe(true);
 

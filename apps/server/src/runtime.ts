@@ -6,6 +6,7 @@ import { type IndexDatabase, openIndex, startWatcher } from "@migite/index";
 export type AppRuntime = {
   readonly db: IndexDatabase;
   readonly dbPath: string;
+  readonly vaultDir: string;
   readonly close: () => Promise<void>;
 };
 
@@ -22,6 +23,7 @@ export const startRuntime = (config: AppConfig, root: string): AppRuntime => {
     return {
       db: handle.db,
       dbPath: handle.dbPath,
+      vaultDir,
       close: async () => {
         await watcher.close();
         handle.close();

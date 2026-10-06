@@ -4,6 +4,7 @@ import { serve } from "@hono/node-server";
 import { loadConfig } from "@migite/core";
 import { createApp } from "./app.js";
 import { loadAuthConfig } from "./auth.js";
+import { configureObjetos } from "./routes/objetos.js";
 import { startRuntime } from "./runtime.js";
 import { createIndexSessionStore } from "./session-store.js";
 import { resolvePort, serverErrorMessage, startupWarnings } from "./startup.js";
@@ -20,6 +21,11 @@ const start = (): void => {
   }
 
   const runtime = startRuntime(config.app, root);
+  configureObjetos({
+    db: runtime.db,
+    vaultDir: runtime.vaultDir,
+    timeZone: config.app.timeZone,
+  });
   const app = createApp({
     locale: config.app.locale,
     auth: { ...authConfig, store: createIndexSessionStore(runtime.db) },
