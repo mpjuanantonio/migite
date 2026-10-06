@@ -12,7 +12,14 @@ export {
   renameObjectBodySchema,
 } from "./objetos.js";
 export { LIMITE_MAX, LIMITE_MIN, type Pagination, paginationSchema } from "./pagination.js";
-export { type SearchParams, searchParamsSchema } from "./search.js";
+export {
+  type SearchParams,
+  type SearchResultItem,
+  type SearchResults,
+  searchParamsSchema,
+  searchResultItemSchema,
+  searchResultsSchema,
+} from "./search.js";
 export {
   type AttributePayload,
   type AttributeRoleWire,

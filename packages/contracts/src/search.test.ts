@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { searchParamsSchema } from "./search.js";
+import { searchParamsSchema, searchResultsSchema } from "./search.js";
 
 describe("searchParamsSchema", () => {
   it("accepts empty params", () => {
@@ -39,5 +39,46 @@ describe("searchParamsSchema", () => {
 
   it("ignores unknown query params", () => {
     expect(searchParamsSchema.parse({ otro: "x" })).toEqual({});
+  });
+});
+
+describe("searchResultsSchema", () => {
+  const item = {
+    id: "01JALFA0000000000000000000",
+    tipo: "nota",
+    titulo: "Alfa",
+    ruta: "alfa.md",
+    actualizado: "2026-10-05T09:00:00.000+02:00",
+  };
+
+  it("accepts results with and without a snippet", () => {
+    const body = {
+      resultados: [item, { ...item, id: "01JBETA0000000000000000000", fragmento: "…proyecto…" }],
+      siguienteCursor: null,
+    };
+
+    expect(searchResultsSchema.parse(body)).toEqual(body);
+  });
+
+  it("accepts an opaque next cursor", () => {
+    expect(searchResultsSchema.parse({ resultados: [], siguienteCursor: "eyJvIjoyfQ" })).toEqual({
+      resultados: [],
+      siguienteCursor: "eyJvIjoyfQ",
+    });
+  });
+
+  it("rejects missing fields and wrong types", () => {
+    expect(searchResultsSchema.safeParse({ resultados: [] }).success).toBe(false);
+    expect(searchResultsSchema.safeParse({ resultados: [item] }).success).toBe(false);
+    expect(
+      searchResultsSchema.safeParse({ resultados: [{ id: item.id }], siguienteCursor: null })
+        .success,
+    ).toBe(false);
+    expect(
+      searchResultsSchema.safeParse({
+        resultados: [{ ...item, fragmento: 10 }],
+        siguienteCursor: null,
+      }).success,
+    ).toBe(false);
   });
 });

@@ -185,7 +185,7 @@ export const renameObjeto = (
   };
 };
 
-const filtersOf = (params: SearchParams): ObjectFilters => ({
+export const filtersOf = (params: SearchParams): ObjectFilters => ({
   tipo: params.tipo,
   carpeta: params.carpeta,
   tag: params.tag,
