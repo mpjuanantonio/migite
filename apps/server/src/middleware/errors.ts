@@ -49,6 +49,17 @@ const OBJECT_ERROR_CODES: Readonly<Partial<Record<TranslationKey, ErrorCode>>> =
   "error.objectNotFound": "object_not_found",
 };
 
+const CODE_MESSAGES: Readonly<Partial<Record<ErrorCode, TranslationKey>>> = {
+  bad_request: "error.badRequest",
+  conflict: "error.conflict",
+  forbidden: "error.forbidden",
+  index_error: "error.indexError",
+  internal_error: "error.internalError",
+  not_found: "error.notFound",
+  unauthorized: "error.unauthorized",
+  validation_error: "error.validationError",
+};
+
 const HTTP_ERROR_CODES: Readonly<Partial<Record<number, ErrorCode>>> = {
   400: "bad_request",
   401: "unauthorized",
@@ -155,7 +166,8 @@ const internalMessage = (error: Error): string => {
   return message.length > 0 ? `${name}: ${message}` : name;
 };
 
-const genericMessage = (locale: Locale): string => t("error.genericError", undefined, locale);
+const codeMessage = (codigo: ErrorCode, locale: Locale): string =>
+  t(CODE_MESSAGES[codigo] ?? "error.internalError", undefined, locale);
 
 const describeError = (error: Error, locale: Locale): ApiError => {
   if (isZodError(error)) {
@@ -163,7 +175,7 @@ const describeError = (error: Error, locale: Locale): ApiError => {
     return {
       codigo: "validation_error",
       status: CODE_STATUS.validation_error,
-      mensaje: detail.length > 0 ? detail : genericMessage(locale),
+      mensaje: detail.length > 0 ? detail : codeMessage("validation_error", locale),
       detalle: internalMessage(error),
       stack: error.stack,
     };
@@ -191,7 +203,7 @@ const describeError = (error: Error, locale: Locale): ApiError => {
     return {
       codigo: "index_error",
       status: CODE_STATUS.index_error,
-      mensaje: genericMessage(locale),
+      mensaje: codeMessage("index_error", locale),
       detalle: internalMessage(error),
       stack: error.stack,
     };
@@ -202,7 +214,7 @@ const describeError = (error: Error, locale: Locale): ApiError => {
     return {
       codigo,
       status: mapped === undefined && error.status < 500 ? error.status : CODE_STATUS[codigo],
-      mensaje: genericMessage(locale),
+      mensaje: codeMessage(codigo, locale),
       detalle: `HTTP ${error.status} ${internalMessage(error)}`,
       stack: error.stack,
     };
@@ -210,7 +222,7 @@ const describeError = (error: Error, locale: Locale): ApiError => {
   return {
     codigo: "internal_error",
     status: CODE_STATUS.internal_error,
-    mensaje: genericMessage(locale),
+    mensaje: codeMessage("internal_error", locale),
     detalle: internalMessage(error),
     stack: error.stack,
   };
@@ -240,7 +252,7 @@ export const registerErrorHandling = (
 
   app.notFound((c) => {
     const body = errorBodySchema.parse({
-      error: { codigo: "not_found", mensaje: genericMessage(localeOf(c)) },
+      error: { codigo: "not_found", mensaje: codeMessage("not_found", localeOf(c)) },
     });
     return c.json(body, CODE_STATUS.not_found);
   });

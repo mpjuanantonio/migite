@@ -29,13 +29,15 @@ beforeEach(() => {
 });
 
 describe("registerErrorHandling", () => {
-  it("answers unknown routes with a not_found ErrorBody", async () => {
-    const res = await createApp().request("/api/desconocido");
+  it("answers unknown routes with a localized not_found ErrorBody", async () => {
+    const res = await createApp().request("/api/desconocido", {
+      headers: { "accept-language": "en" },
+    });
 
     expect(res.status).toBe(404);
     const body = await errorFrom(res);
     expect(body.error.codigo).toBe("not_found");
-    expect(body.error.mensaje.length).toBeGreaterThan(0);
+    expect(body.error.mensaje).toBe("The requested resource was not found");
   });
 
   it("maps zod validation failures to validation_error without leaking values", async () => {
@@ -65,7 +67,7 @@ describe("registerErrorHandling", () => {
       throw new Error("secreto interno en /var/lib/migite");
     });
 
-    const res = await app.request("/boom");
+    const res = await app.request("/boom", { headers: { "accept-language": "en" } });
     const raw = await res.text();
 
     expect(res.status).toBe(500);
@@ -73,6 +75,7 @@ describe("registerErrorHandling", () => {
     expect(raw).not.toContain("/var/lib/migite");
     const body = errorBodySchema.parse(JSON.parse(raw) as unknown);
     expect(body.error.codigo).toBe("internal_error");
+    expect(body.error.mensaje).toBe("An internal server error occurred");
 
     const errorEntry = logEntries().find((entry) => entry.event === "error");
     expect(errorEntry?.codigo).toBe("internal_error");
@@ -153,15 +156,69 @@ describe("registerErrorHandling", () => {
     expect((await errorFrom(await app.request("/indice"))).error.codigo).toBe("index_error");
   });
 
-  it("maps Hono HTTPException statuses", async () => {
+  it("maps Hono HTTPException statuses with their own localized message", async () => {
     const app = testApp();
     app.get("/privado", () => {
       throw new HTTPException(401);
     });
 
-    const res = await app.request("/privado");
+    const res = await app.request("/privado", { headers: { "accept-language": "en" } });
     expect(res.status).toBe(401);
     const body = await errorFrom(res);
     expect(body.error.codigo).toBe("unauthorized");
+    expect(body.error.mensaje).toBe("Authentication is required");
+  });
+
+  it("localizes every generic error code from Accept-Language", async () => {
+    const app = testApp();
+    app.get("/error/:status", (c) => {
+      const status = Number(c.req.param("status")) as 400 | 401 | 403 | 404 | 409 | 422 | 500;
+      throw new HTTPException(status);
+    });
+    app.get("/indice", () => {
+      throw new IndexError("índice roto");
+    });
+
+    const cases = [
+      { path: "/error/400", codigo: "bad_request", mensaje: "The request is invalid" },
+      { path: "/error/401", codigo: "unauthorized", mensaje: "Authentication is required" },
+      {
+        path: "/error/403",
+        codigo: "forbidden",
+        mensaje: "You do not have permission to perform this action",
+      },
+      {
+        path: "/error/404",
+        codigo: "not_found",
+        mensaje: "The requested resource was not found",
+      },
+      {
+        path: "/error/409",
+        codigo: "conflict",
+        mensaje: "The request conflicts with the current state",
+      },
+      {
+        path: "/error/422",
+        codigo: "validation_error",
+        mensaje: "The data provided is not valid",
+      },
+      {
+        path: "/error/500",
+        codigo: "internal_error",
+        mensaje: "An internal server error occurred",
+      },
+      {
+        path: "/indice",
+        codigo: "index_error",
+        mensaje: "The search index is unavailable",
+      },
+    ] as const;
+
+    for (const { path, codigo, mensaje } of cases) {
+      const res = await app.request(path, { headers: { "accept-language": "en" } });
+      const body = await errorFrom(res);
+      expect(body.error.codigo).toBe(codigo);
+      expect(body.error.mensaje).toBe(mensaje);
+    }
   });
 });
