@@ -10,7 +10,7 @@ import {
 } from "@migite/core";
 import { eq, sql } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { applyObjectEvent, buildIndex, indexObject } from "./indexer.js";
+import { applyObjectEvent, buildIndex, indexObject, reconcileIndex } from "./indexer.js";
 import { type IndexHandle, openIndex } from "./open.js";
 import { objetos } from "./schema.js";
 
@@ -234,6 +234,26 @@ describe("buildIndex", () => {
     expect(attributeTuples("01J8XK2P4R5S6T7U8V9W0X1Y2Z")).toEqual([["libre", null, 5, null]]);
   });
 
+  it("deduplicates files that declare the same id", () => {
+    const created = repo.createObject({
+      title: "Duplicada",
+      type: "nota",
+      attributes: { peso: 2 },
+    });
+    writeFileSync(
+      join(vaultDir, "copia.md"),
+      readFileSync(join(vaultDir, created.path), "utf8"),
+      "utf8",
+    );
+
+    const count = buildIndex(handle.db, { vaultDir });
+
+    expect(count).toBe(1);
+    expect(objectRows()).toHaveLength(1);
+    expect(attributeTuples(created.id)).toEqual([["peso", null, 2, null]]);
+    expect(ftsIds("duplicada")).toEqual([created.id]);
+  });
+
   it("removes children through the objetos CASCADE", () => {
     repo.createObject({ title: "Destino", type: "nota" });
     const origen = repo.createObject({
@@ -249,6 +269,25 @@ describe("buildIndex", () => {
     expect(attributeTuples(origen.id)).toEqual([]);
     expect(linkRows()).toEqual([]);
     expect(objectRows().map((row) => row.titulo)).toEqual(["Destino"]);
+  });
+});
+
+describe("reconcileIndex", () => {
+  it("projects links between objects created in the same batch", () => {
+    const origen = repo.createObject({
+      title: "Origen",
+      type: "nota",
+      body: "alfa [[Destino]]",
+    });
+    const destino = repo.createObject({ title: "Destino", type: "nota" });
+    expect(origen.id.localeCompare(destino.id)).toBeLessThan(0);
+
+    const summary = reconcileIndex(handle.db, { vaultDir });
+
+    expect(summary).toEqual({ created: 2, updated: 0, deleted: 0 });
+    expect(linkRows()).toEqual([
+      { origen_id: origen.id, destino_id: destino.id, contexto: "cuerpo" },
+    ]);
   });
 });
 

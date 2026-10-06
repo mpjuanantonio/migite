@@ -364,7 +364,7 @@ const dedupeEntriesById = (entries: readonly ProjectionEntry[]): ProjectionEntry
 };
 
 export const buildIndex = (db: IndexDatabase, options: BuildIndexOptions): number => {
-  const entries = collectProjectionEntries(options.vaultDir, options.timeZone);
+  const entries = dedupeEntriesById(collectProjectionEntries(options.vaultDir, options.timeZone));
   const resolveTitle = createTitleResolver(entries.map((entry) => entry.object));
   db.transaction((tx) => {
     tx.run(sql`DELETE FROM fts_objetos`);
@@ -416,12 +416,16 @@ export const reconcileIndex = (db: IndexDatabase, options: ReconcileOptions): Re
   }
   const deletedIds = indexed.filter((row) => !byId.has(row.id)).map((row) => row.id);
   const resolveTitle = createTitleResolver(entries.map((entry) => entry.object));
+  const pendingEntries = [...createdEntries, ...updatedEntries];
   db.transaction((tx) => {
     for (const objectId of deletedIds) {
       tx.run(sql`DELETE FROM fts_objetos WHERE objeto_id = ${objectId}`);
       tx.delete(objetos).where(eq(objetos.id, objectId)).run();
     }
-    for (const entry of [...createdEntries, ...updatedEntries]) {
+    for (const entry of pendingEntries) {
+      upsertObjectRow(tx, entry.object, sha256(entry.fileText));
+    }
+    for (const entry of pendingEntries) {
       projectObject(tx, entry.object, {
         fileText: entry.fileText,
         definition: entry.definition,
