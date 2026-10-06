@@ -1,0 +1,256 @@
+import { errorBodySchema } from "@migite/contracts";
+import {
+  ConfigError,
+  defaultLocale,
+  type Locale,
+  locales,
+  ObjectOperationError,
+  type TranslationKey,
+  t,
+} from "@migite/core";
+import { IndexError } from "@migite/index";
+import type { Context, Hono } from "hono";
+import { HTTPException } from "hono/http-exception";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
+import type { ServerEnv } from "../env.js";
+import { createRequestId, writeLog } from "../logs.js";
+
+export type ErrorCode =
+  | "ambiguous_title"
+  | "bad_request"
+  | "config_error"
+  | "conflict"
+  | "forbidden"
+  | "index_error"
+  | "internal_error"
+  | "invalid_object_write"
+  | "not_found"
+  | "object_not_found"
+  | "unauthorized"
+  | "validation_error";
+
+const CODE_STATUS: Readonly<Record<ErrorCode, ContentfulStatusCode>> = {
+  ambiguous_title: 409,
+  bad_request: 400,
+  config_error: 500,
+  conflict: 409,
+  forbidden: 403,
+  index_error: 500,
+  internal_error: 500,
+  invalid_object_write: 422,
+  not_found: 404,
+  object_not_found: 404,
+  unauthorized: 401,
+  validation_error: 400,
+};
+
+const OBJECT_ERROR_CODES: Readonly<Partial<Record<TranslationKey, ErrorCode>>> = {
+  "error.ambiguousTitle": "ambiguous_title",
+  "error.objectNotFound": "object_not_found",
+};
+
+const HTTP_ERROR_CODES: Readonly<Partial<Record<number, ErrorCode>>> = {
+  400: "bad_request",
+  401: "unauthorized",
+  403: "forbidden",
+  404: "not_found",
+  409: "conflict",
+  422: "validation_error",
+};
+
+const MAX_DETAIL_LENGTH = 300;
+
+const isLocale = (value: string): value is Locale => locales.some((locale) => locale === value);
+
+export const resolveLocale = (
+  header: string | undefined,
+  fallback: Locale = defaultLocale,
+): Locale => {
+  if (header === undefined) {
+    return fallback;
+  }
+  for (const part of header.split(",")) {
+    const tag = part.split(";")[0]?.trim().toLowerCase();
+    if (tag === undefined || tag.length === 0) {
+      continue;
+    }
+    const primary = tag.split("-")[0];
+    if (primary !== undefined && isLocale(primary)) {
+      return primary;
+    }
+  }
+  return fallback;
+};
+
+type ValidationIssue = {
+  readonly message: string;
+  readonly path?: readonly unknown[];
+};
+
+type ZodLikeError = {
+  readonly issues: readonly unknown[];
+};
+
+const field = (value: unknown, key: string): unknown => {
+  if (typeof value !== "object" || value === null) {
+    return undefined;
+  }
+  return (value as Record<string, unknown>)[key];
+};
+
+const isZodError = (error: unknown): error is ZodLikeError =>
+  field(error, "name") === "ZodError" && Array.isArray(field(error, "issues"));
+
+const isValidationIssue = (value: unknown): value is ValidationIssue => {
+  const path = field(value, "path");
+  return typeof field(value, "message") === "string" && (path === undefined || Array.isArray(path));
+};
+
+const pathText = (path: readonly unknown[] | undefined): string => {
+  if (path === undefined) {
+    return "";
+  }
+  const segments: string[] = [];
+  for (const segment of path) {
+    if (typeof segment === "string" || typeof segment === "number") {
+      segments.push(String(segment));
+    }
+  }
+  return segments.join(".");
+};
+
+const issueText = (issue: ValidationIssue): string => {
+  const location = pathText(issue.path);
+  return location.length === 0 ? issue.message : `${location}: ${issue.message}`;
+};
+
+const validationDetail = (issues: readonly unknown[]): string => {
+  const parts: string[] = [];
+  for (const issue of issues) {
+    if (parts.length >= 5) {
+      break;
+    }
+    if (isValidationIssue(issue)) {
+      const text = issueText(issue).trim();
+      if (text.length > 0) {
+        parts.push(text);
+      }
+    }
+  }
+  const detail = parts.join("; ");
+  return detail.length > MAX_DETAIL_LENGTH ? `${detail.slice(0, MAX_DETAIL_LENGTH)}...` : detail;
+};
+
+type ApiError = {
+  readonly codigo: ErrorCode;
+  readonly status: ContentfulStatusCode;
+  readonly mensaje: string;
+  readonly detalle: string;
+  readonly stack?: string;
+};
+
+const internalMessage = (error: Error): string => {
+  const name = error.name.trim().length > 0 ? error.name.trim() : "Error";
+  const message = error.message.trim();
+  return message.length > 0 ? `${name}: ${message}` : name;
+};
+
+const genericMessage = (locale: Locale): string => t("error.genericError", undefined, locale);
+
+const describeError = (error: Error, locale: Locale): ApiError => {
+  if (isZodError(error)) {
+    const detail = validationDetail(error.issues);
+    return {
+      codigo: "validation_error",
+      status: CODE_STATUS.validation_error,
+      mensaje: detail.length > 0 ? detail : genericMessage(locale),
+      detalle: internalMessage(error),
+      stack: error.stack,
+    };
+  }
+  if (error instanceof ObjectOperationError) {
+    const codigo = OBJECT_ERROR_CODES[error.key] ?? "invalid_object_write";
+    return {
+      codigo,
+      status: CODE_STATUS[codigo],
+      mensaje: t(error.key, error.params, locale),
+      detalle: internalMessage(error),
+      stack: error.stack,
+    };
+  }
+  if (error instanceof ConfigError) {
+    return {
+      codigo: "config_error",
+      status: CODE_STATUS.config_error,
+      mensaje: t("error.invalidConfig", { path: error.path }, locale),
+      detalle: internalMessage(error),
+      stack: error.stack,
+    };
+  }
+  if (error instanceof IndexError) {
+    return {
+      codigo: "index_error",
+      status: CODE_STATUS.index_error,
+      mensaje: genericMessage(locale),
+      detalle: internalMessage(error),
+      stack: error.stack,
+    };
+  }
+  if (error instanceof HTTPException) {
+    const mapped = HTTP_ERROR_CODES[error.status];
+    const codigo = mapped ?? (error.status >= 500 ? "internal_error" : "bad_request");
+    return {
+      codigo,
+      status: mapped === undefined && error.status < 500 ? error.status : CODE_STATUS[codigo],
+      mensaje: genericMessage(locale),
+      detalle: `HTTP ${error.status} ${internalMessage(error)}`,
+      stack: error.stack,
+    };
+  }
+  return {
+    codigo: "internal_error",
+    status: CODE_STATUS.internal_error,
+    mensaje: genericMessage(locale),
+    detalle: internalMessage(error),
+    stack: error.stack,
+  };
+};
+
+const logError = (c: Context<ServerEnv>, api: ApiError): void => {
+  writeLog({
+    event: "error",
+    requestId: c.get("requestId") ?? createRequestId(),
+    codigo: api.codigo,
+    mensaje: api.detalle,
+    stack: api.stack,
+  });
+};
+
+export type ErrorHandlingOptions = {
+  readonly fallbackLocale?: Locale;
+};
+
+export const registerErrorHandling = (
+  app: Hono<ServerEnv>,
+  options: ErrorHandlingOptions = {},
+): void => {
+  const fallbackLocale = options.fallbackLocale ?? defaultLocale;
+  const localeOf = (c: Context<ServerEnv>): Locale =>
+    resolveLocale(c.req.header("accept-language"), fallbackLocale);
+
+  app.notFound((c) => {
+    const body = errorBodySchema.parse({
+      error: { codigo: "not_found", mensaje: genericMessage(localeOf(c)) },
+    });
+    return c.json(body, CODE_STATUS.not_found);
+  });
+
+  app.onError((error, c) => {
+    const api = describeError(error, localeOf(c));
+    logError(c, api);
+    const body = errorBodySchema.parse({
+      error: { codigo: api.codigo, mensaje: api.mensaje },
+    });
+    return c.json(body, api.status);
+  });
+};

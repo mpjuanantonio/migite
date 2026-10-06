@@ -2,7 +2,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { loadConfig } from "@migite/core";
-import { app } from "./app.js";
+import { createApp } from "./app.js";
 import { startRuntime } from "./runtime.js";
 import { resolvePort, serverErrorMessage, startupWarnings } from "./startup.js";
 
@@ -11,6 +11,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const start = (): void => {
   const config = loadConfig({ root });
   const port = resolvePort(process.env.PORT);
+  const app = createApp({ locale: config.app.locale });
 
   for (const warning of startupWarnings(config)) {
     console.warn(warning);
