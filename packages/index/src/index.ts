@@ -1,4 +1,12 @@
 export {
+  type ApplyObjectEventOptions,
+  applyObjectEvent,
+  type BuildIndexOptions,
+  buildIndex,
+  type IndexObjectOptions,
+  indexObject,
+} from "./indexer.js";
+export {
   type IndexDatabase,
   IndexError,
   type IndexHandle,
