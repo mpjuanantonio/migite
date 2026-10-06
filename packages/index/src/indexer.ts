@@ -37,6 +37,7 @@ export type BuildIndexOptions = {
 export type ApplyObjectEventOptions = {
   readonly vaultDir: string;
   readonly timeZone?: string;
+  readonly titleCache?: TitleCache;
 };
 
 export type ReconcileOptions = {
@@ -66,6 +67,11 @@ type AttributeRow = {
 type TitledObject = {
   readonly id: string;
   readonly title: string;
+};
+
+export type TitleCache = {
+  readonly resolve: (title: string) => string | undefined;
+  readonly invalidate: () => void;
 };
 
 type ProjectionEntry = {
@@ -212,6 +218,19 @@ const createTitleResolver = (
     }
   }
   return (title) => byTitle.get(normalizeTitle(title));
+};
+
+export const createTitleCache = (loadTitles: () => readonly TitledObject[]): TitleCache => {
+  let resolveTitle: ((title: string) => string | undefined) | undefined;
+  return {
+    resolve: (title) => {
+      resolveTitle ??= createTitleResolver(loadTitles());
+      return resolveTitle(title);
+    },
+    invalidate: () => {
+      resolveTitle = undefined;
+    },
+  };
 };
 
 const upsertObjectRow = (db: ProjectionDatabase, object: ObjectRecord, hash: string): void => {
@@ -446,6 +465,7 @@ export const applyObjectEvent = (
   options: ApplyObjectEventOptions,
 ): void => {
   if (event.type === "ObjectDeleted") {
+    options.titleCache?.invalidate();
     const target =
       db.select({ id: objetos.id }).from(objetos).where(eq(objetos.id, event.objectId)).get() ??
       db.select({ id: objetos.id }).from(objetos).where(eq(objetos.ruta, event.path)).get();
@@ -482,7 +502,20 @@ export const applyObjectEvent = (
   if (fileText === undefined) {
     return;
   }
-  const resolveTitle = createTitleResolver(repository.listObjects());
+  if (options.titleCache !== undefined) {
+    const previousPath = db
+      .select({ ruta: objetos.ruta })
+      .from(objetos)
+      .where(eq(objetos.id, object.id))
+      .get()?.ruta;
+    if (previousPath === undefined || previousPath !== object.path) {
+      options.titleCache.invalidate();
+    }
+  }
+  const resolveTitle =
+    options.titleCache === undefined
+      ? createTitleResolver(repository.listObjects())
+      : options.titleCache.resolve;
   const definition = repository.getType(object.type);
   db.transaction((tx) => {
     projectObject(tx, object, { fileText, definition, resolveTitle });

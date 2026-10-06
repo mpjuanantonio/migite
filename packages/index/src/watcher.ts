@@ -1,8 +1,8 @@
 import { lstatSync, type Stats } from "node:fs";
 import { relative, resolve } from "node:path";
-import { RESERVED_ROOT_DIRS } from "@migite/core";
+import { createObjectRepository, RESERVED_ROOT_DIRS } from "@migite/core";
 import { watch } from "chokidar";
-import { applyObjectEvent, runReindex } from "./indexer.js";
+import { applyObjectEvent, createTitleCache, runReindex } from "./indexer.js";
 import type { IndexDatabase } from "./open.js";
 
 export type WatcherErrorHandler = (error: unknown, path: string) => void;
@@ -80,6 +80,10 @@ export const startWatcher = (options: StartWatcherOptions): WatcherHandle => {
     return relativePath;
   };
 
+  const titleCache = createTitleCache(() =>
+    createObjectRepository({ vaultDir, timeZone: options.timeZone }).listObjects(),
+  );
+
   const pending = new Map<string, PendingKind>();
   let timer: NodeJS.Timeout | undefined;
   let ready = false;
@@ -103,7 +107,7 @@ export const startWatcher = (options: StartWatcherOptions): WatcherHandle => {
         objectId: relativePath,
         path: relativePath,
       },
-      { vaultDir, timeZone: options.timeZone },
+      { vaultDir, timeZone: options.timeZone, titleCache },
     );
   };
 

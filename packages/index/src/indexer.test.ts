@@ -9,10 +9,38 @@ import {
   type ObjectRepository,
 } from "@migite/core";
 import { eq, sql } from "drizzle-orm";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { applyObjectEvent, buildIndex, indexObject, reconcileIndex } from "./indexer.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  applyObjectEvent,
+  buildIndex,
+  createTitleCache,
+  indexObject,
+  reconcileIndex,
+} from "./indexer.js";
 import { type IndexHandle, openIndex } from "./open.js";
 import { objetos } from "./schema.js";
+
+const coreMocks = vi.hoisted(() => ({ listObjectsCalls: 0 }));
+
+vi.mock("@migite/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@migite/core")>();
+  return {
+    ...actual,
+    createObjectRepository: (
+      options: Parameters<typeof actual.createObjectRepository>[0],
+    ): ReturnType<typeof actual.createObjectRepository> => {
+      const repository = actual.createObjectRepository(options);
+      const listObjects = repository.listObjects;
+      return {
+        ...repository,
+        listObjects: () => {
+          coreMocks.listObjectsCalls += 1;
+          return listObjects();
+        },
+      };
+    },
+  };
+});
 
 const CUSTOM_TYPE_YAML = `id: etiquetado
 nombre: Etiquetado
@@ -405,6 +433,100 @@ describe("applyObjectEvent", () => {
     );
 
     expect(objectRows()).toEqual([]);
+  });
+
+  it("scans the vault once across backlink updates and invalidates on create and delete", () => {
+    const destino = repo.createObject({ title: "Destino", type: "nota" });
+    const fuenteA = repo.createObject({ title: "Fuente 0", type: "nota", body: "[[Destino]]" });
+    const fuenteB = repo.createObject({ title: "Fuente 1", type: "nota", body: "[[Destino]]" });
+    const fuenteC = repo.createObject({ title: "Fuente 2", type: "nota", body: "[[Destino]]" });
+    const fuentes = [fuenteA, fuenteB, fuenteC];
+    buildIndex(handle.db, { vaultDir });
+
+    coreMocks.listObjectsCalls = 0;
+    const titleCache = createTitleCache(() => repo.listObjects());
+
+    for (const fuente of fuentes) {
+      applyObjectEvent(
+        handle.db,
+        { type: "ObjectUpdated", objectId: fuente.id, path: fuente.path },
+        { vaultDir, titleCache },
+      );
+    }
+
+    expect(coreMocks.listObjectsCalls).toBe(1);
+    expect(
+      linkRows()
+        .map((row) => row.origen_id)
+        .sort(),
+    ).toEqual(fuentes.map((fuente) => fuente.id).sort());
+    expect(linkRows().every((row) => row.destino_id === destino.id)).toBe(true);
+
+    repo.deleteObject(destino.id);
+    applyObjectEvent(
+      handle.db,
+      { type: "ObjectDeleted", objectId: destino.id, path: destino.path },
+      { vaultDir, titleCache },
+    );
+
+    expect(coreMocks.listObjectsCalls).toBe(1);
+    applyObjectEvent(
+      handle.db,
+      { type: "ObjectUpdated", objectId: fuenteA.id, path: fuenteA.path },
+      { vaultDir, titleCache },
+    );
+    expect(coreMocks.listObjectsCalls).toBe(2);
+    expect(linkRows()).toEqual([]);
+
+    const recreado = repo.createObject({ title: "Destino", type: "nota" });
+    applyObjectEvent(
+      handle.db,
+      { type: "ObjectCreated", objectId: recreado.id, path: recreado.path },
+      { vaultDir, titleCache },
+    );
+    applyObjectEvent(
+      handle.db,
+      { type: "ObjectUpdated", objectId: fuenteA.id, path: fuenteA.path },
+      { vaultDir, titleCache },
+    );
+    expect(coreMocks.listObjectsCalls).toBe(3);
+
+    expect(linkRows()).toEqual([
+      { origen_id: fuenteA.id, destino_id: recreado.id, contexto: "cuerpo" },
+    ]);
+  });
+
+  it("invalidates cached titles when an update moves the object to a new path", () => {
+    const destino = repo.createObject({ title: "Viejo", type: "nota" });
+    const origen = repo.createObject({ title: "Fuente", type: "nota", body: "[[Viejo]]" });
+    buildIndex(handle.db, { vaultDir });
+
+    coreMocks.listObjectsCalls = 0;
+    const titleCache = createTitleCache(() => repo.listObjects());
+    applyObjectEvent(
+      handle.db,
+      { type: "ObjectUpdated", objectId: origen.id, path: origen.path },
+      { vaultDir, titleCache },
+    );
+    expect(coreMocks.listObjectsCalls).toBe(1);
+
+    const renamed = repo.renameObject(destino.id, "Nuevo");
+    applyObjectEvent(
+      handle.db,
+      { type: "ObjectUpdated", objectId: destino.id, path: renamed.object.path },
+      { vaultDir, titleCache },
+    );
+    applyObjectEvent(
+      handle.db,
+      { type: "ObjectUpdated", objectId: origen.id, path: origen.path },
+      { vaultDir, titleCache },
+    );
+
+    expect(coreMocks.listObjectsCalls).toBe(2);
+    expect(linkRows()).toEqual([
+      { origen_id: origen.id, destino_id: destino.id, contexto: "cuerpo" },
+    ]);
+    expect(ftsIds("nuevo")).toEqual([destino.id, origen.id].sort());
   });
 });
 

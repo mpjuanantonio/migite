@@ -3,6 +3,7 @@ export {
   applyObjectEvent,
   type BuildIndexOptions,
   buildIndex,
+  createTitleCache,
   type IndexObjectOptions,
   indexObject,
   type ReconcileOptions,
@@ -11,6 +12,7 @@ export {
   type ReindexSummary,
   reconcileIndex,
   runReindex,
+  type TitleCache,
 } from "./indexer.js";
 export {
   type IndexDatabase,
