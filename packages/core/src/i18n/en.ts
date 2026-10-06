@@ -23,6 +23,7 @@ export const en = {
   "error.missingRequiredAttribute": "missing required attribute: {id}",
   "error.objectDeleteFailed": "could not delete object {id}: {detail}",
   "error.objectNotFound": "object not found: {id}",
+  "error.objectRenameFailed": "could not rename or move the object file: {path}",
   "error.portInUse": "the port is already in use (EADDRINUSE)",
   "error.portPermissionDenied": "no permission to listen on the port (EACCES)",
   "error.portUnavailable": "the network address is not available (EADDRNOTAVAIL)",
@@ -34,6 +35,7 @@ export const en = {
   "error.undeclaredProvider": "provider {provider} is not declared in providers",
   "warning.invalidTypeAttribute": "Warning: attribute {id} discarded in {path}",
   "warning.invalidTypeFile": "Warning: issues in type file {path}: {problems}",
+  "warning.linkRewriteSkipped": "Warning: wikilink rewrite skipped in {path}: {problems}",
   "warning.missingApiKey":
     "Warning: the environment variable {variable} (API key) is not set. The app works, but the AI agent will be unavailable.",
   "web.containerNotFound": "Root container #root not found",

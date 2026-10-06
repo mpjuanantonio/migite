@@ -25,6 +25,7 @@ export const es = {
   "error.missingRequiredAttribute": "falta el atributo obligatorio: {id}",
   "error.objectDeleteFailed": "no se pudo eliminar el objeto {id}: {detail}",
   "error.objectNotFound": "objeto no encontrado: {id}",
+  "error.objectRenameFailed": "no se pudo renombrar o mover el fichero del objeto: {path}",
   "error.portInUse": "el puerto ya está en uso (EADDRINUSE)",
   "error.portPermissionDenied": "no hay permisos para escuchar en el puerto (EACCES)",
   "error.portUnavailable": "la dirección de red no está disponible (EADDRNOTAVAIL)",
@@ -37,6 +38,7 @@ export const es = {
   "error.undeclaredProvider": "el proveedor {provider} no está declarado en proveedores",
   "warning.invalidTypeAttribute": "Aviso: atributo {id} descartado en {path}",
   "warning.invalidTypeFile": "Aviso: incidencias en el fichero de tipo {path}: {problems}",
+  "warning.linkRewriteSkipped": "Aviso: reescritura de wikilinks omitida en {path}: {problems}",
   "warning.missingApiKey":
     "Aviso: no está definida la variable de entorno {variable} (clave API). La app funciona, pero el agente de IA quedará inoperativo.",
   "web.containerNotFound": "No se encontro el contenedor #root",

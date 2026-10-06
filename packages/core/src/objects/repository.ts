@@ -8,12 +8,14 @@ import { newUlid } from "../ulid.js";
 import { ObjectOperationError } from "./errors.js";
 import type {
   CreateObjectInput,
+  LocatedObject,
   ObjectRecord,
   ObjectRepository,
   ObjectSummary,
   ReadObjectResult,
   UpdateObjectChanges,
 } from "./model.js";
+import { createRenameOperations, type RenameOperations } from "./rename.js";
 import { assertTimeZone, formatTimestamp } from "./timestamps.js";
 import { checkAttributes } from "./validate.js";
 import {
@@ -27,12 +29,6 @@ import {
 export type CreateObjectRepositoryOptions = {
   vaultDir: string;
   timeZone?: string;
-};
-
-type LocatedObject = {
-  file: VaultFile;
-  text: string;
-  result: ReadObjectResult;
 };
 
 type LoadedRegistry = {
@@ -263,6 +259,17 @@ export const createObjectRepository = (
     return summaries.sort((left, right) => left.id.localeCompare(right.id));
   };
 
+  const scanObjects = (): LocatedObject[] => {
+    const scanned: LocatedObject[] = [];
+    for (const file of scanVaultFiles(vaultDir)) {
+      const read = tryRead(file);
+      if (read.result.ok) {
+        scanned.push({ file, text: read.text, result: read.result });
+      }
+    }
+    return scanned;
+  };
+
   const readObject = (ref: string): ReadObjectResult => locate(ref).result;
 
   const findObjectByTitle = (title: string): ObjectSummary | undefined =>
@@ -410,12 +417,25 @@ export const createObjectRepository = (
   const getType = (typeId: string): TypeDefinition | undefined =>
     currentRegistry().types.get(typeId);
 
+  const { renameObject, moveObject, findIncomingLinks }: RenameOperations = createRenameOperations({
+    vaultDir,
+    timeZone,
+    locate,
+    scanObjects,
+    invalidateIndex,
+    invalidWrite,
+    ambiguousTitle,
+  });
+
   return {
     listObjects,
     readObject,
     createObject,
     updateObject,
     deleteObject,
+    renameObject,
+    moveObject,
+    findIncomingLinks,
     listTypes,
     listTypeWarnings,
     getType,

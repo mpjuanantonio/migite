@@ -2,10 +2,12 @@ export { bootstrapVault } from "./bootstrap.js";
 export { ObjectOperationError } from "./errors.js";
 export type {
   CreateObjectInput,
+  IncomingLink,
   ObjectRecord,
   ObjectRepository,
   ObjectSummary,
   ReadObjectResult,
+  RenameReport,
   UpdateObjectChanges,
   VaultBootstrap,
 } from "./model.js";

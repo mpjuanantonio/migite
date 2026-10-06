@@ -41,6 +41,15 @@ export {
   t,
 } from "./i18n/index.js";
 
+export {
+  findUnresolvedWikiLinks,
+  normalizeTitle,
+  parseWikiLinks,
+  resolveWikiLink,
+  rewriteWikiLinks,
+  type WikiLink,
+} from "./links/index.js";
+
 export { NATIVE_TYPE_IDS, seedNativeTypes } from "./native-types/index.js";
 
 export {
@@ -51,12 +60,14 @@ export {
   type CreateObjectRepositoryOptions,
   createAttributeTray,
   createObjectRepository,
+  type IncomingLink,
   ObjectOperationError,
   type ObjectRecord,
   type ObjectRepository,
   type ObjectSummary,
   RESERVED_ROOT_DIRS,
   type ReadObjectResult,
+  type RenameReport,
   removeAttribute,
   setAttribute,
   type UpdateObjectChanges,
