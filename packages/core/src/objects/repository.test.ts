@@ -606,6 +606,101 @@ describe("updateObject", () => {
       'value "no-existe" is not one of the declared options',
     );
   });
+
+  it("updates a degraded object without a usable schema so it can be repaired", () => {
+    const { vaultDir, repo } = setupVault();
+    writeFileSync(
+      join(vaultDir, "reparable.md"),
+      `---
+id: 01J8XK2P4R5S6T7U8V9W0X1Y2Z
+tipo: fantasma
+titulo: Reparable
+creado: 2026-10-05T14:00:00.000+02:00
+actualizado: 2026-10-05T14:00:00.000+02:00
+prioridad: alta
+---
+cuerpo viejo
+`,
+      "utf8",
+    );
+
+    const updated = repo.updateObject("reparable.md", {
+      body: "cuerpo nuevo\n",
+      links: ["[[Otra nota]]"],
+      attributes: { estado: "lo-que-sea" },
+    });
+
+    expect(updated.body).toBe("cuerpo nuevo\n");
+    expect(updated.links).toEqual(["[[Otra nota]]"]);
+    expect(updated.attributes).toEqual({ prioridad: "alta", estado: "lo-que-sea" });
+    expect(updated.degraded).toEqual([{ kind: "unknownType", type: "fantasma" }]);
+    const file = parseVaultFile(vaultDir, updated.path);
+
+    expect(file.frontmatter.type).toBe("fantasma");
+    expect(file.frontmatter.links).toEqual(["[[Otra nota]]"]);
+    expect(file.frontmatter.attributes).toEqual({ prioridad: "alta", estado: "lo-que-sea" });
+    expect(file.body).toBe("cuerpo nuevo\n");
+    expect(file.frontmatter.updated).not.toBe(file.frontmatter.created);
+  });
+
+  it("updates an object whose type file is broken", () => {
+    const { vaultDir, repo } = setupVault();
+    writeFileSync(join(vaultDir, "tipos", "roto.yaml"), "id: roto\nnombre: Roto\n", "utf8");
+    writeFileSync(
+      join(vaultDir, "rota.md"),
+      `---
+id: 01J8XK2P4R5S6T7U8V9W0X1Y2Z
+tipo: roto
+titulo: Rota
+creado: 2026-10-05T14:00:00.000+02:00
+actualizado: 2026-10-05T14:00:00.000+02:00
+---
+cuerpo viejo
+`,
+      "utf8",
+    );
+
+    const updated = repo.updateObject("rota.md", {
+      body: "cuerpo nuevo\n",
+      attributes: { libre: true },
+    });
+
+    expect(updated.body).toBe("cuerpo nuevo\n");
+    expect(updated.attributes).toEqual({ libre: true });
+    expect(updated.degraded.map((reason) => reason.kind)).toEqual(["brokenType"]);
+    expect(parseVaultFile(vaultDir, updated.path).body).toBe("cuerpo nuevo\n");
+  });
+
+  it("still rejects unsafe values and reserved keys in degraded mode", () => {
+    const { vaultDir, repo } = setupVault();
+    writeFileSync(
+      join(vaultDir, "reparable.md"),
+      `---
+id: 01J8XK2P4R5S6T7U8V9W0X1Y2Z
+tipo: fantasma
+titulo: Reparable
+creado: 2026-10-05T14:00:00.000+02:00
+actualizado: 2026-10-05T14:00:00.000+02:00
+---
+cuerpo
+`,
+      "utf8",
+    );
+
+    const unsafe = captureError(() =>
+      repo.updateObject("reparable.md", {
+        attributes: { cuando: new Date("2026-10-05T00:00:00Z") },
+      }),
+    );
+    const reserved = captureError(() =>
+      repo.updateObject("reparable.md", { attributes: { titulo: "usurpado" } }),
+    );
+
+    expect(unsafe.key).toBe("error.invalidObjectWrite");
+    expect(unsafe.problems.join(" ")).toContain('attribute "cuando"');
+    expect(reserved.key).toBe("error.invalidObjectWrite");
+    expect(reserved.problems.join(" ")).toContain('reserved key "titulo"');
+  });
 });
 
 describe("deleteObject", () => {

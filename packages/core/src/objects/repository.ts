@@ -10,7 +10,7 @@ import { DEFAULT_TYPE } from "../frontmatter/keys.js";
 import { slugify } from "../slug.js";
 import { loadTypeRegistry, type TypeDefinition, type TypeWarning } from "../types/index.js";
 import { newUlid } from "../ulid.js";
-import { degradationReasons } from "./degraded.js";
+import { degradationReasons, isTypeDegraded } from "./degraded.js";
 import { ObjectOperationError } from "./errors.js";
 import type {
   CreateObjectInput,
@@ -24,7 +24,7 @@ import type {
 } from "./model.js";
 import { createRenameOperations, type RenameOperations } from "./rename.js";
 import { assertTimeZone, formatTimestamp } from "./timestamps.js";
-import { checkAttributes } from "./validate.js";
+import { checkAttributeSafety, checkAttributes } from "./validate.js";
 import {
   normalizeFolder,
   objectFileCandidates,
@@ -408,7 +408,6 @@ export const createObjectRepository = (
     if (requestedType !== undefined && requestedType !== object.type) {
       throw invalidWrite(['the "tipo" field is immutable; updateObject cannot change it']);
     }
-    const definition = requireDefinition(object.type);
     const merged = { ...object.attributes, ...(changes.attributes ?? {}) };
     const attributes: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(merged)) {
@@ -416,12 +415,20 @@ export const createObjectRepository = (
         attributes[key] = value;
       }
     }
-    const check = checkAttributes(definition, attributes);
-    if (check.missing.length > 0) {
-      throw missingRequired(check.missing);
-    }
-    if (check.problems.length > 0) {
-      throw invalidWrite(check.problems);
+    if (isTypeDegraded(object.degraded)) {
+      const safety = checkAttributeSafety(attributes);
+      if (safety.length > 0) {
+        throw invalidWrite(safety);
+      }
+    } else {
+      const definition = requireDefinition(object.type);
+      const check = checkAttributes(definition, attributes);
+      if (check.missing.length > 0) {
+        throw missingRequired(check.missing);
+      }
+      if (check.problems.length > 0) {
+        throw invalidWrite(check.problems);
+      }
     }
     const links = changes.links ?? object.links;
     const body = changes.body ?? object.body;

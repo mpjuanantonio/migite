@@ -31,6 +31,28 @@ const isWritableValue = (value: unknown): boolean => {
   return false;
 };
 
+const checkFreeAttribute = (key: string, value: unknown, problems: string[]): void => {
+  if (isReservedKey(key)) {
+    problems.push(`reserved key "${key}" cannot be used as an attribute`);
+    return;
+  }
+  if (!isWritableValue(value)) {
+    problems.push(
+      `attribute "${key}" must hold JSON-compatible data (string, finite number, boolean, null, list or plain object)`,
+    );
+  }
+};
+
+export const checkAttributeSafety = (attributes: Record<string, unknown>): string[] => {
+  const problems: string[] = [];
+  for (const [key, value] of Object.entries(attributes)) {
+    if (value !== undefined) {
+      checkFreeAttribute(key, value, problems);
+    }
+  }
+  return problems;
+};
+
 export const checkAttributes = (
   definition: TypeDefinition,
   attributes: Record<string, unknown>,
@@ -51,17 +73,9 @@ export const checkAttributes = (
     if (value === undefined) {
       continue;
     }
-    if (isReservedKey(key)) {
-      problems.push(`reserved key "${key}" cannot be used as an attribute`);
-      continue;
-    }
     const attribute = defined.get(key);
     if (attribute === undefined) {
-      if (!isWritableValue(value)) {
-        problems.push(
-          `attribute "${key}" must hold JSON-compatible data (string, finite number, boolean, null, list or plain object)`,
-        );
-      }
+      checkFreeAttribute(key, value, problems);
       continue;
     }
     if (value === null) {
