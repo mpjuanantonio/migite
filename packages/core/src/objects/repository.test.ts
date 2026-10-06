@@ -863,6 +863,25 @@ describe("vault containment", () => {
     expect(existsSync(join(vaultDir, "mover.md"))).toBe(true);
   });
 
+  it("refuses a nested folder under a symlinked directory without creating it outside", () => {
+    const { vaultDir, repo, outsideDir } = setupSymlinks();
+    const note = repo.createObject({ title: "Mover" });
+    const outsideBefore = readdirSync(outsideDir).sort();
+
+    const created = captureError(() =>
+      repo.createObject({ title: "Intruso", folder: "enlace/nueva" }),
+    );
+    const moved = captureError(() => repo.moveObject(note.id, "enlace/nueva"));
+
+    expect(created.key).toBe("error.invalidObjectWrite");
+    expect(created.problems.join(" ")).toContain("not a regular directory inside the vault");
+    expect(moved.key).toBe("error.invalidObjectWrite");
+    expect(moved.problems.join(" ")).toContain("not a regular directory inside the vault");
+    expect(readdirSync(outsideDir).sort()).toEqual(outsideBefore);
+    expect(existsSync(join(outsideDir, "nueva"))).toBe(false);
+    expect(existsSync(join(vaultDir, "mover.md"))).toBe(true);
+  });
+
   it("keeps symlinked entries out of the vault listing", () => {
     const { repo } = setupSymlinks();
 

@@ -1,7 +1,8 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { MAX_TEXT_FILE_BYTES } from "../limits.js";
 import { missingApiKeys } from "./apikeys.js";
 import { ConfigError } from "./errors.js";
 import { applyEnv, loadConfig } from "./load.js";
@@ -190,6 +191,20 @@ describe("loadConfig", () => {
 
       expect(error.message).toContain("timeZone");
       expect(error.message).toContain("zona horaria IANA no reconocida");
+    });
+
+    it("rejects a YAML file larger than the read limit before parsing", () => {
+      const root = createRoot({
+        "config/app.yaml": VALID_APP,
+        "config/llm.yaml": VALID_LLM,
+      });
+      truncateSync(join(root, "config", "app.yaml"), MAX_TEXT_FILE_BYTES + 1);
+
+      const error = captureConfigError(() => loadConfig({ root }));
+
+      expect(error.path).toBe("config/app.yaml");
+      expect(error.message).toContain("supera el límite");
+      expect(error.message).toContain(String(MAX_TEXT_FILE_BYTES));
     });
 
     it("rejects unexpected keys in app.yaml", () => {

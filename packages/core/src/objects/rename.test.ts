@@ -29,6 +29,7 @@ const fsGates = vi.hoisted(() => {
     mutate: undefined as { suffix: string; onRead: number; text: string } | undefined,
     reads: new Map<string, number>(),
     linkError: undefined as string | undefined,
+    unlinkError: undefined as { path: string; code: string } | undefined,
     fsyncError: undefined as string | undefined,
     injectedError,
   };
@@ -60,6 +61,13 @@ vi.mock("node:fs", async (importOriginal) => {
         return actual.linkSync(existingPath, newPath);
       }
       throw fsGates.injectedError(fsGates.linkError, `link "${String(newPath)}"`);
+    },
+    unlinkSync: (path: Parameters<typeof actual.unlinkSync>[0]) => {
+      const gate = fsGates.unlinkError;
+      if (gate !== undefined && String(path) === gate.path) {
+        throw fsGates.injectedError(gate.code, `unlink "${String(path)}"`);
+      }
+      return actual.unlinkSync(path);
     },
     fsyncSync: (fd: number) => {
       if (fsGates.fsyncError === undefined) {
@@ -106,6 +114,7 @@ afterEach(() => {
   fsGates.mutate = undefined;
   fsGates.reads.clear();
   fsGates.linkError = undefined;
+  fsGates.unlinkError = undefined;
   fsGates.fsyncError = undefined;
   for (const root of roots.splice(0)) {
     rmSync(root, { recursive: true, force: true });
@@ -387,6 +396,26 @@ describe("moveObject", () => {
     expect(moved.path).toBe("notas/mover.md");
     expect(existsSync(join(vaultDir, "mover.md"))).toBe(false);
     expect(parseVaultFile(vaultDir, moved.path).body).toBe("cuerpo\n");
+  });
+
+  it("removes the target when unlinking the source fails, leaving no duplicate", () => {
+    const { vaultDir, repo } = setupVault();
+    const record = repo.createObject({ title: "Mover", body: "cuerpo\n" });
+    const source = join(vaultDir, record.path);
+    fsGates.unlinkError = { path: source, code: "EBUSY" };
+
+    const error = captureError(() => repo.moveObject(record.id, "notas"));
+
+    expect(error.key).toBe("error.objectRenameFailed");
+    expect(error.problems.join(" ")).toContain("EBUSY");
+    expect(existsSync(source)).toBe(true);
+    expect(existsSync(join(vaultDir, "notas/mover.md"))).toBe(false);
+    expect(repo.listObjects()).toHaveLength(1);
+
+    fsGates.unlinkError = undefined;
+    const moved = repo.moveObject(record.id, "notas");
+    expect(moved.path).toBe("notas/mover.md");
+    expect(existsSync(join(vaultDir, "notas/mover.md"))).toBe(true);
   });
 
   it("rejects a reserved or absolute folder without moving the file", () => {

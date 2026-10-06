@@ -1,4 +1,4 @@
-import { mkdirSync, unlinkSync } from "node:fs";
+import { unlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
   type ObjectFrontmatter,
@@ -27,7 +27,7 @@ import { createRenameOperations, type RenameOperations } from "./rename.js";
 import { assertTimeZone, formatTimestamp } from "./timestamps.js";
 import { checkAttributeSafety, checkAttributes } from "./validate.js";
 import {
-  isVaultDirectory,
+  ensureVaultDirectory,
   normalizeFolder,
   objectFileCandidates,
   readObjectText,
@@ -362,8 +362,7 @@ export const createObjectRepository = (
       attributes,
     };
     const text = writeObjectFile(frontmatter, body);
-    mkdirSync(dir, { recursive: true });
-    if (!isVaultDirectory(vaultDir, dir)) {
+    if (!ensureVaultDirectory(vaultDir, dir)) {
       throw invalidWrite([`folder "${folder}" is not a regular directory inside the vault`]);
     }
     const fileName = writeNewFile(dir, objectFileCandidates(slug, id), text);

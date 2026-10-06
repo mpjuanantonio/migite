@@ -1,5 +1,6 @@
-import { type Dirent, readdirSync, readFileSync } from "node:fs";
+import { type Dirent, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { MAX_TEXT_FILE_BYTES } from "../limits.js";
 import type { TypeDefinition, TypeWarning } from "./definitions.js";
 import { parseTypeDetails } from "./parse.js";
 
@@ -28,6 +29,14 @@ export const loadTypeRegistry = (
     const path = join(tiposDir, entry.name);
     let text: string;
     try {
+      const { size } = statSync(path);
+      if (size > MAX_TEXT_FILE_BYTES) {
+        warnings.push({
+          path,
+          problems: [`file exceeds the ${MAX_TEXT_FILE_BYTES} byte read limit`],
+        });
+        continue;
+      }
       text = readFileSync(path, "utf8");
     } catch {
       warnings.push({ path, problems: ["unreadable file"] });

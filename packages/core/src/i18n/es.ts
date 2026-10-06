@@ -9,6 +9,7 @@ export const es = {
   "error.envInvalidName": "línea {line}: nombre de variable inválido",
   "error.envInvalidPort": "línea {line}: PORT debe ser un entero entre 1 y 65535",
   "error.envMissingEquals": "línea {line}: falta «=»",
+  "error.fileTooLarge": "el fichero supera el límite de {limit} bytes",
   "error.genericError": "Se ha producido un error inesperado",
   "error.invalidConfig": "Configuración inválida en {path}",
   "error.invalidEnvVarName": "nombre de variable de entorno inválido",

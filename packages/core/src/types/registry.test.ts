@@ -1,8 +1,9 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { t } from "../i18n/index.js";
+import { MAX_TEXT_FILE_BYTES } from "../limits.js";
 import { loadTypeRegistry, type TypeWarning } from "./index.js";
 
 const VALID_LIBRO = `id: libro
@@ -88,6 +89,19 @@ describe("loadTypeRegistry", () => {
 
     expect([...registry.types.keys()]).toEqual(["libro"]);
     expect(registry.warnings).toEqual([]);
+  });
+
+  it("warns and skips a file larger than the read limit before parsing", () => {
+    const dir = createTypesDir({ "libro.yaml": VALID_LIBRO });
+    truncateSync(join(dir, "libro.yaml"), MAX_TEXT_FILE_BYTES + 1);
+
+    const registry = loadTypeRegistry(dir);
+
+    expect(registry.types.size).toBe(0);
+    const warning = firstWarning(registry.warnings);
+    expect(warning.path).toBe(join(dir, "libro.yaml"));
+    expect(warning.problems.join(" ")).toContain("read limit");
+    expect(warning.problems.join(" ")).toContain(String(MAX_TEXT_FILE_BYTES));
   });
 
   it("warns and skips a file with unreadable YAML", () => {

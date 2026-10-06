@@ -1,8 +1,9 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { parse, YAMLParseError } from "yaml";
 import type { ZodError } from "zod";
 import { defaultLocale, type Locale, t } from "../i18n/index.js";
+import { MAX_TEXT_FILE_BYTES } from "../limits.js";
 import { type EnvEntry, envIssues, parseDotenv } from "./env.js";
 import { ConfigError } from "./errors.js";
 import { type AppConfig, type LlmConfig, makeAppSchema, makeLlmSchema } from "./schema.js";
@@ -41,8 +42,19 @@ const yamlErrorMessage = (error: unknown): string => {
 const readYaml = (filePath: string, path: string, locale: Locale): unknown => {
   let source: string;
   try {
+    const { size } = statSync(filePath);
+    if (size > MAX_TEXT_FILE_BYTES) {
+      throw new ConfigError(
+        path,
+        [t("error.fileTooLarge", { limit: MAX_TEXT_FILE_BYTES }, locale)],
+        locale,
+      );
+    }
     source = readFileSync(filePath, "utf8");
-  } catch {
+  } catch (error) {
+    if (error instanceof ConfigError) {
+      throw error;
+    }
     throw new ConfigError(path, [t("error.configMissingFile")], locale);
   }
   try {

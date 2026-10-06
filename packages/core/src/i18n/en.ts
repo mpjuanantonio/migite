@@ -7,6 +7,7 @@ export const en = {
   "error.envInvalidName": "line {line}: invalid variable name",
   "error.envInvalidPort": "line {line}: PORT must be an integer between 1 and 65535",
   "error.envMissingEquals": 'line {line}: missing "="',
+  "error.fileTooLarge": "the file exceeds the {limit} byte limit",
   "error.genericError": "An unexpected error occurred",
   "error.invalidConfig": "Invalid configuration in {path}",
   "error.invalidEnvVarName": "invalid environment variable name",

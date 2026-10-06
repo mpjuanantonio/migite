@@ -1,9 +1,10 @@
-import { type Dirent, lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { isAbsolute, join, relative, sep } from "node:path";
+import { type Dirent, lstatSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, sep } from "node:path";
+import { MAX_TEXT_FILE_BYTES } from "../limits.js";
 
 export const RESERVED_ROOT_DIRS = ["tipos", "vistas", "adjuntos", ".migite"] as const;
 
-export const MAX_OBJECT_BYTES = 10 * 1024 * 1024;
+export const MAX_OBJECT_BYTES = MAX_TEXT_FILE_BYTES;
 
 const MARKDOWN_FILE = /\.md$/i;
 
@@ -63,6 +64,35 @@ const isRegularFile = (root: string, path: string): boolean => isVaultPath(root,
 
 export const isVaultDirectory = (root: string, path: string): boolean =>
   isVaultPath(root, path, "directory");
+
+const pathExists = (path: string): boolean => {
+  try {
+    lstatSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+export const deepestExistingAncestor = (path: string): string => {
+  let current = path;
+  while (!pathExists(current)) {
+    const parent = dirname(current);
+    if (parent === current) {
+      return current;
+    }
+    current = parent;
+  }
+  return current;
+};
+
+export const ensureVaultDirectory = (root: string, path: string): boolean => {
+  if (!isVaultDirectory(root, deepestExistingAncestor(path))) {
+    return false;
+  }
+  mkdirSync(path, { recursive: true });
+  return isVaultDirectory(root, path);
+};
 
 export const readObjectText = (absolutePath: string): string => {
   const { size } = statSync(absolutePath);

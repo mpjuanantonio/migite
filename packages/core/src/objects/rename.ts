@@ -1,4 +1,4 @@
-import { constants, copyFileSync, linkSync, mkdirSync, unlinkSync } from "node:fs";
+import { constants, copyFileSync, linkSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { type ObjectFrontmatter, writeObjectFile } from "../frontmatter/index.js";
 import {
@@ -15,7 +15,7 @@ import { ObjectOperationError } from "./errors.js";
 import type { IncomingLink, LocatedObject, ObjectRecord, RenameReport } from "./model.js";
 import { formatTimestamp } from "./timestamps.js";
 import {
-  isVaultDirectory,
+  ensureVaultDirectory,
   normalizeFolder,
   objectFileCandidates,
   readObjectText,
@@ -75,7 +75,12 @@ const moveFile = (source: string, target: string): boolean => {
       throw copyError;
     }
   }
-  unlinkSync(source);
+  try {
+    unlinkSync(source);
+  } catch (error) {
+    removeFileQuietly(target);
+    throw error;
+  }
   return true;
 };
 
@@ -342,8 +347,7 @@ export const createRenameOperations = (host: RenameHost): RenameOperations => {
     const stem = object.fileName.endsWith(".md") ? object.fileName.slice(0, -3) : object.fileName;
     let fileName: string | undefined;
     try {
-      mkdirSync(dir, { recursive: true });
-      if (!isVaultDirectory(host.vaultDir, dir)) {
+      if (!ensureVaultDirectory(host.vaultDir, dir)) {
         throw host.invalidWrite([`folder "${target}" is not a regular directory inside the vault`]);
       }
       fileName = claimFileName(
