@@ -1,0 +1,5 @@
+paths:
+  vault: ./vault
+  index: ./data/index.db
+timeZone: Europe/Madrid
+locale: es

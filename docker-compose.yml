@@ -1,44 +1,23 @@
-# docker-compose.yml (base, compartido dev/prod)
-# Uso:  docker compose -f docker-compose.yml -f docker-compose.dev.yml up
-#       docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# docker-compose.yml — base compartida: un único servicio `app`.
+# ADR-005/006: sin Postgres, sin LiteLLM y sin SearXNG (servicios descartados).
+# Combínalo siempre con un override:
+#   dev:  docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#   prod: VERSION=vX.Y.Z docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# `docker compose up` a secas construye la imagen prod estrictamente local.
 services:
   app:
     build:
       context: .
-      target: dev
+      target: prod
     ports:
       - "3000:3000"
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     volumes:
-      - vault:/data/vault
-      - appdata:/data/app
-    depends_on:
-      - litellm
-      - searxng
-
-  litellm:
-    image: ghcr.io/berriai/litellm:main-latest
-    ports:
-      - "4000:4000"
-    env_file: .env
-    volumes:
-      - ./config/litellm.yaml:/app/config.yaml
-    command: ["--config", "/app/config.yaml"]
-    depends_on:
-      - postgres
-
-  postgres:
-    image: postgres:16-alpine
-    env_file: .env
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-
-  searxng:
-    image: searxng/searxng:latest
-    volumes:
-      - ./config/searxng.yml:/etc/searxng/settings.yml
+      - vault:/app/vault
+      - indice:/app/data
 
 volumes:
   vault:
-  appdata:
-  pgdata:
+  indice:

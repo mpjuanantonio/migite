@@ -2,6 +2,9 @@
   "$schema": "https://opencode.ai/config.json",
   "provider": {
     "opencode-go": {
+      "options": {
+        "timeout": 600000
+      },
       "models": {
         "deepseek-v4.1-flash": {
           "options": {
@@ -12,6 +15,7 @@
     }
   },
   "permission": {
+    "doom_loop": "allow",
     "bash": {
       "*": "ask",
       "git status*": "allow",
@@ -28,6 +32,15 @@
       "*.env": "deny",
       "*.env.*": "deny"
     }
+  },
+  "tool_output": {
+    "max_lines": 400,
+    "max_bytes": 16384
+  },
+  "compaction": {
+    "auto": true,
+    "prune": true,
+    "tail_turns": 15
   },
   "agent": {
     "orchestrator": {
@@ -59,6 +72,7 @@
       "description": "Implementador junior. Ejecuta tareas acotadas de código: features pequeñas, fixes, boilerplate, migraciones, scaffolding de tests. Devuelve un informe al final.",
       "model": "opencode-go/mimo-v2.6-flash",
       "prompt": "{file:./prompts/implementador.txt}",
+      "steps": 80,
       "permission": {
         "edit": {
           "*": "allow",
@@ -85,6 +99,7 @@
       "model": "opencode-go/glm-5.3-flash",
       "temperature": 0.1,
       "prompt": "{file:./prompts/code-reviewer.txt}",
+      "steps": 30,
       "permission": {
         "edit": "deny",
         "bash": "deny",
@@ -96,6 +111,7 @@
       "description": "Arquitecta de tests senior. Define estrategia de cobertura, escribe tests y audita gaps. Solo toca archivos de test.",
       "model": "opencode-go/mimo-v2.6-pro",
       "prompt": "{file:./prompts/test-architect.txt}",
+      "steps": 60,
       "permission": {
         "edit": {
           "*": "deny",
@@ -120,6 +136,7 @@
       "model": "opencode-go/deepseek-v4.1-flash",
       "temperature": 0.1,
       "prompt": "{file:./prompts/security-auditor.txt}",
+      "steps": 30,
       "permission": {
         "edit": "deny",
         "bash": "deny",
@@ -131,6 +148,7 @@
       "description": "Redactor de documentación junior. README, guías de uso, API docs. Solo toca archivos de documentación.",
       "model": "opencode-go/mimo-v2.6-flash",
       "prompt": "{file:./prompts/docs-writer.txt}",
+      "steps": 40,
       "permission": {
         "edit": {
           "*": "deny",

@@ -1,11 +1,12 @@
-# docker-compose.prod.yml — override de produccion (servidor)
-# La imagen la construye release.yml y la despliega deploy.yml (con --no-build)
+# docker-compose.prod.yml — override de producción (servidor propio, 8 GB RAM)
+# La imagen la publica la CI en ghcr.io/mpjuanantonio/migite y se despliega por tag:
+#   VERSION=vX.Y.Z docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --pull always
+# Actualización/rollback: cambia VERSION y repite el mismo comando.
+# `build: !reset null` descarta el build de la base: aquí solo se despliega la imagen publicada.
 services:
   app:
+    build: !reset null
     image: ghcr.io/mpjuanantonio/migite:${VERSION:?Define VERSION=vX.Y.Z}
     restart: unless-stopped
-    volumes:
-      - vault:/data/vault
-      - appdata:/data/app
     environment:
       NODE_ENV: production

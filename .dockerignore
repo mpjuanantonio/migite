@@ -1,0 +1,23 @@
+# Contexto mínimo: ni claves (.env), ni datos (vault/), ni artefactos locales.
+.git
+.github
+.agents
+.husky
+.turbo
+**/.turbo
+**/node_modules
+**/dist
+**/*.log
+.env
+.env.*
+!.env.example
+vault/
+data/
+Dockerfile
+docker-compose*.yml
+README.md
+LICENSE
+AGENTS.md
+prompts/
+opencode.json
+skills-lock.json

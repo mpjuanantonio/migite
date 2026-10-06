@@ -1,0 +1,9 @@
+providers:
+  - id: openai
+    baseUrl: https://api.openai.com/v1
+    apiKeyEnv: OPENAI_API_KEY
+roles:
+  chat: { provider: openai, model: gpt-4o-mini }
+  retrieve: { provider: openai, model: gpt-4o-mini }
+  summarize: { provider: openai, model: gpt-4o-mini }
+  embeddings: { provider: openai, model: text-embedding-3-small }
