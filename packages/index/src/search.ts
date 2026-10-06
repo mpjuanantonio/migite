@@ -5,15 +5,7 @@ export type ObjectFilters = {
   readonly tipo?: string;
   readonly carpeta?: string;
   readonly tag?: string;
-  /**
-   * Instante ISO 8601 (offset incluido). Se normaliza a UTC antes de
-   * comparar con `actualizado`; un valor no parseable no coincide con nada.
-   */
   readonly desde?: string;
-  /**
-   * Instante ISO 8601 (offset incluido). Se normaliza a UTC antes de
-   * comparar con `actualizado`; un valor no parseable no coincide con nada.
-   */
   readonly hasta?: string;
 };
 
@@ -30,17 +22,8 @@ export type SearchResult = IndexedObject & {
 };
 
 export type SearchObjectsOptions = {
-  /**
-   * Texto de búsqueda. Se recorta en silencio a 512 caracteres y a los
-   * 8 primeros términos; el exceso se ignora.
-   */
   readonly query?: string;
   readonly filters?: ObjectFilters;
-  /**
-   * Número máximo de resultados. Los valores válidos van de 1 a
-   * `MAX_SEARCH_LIMIT`; los no válidos usan el límite por defecto y los
-   * demasiado grandes se recortan a `MAX_SEARCH_LIMIT`.
-   */
   readonly limit?: number;
 };
 

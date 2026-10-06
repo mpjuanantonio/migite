@@ -116,6 +116,44 @@ describe("openIndex", () => {
     expect(rows).toEqual([{ clave: "schema_version", valor: String(SCHEMA_VERSION) }]);
   });
 
+  it("refreshes the stored schema version on every open", () => {
+    const first = open();
+    first.db
+      .update(meta)
+      .set({ valor: `0${SCHEMA_VERSION}` })
+      .where(eq(meta.clave, SCHEMA_VERSION_KEY))
+      .run();
+    first.close();
+    opened = undefined;
+
+    const second = open();
+    const rows = second.db.select().from(meta).where(eq(meta.clave, SCHEMA_VERSION_KEY)).all();
+
+    expect(rows).toEqual([{ clave: SCHEMA_VERSION_KEY, valor: String(SCHEMA_VERSION) }]);
+  });
+
+  it("rejects a database whose stored schema version is not a valid integer", () => {
+    for (const [index, invalid] of ["abc", "0", "1.5", "-3", ""].entries()) {
+      const path = join(directory, `invalid-${index}.db`);
+      const handle = openIndex({ dbPath: path });
+      handle.db
+        .update(meta)
+        .set({ valor: invalid })
+        .where(eq(meta.clave, SCHEMA_VERSION_KEY))
+        .run();
+      handle.close();
+
+      try {
+        openIndex({ dbPath: path });
+        expect.unreachable("openIndex should have thrown");
+      } catch (error) {
+        expect(error).toBeInstanceOf(IndexError);
+        const message = error instanceof Error ? error.message : "";
+        expect(message).toContain(SCHEMA_VERSION_KEY);
+      }
+    }
+  });
+
   it("rejects a database whose schema version is newer than the code", () => {
     const first = open();
     first.db

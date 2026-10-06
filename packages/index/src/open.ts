@@ -84,6 +84,14 @@ const configure = (connection: Database.Database): void => {
   connection.pragma("trusted_schema = OFF");
 };
 
+const parseSchemaVersion = (stored: string): number | undefined => {
+  if (!/^\d+$/.test(stored)) {
+    return undefined;
+  }
+  const version = Number(stored);
+  return Number.isSafeInteger(version) && version >= 1 ? version : undefined;
+};
+
 const assertSupportedSchemaVersion = (db: IndexDatabase, dbPath: string): void => {
   const table = db.get<{ name: string }>(
     sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'meta'`,
@@ -99,8 +107,13 @@ const assertSupportedSchemaVersion = (db: IndexDatabase, dbPath: string): void =
   if (stored === undefined) {
     return;
   }
-  const version = Number(stored);
-  if (Number.isInteger(version) && version > SCHEMA_VERSION) {
+  const version = parseSchemaVersion(stored);
+  if (version === undefined) {
+    throw new IndexError(
+      `El valor de "${SCHEMA_VERSION_KEY}" en el índice "${basename(dbPath)}" no es válido: se esperaba un entero mayor o igual que 1.`,
+    );
+  }
+  if (version > SCHEMA_VERSION) {
     throw new IndexError(
       `La base de datos del índice "${basename(dbPath)}" usa una versión de esquema (${version}) más nueva que la soportada (${SCHEMA_VERSION}).`,
     );
@@ -110,7 +123,10 @@ const assertSupportedSchemaVersion = (db: IndexDatabase, dbPath: string): void =
 const seedSchemaVersion = (db: IndexDatabase): void => {
   db.insert(meta)
     .values({ clave: SCHEMA_VERSION_KEY, valor: String(SCHEMA_VERSION) })
-    .onConflictDoNothing()
+    .onConflictDoUpdate({
+      target: meta.clave,
+      set: { valor: String(SCHEMA_VERSION) },
+    })
     .run();
 };
 
