@@ -1,7 +1,9 @@
 import { tipoPayloadSchema } from "@migite/contracts";
+import { isReservedTypeId, TypeOperationError } from "@migite/core";
 import { type Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { ServerEnv } from "../env.js";
+import { confirmationRequired } from "../services/objetos.js";
 import {
   actualizarTipo,
   crearTipo,
@@ -48,6 +50,13 @@ tiposRouter.patch("/:id", async (c) => {
 });
 
 tiposRouter.delete("/:id", (c) => {
-  eliminarTipo(currentDeps(), c.req.param("id"));
+  const id = c.req.param("id");
+  if (isReservedTypeId(id)) {
+    throw new TypeOperationError("error.typeNotEditable", { id });
+  }
+  if (c.req.query("confirmar") !== "1") {
+    throw confirmationRequired();
+  }
+  eliminarTipo(currentDeps(), id);
   return c.body(null, 204);
 });

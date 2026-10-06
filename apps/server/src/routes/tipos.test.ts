@@ -256,12 +256,27 @@ describe("PATCH /api/tipos/:id", () => {
 });
 
 describe("DELETE /api/tipos/:id", () => {
+  it("requires explicit confirmation and keeps the type", async () => {
+    expect((await sendJson("POST", "/api/tipos", LIBRO)).status).toBe(201);
+
+    const res = await app.request("/api/tipos/libro", { method: "DELETE", headers: headers() });
+
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as ErrorBody).error.codigo).toBe("confirmation_required");
+    expect(existsSync(join(tiposDir, "libro.yaml"))).toBe(true);
+    const list = await getJson<TiposBody>("/api/tipos");
+    expect(list.tipos.map((tipo) => tipo.id)).toContain("libro");
+  });
+
   it("deletes a custom type and degrades its objects", async () => {
     expect((await sendJson("POST", "/api/tipos", LIBRO)).status).toBe(201);
     writeLibroObject();
     expect((await getJson<ObjectPayload>(`/api/objetos/${OBJETO}`)).degraded).toEqual([]);
 
-    const res = await app.request("/api/tipos/libro", { method: "DELETE", headers: headers() });
+    const res = await app.request("/api/tipos/libro?confirmar=1", {
+      method: "DELETE",
+      headers: headers(),
+    });
 
     expect(res.status).toBe(204);
     expect(await res.text()).toBe("");
@@ -273,7 +288,7 @@ describe("DELETE /api/tipos/:id", () => {
     expect(degraded.degraded).toEqual([{ kind: "unknownType", type: "libro" }]);
   });
 
-  it("rejects reserved ids with type_not_editable", async () => {
+  it("rejects reserved ids before asking for confirmation", async () => {
     const res = await app.request("/api/tipos/nota", { method: "DELETE", headers: headers() });
 
     expect(res.status).toBe(403);
@@ -282,7 +297,10 @@ describe("DELETE /api/tipos/:id", () => {
   });
 
   it("answers type_not_found for unknown types", async () => {
-    const res = await app.request("/api/tipos/fantasma", { method: "DELETE", headers: headers() });
+    const res = await app.request("/api/tipos/fantasma?confirmar=1", {
+      method: "DELETE",
+      headers: headers(),
+    });
 
     expect(res.status).toBe(404);
     expect(((await res.json()) as ErrorBody).error.codigo).toBe("type_not_found");
