@@ -1,9 +1,23 @@
-import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { eq, sql } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { IndexError, type IndexHandle, openIndex, SCHEMA_VERSION } from "./open.js";
+import {
+  IndexError,
+  type IndexHandle,
+  openIndex,
+  SCHEMA_VERSION,
+  SCHEMA_VERSION_KEY,
+} from "./open.js";
 import { meta } from "./schema.js";
 
 const EXPECTED_TABLES = [
@@ -87,11 +101,12 @@ describe("openIndex", () => {
     expect(byAttribute).toHaveLength(1);
   });
 
-  it("enables WAL and foreign keys", () => {
+  it("enables WAL and foreign keys, and disables trusted_schema", () => {
     const handle = open();
 
     expect(handle.db.get(sql`PRAGMA journal_mode`)).toEqual({ journal_mode: "wal" });
     expect(handle.db.get(sql`PRAGMA foreign_keys`)).toEqual({ foreign_keys: 1 });
+    expect(handle.db.get(sql`PRAGMA trusted_schema`)).toEqual({ trusted_schema: 0 });
   });
 
   it("seeds meta.schema_version once", () => {
@@ -99,6 +114,19 @@ describe("openIndex", () => {
     const rows = handle.db.select().from(meta).where(eq(meta.clave, "schema_version")).all();
 
     expect(rows).toEqual([{ clave: "schema_version", valor: String(SCHEMA_VERSION) }]);
+  });
+
+  it("rejects a database whose schema version is newer than the code", () => {
+    const first = open();
+    first.db
+      .update(meta)
+      .set({ valor: String(SCHEMA_VERSION + 1) })
+      .where(eq(meta.clave, SCHEMA_VERSION_KEY))
+      .run();
+    first.close();
+    opened = undefined;
+
+    expect(() => open()).toThrow(/más nueva/);
   });
 
   it("is idempotent and keeps data when reopening the same database", () => {
@@ -146,12 +174,16 @@ describe("openIndex", () => {
   });
 
   it.skipIf(process.platform === "win32")(
-    "restricts permissions of the database directory and files",
+    "restricts permissions of created directories and database files only",
     () => {
-      const nested = join(directory, "nested");
+      const existing = join(directory, "existing");
+      mkdirSync(existing, { recursive: true });
+      chmodSync(existing, 0o755);
+      const nested = join(existing, "nested");
       const path = join(nested, "index.db");
       open(path);
 
+      expect(statSync(existing).mode & 0o777).toBe(0o755);
       expect(statSync(nested).mode & 0o777).toBe(0o700);
       for (const file of [path, `${path}-wal`, `${path}-shm`]) {
         expect(existsSync(file)).toBe(true);

@@ -1,7 +1,8 @@
-import { chmodSync, mkdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
+import { eq, sql } from "drizzle-orm";
 import { type BetterSQLite3Database, drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import * as schema from "./schema.js";
@@ -41,19 +42,37 @@ const restrictPermissions = (path: string, mode: number): void => {
 };
 
 const restrictIndexFiles = (dbPath: string): void => {
-  restrictPermissions(dirname(dbPath), 0o700);
   for (const suffix of ["", "-wal", "-shm"]) {
     restrictPermissions(`${dbPath}${suffix}`, 0o600);
   }
 };
 
+const missingDirectories = (directory: string): readonly string[] => {
+  const missing: string[] = [];
+  let current = directory;
+  while (!existsSync(current)) {
+    missing.push(current);
+    const parent = dirname(current);
+    if (parent === current) {
+      break;
+    }
+    current = parent;
+  }
+  return missing;
+};
+
 const prepareDirectory = (dbPath: string): void => {
+  const directory = dirname(dbPath);
+  const created = missingDirectories(directory);
   try {
-    mkdirSync(dirname(dbPath), { recursive: true });
+    mkdirSync(directory, { recursive: true });
   } catch (error) {
     throw new IndexError(`No se pudo crear el directorio del índice "${basename(dbPath)}".`, {
       cause: error,
     });
+  }
+  for (const createdDirectory of created) {
+    restrictPermissions(createdDirectory, 0o700);
   }
   restrictIndexFiles(dbPath);
 };
@@ -62,6 +81,30 @@ const configure = (connection: Database.Database): void => {
   connection.pragma("journal_mode = WAL");
   connection.pragma("foreign_keys = ON");
   connection.pragma("busy_timeout = 5000");
+  connection.pragma("trusted_schema = OFF");
+};
+
+const assertSupportedSchemaVersion = (db: IndexDatabase, dbPath: string): void => {
+  const table = db.get<{ name: string }>(
+    sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'meta'`,
+  );
+  if (table === undefined) {
+    return;
+  }
+  const stored = db
+    .select({ valor: meta.valor })
+    .from(meta)
+    .where(eq(meta.clave, SCHEMA_VERSION_KEY))
+    .get()?.valor;
+  if (stored === undefined) {
+    return;
+  }
+  const version = Number(stored);
+  if (Number.isInteger(version) && version > SCHEMA_VERSION) {
+    throw new IndexError(
+      `La base de datos del índice "${basename(dbPath)}" usa una versión de esquema (${version}) más nueva que la soportada (${SCHEMA_VERSION}).`,
+    );
+  }
 };
 
 const seedSchemaVersion = (db: IndexDatabase): void => {
@@ -92,6 +135,7 @@ export const openIndex = ({ dbPath }: OpenIndexOptions): IndexHandle => {
   try {
     configure(connection);
     const db = drizzle(connection, { schema });
+    assertSupportedSchemaVersion(db, resolved);
     migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
     seedSchemaVersion(db);
     restrictIndexFiles(resolved);
