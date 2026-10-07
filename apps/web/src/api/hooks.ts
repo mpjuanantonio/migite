@@ -1,5 +1,7 @@
 import {
+  type ObjectPayload,
   type ObjetosPage,
+  objectPayloadSchema,
   objetosPageSchema,
   type SesionStatus,
   sesionStatusSchema,
@@ -66,3 +68,27 @@ export const useObjetos = (params?: ObjetosParams) =>
     queryFn: async (): Promise<ObjetosPage> =>
       objetosPageSchema.parse(await apiFetch(objetosPath(params))),
   });
+
+const objetoPath = (id: string): string => `/api/objetos/${encodeURIComponent(id)}`;
+
+export const useObjeto = (id: string | undefined) =>
+  useQuery({
+    queryKey: queryKeys.objeto(id ?? ""),
+    enabled: id !== undefined,
+    queryFn: async (): Promise<ObjectPayload> =>
+      objectPayloadSchema.parse(await apiFetch(objetoPath(id ?? ""))),
+  });
+
+export const useGuardarObjeto = (id: string) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (cuerpo: string): Promise<ObjectPayload> =>
+      objectPayloadSchema.parse(
+        await apiFetch(objetoPath(id), { method: "PATCH", body: { cuerpo } }),
+      ),
+    onSuccess: (objeto) => {
+      queryClient.setQueryData(queryKeys.objeto(id), objeto);
+    },
+  });
+};

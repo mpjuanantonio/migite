@@ -1,7 +1,22 @@
+import type { ObjectPayload } from "@migite/contracts";
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
-import { renderApp, sesionResponse } from "@/test/render-app";
+import { jsonResponse, renderApp, sesionResponse } from "@/test/render-app";
+
+const objetoDePrueba = (): ObjectPayload => ({
+  id: "01JALFA0000000000000000000",
+  tipo: "nota",
+  titulo: "Ficha de prueba",
+  ruta: "notas/ficha.md",
+  carpeta: "notas",
+  creado: "2026-10-01T10:00:00.000Z",
+  actualizado: "2026-10-05T18:30:00.000Z",
+  atributos: {},
+  cuerpo: "Cuerpo de la ficha",
+  enlaces: [],
+  degraded: [],
+});
 
 let fetchMock: Mock<typeof fetch>;
 
@@ -60,11 +75,16 @@ describe("shell de la SPA", () => {
     expect(screen.queryByRole("navigation", { name: "Navegación principal" })).toBeNull();
   });
 
-  it("muestra el identificador en una ficha de objeto", async () => {
-    mockSesion(true);
+  it("muestra la ficha de un objeto de la ruta", async () => {
+    fetchMock.mockImplementation(async (input) =>
+      String(input).startsWith("/api/objetos/")
+        ? jsonResponse(objetoDePrueba())
+        : sesionResponse(true),
+    );
     renderApp("/objetos/01JALFA0000000000000000000");
 
-    expect(await screen.findByRole("heading", { level: 1, name: "Ficha" })).toBeInTheDocument();
-    expect(screen.getByText("01JALFA0000000000000000000")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Ficha de prueba" }),
+    ).toBeInTheDocument();
   });
 });
