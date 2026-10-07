@@ -1,0 +1,163 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/literata";
+@import "@fontsource-variable/public-sans";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: "Public Sans Variable", system-ui, sans-serif;
+  --font-display: "Literata Variable", Georgia, serif;
+  --font-heading: var(--font-display);
+  --text-display: 1.75rem;
+  --text-display--line-height: 1.2;
+  --text-display--letter-spacing: -0.015em;
+  --shadow-sheet: 0 1px 2px rgb(30 39 36 / 6%), 0 1px 1px rgb(30 39 36 / 4%);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --background: #f3f4ef;
+  --foreground: #1e2724;
+  --card: #fbfbf8;
+  --card-foreground: #1e2724;
+  --popover: #fbfbf8;
+  --popover-foreground: #1e2724;
+  --primary: #2f5148;
+  --primary-foreground: #f6f7f3;
+  --secondary: #e6eae1;
+  --secondary-foreground: #26332e;
+  --muted: #e9ebe4;
+  --muted-foreground: #5b665f;
+  --accent: #e1e8df;
+  --accent-foreground: #243f38;
+  --destructive: #8e3b46;
+  --border: #d7dbd2;
+  --input: #d7dbd2;
+  --ring: #2f5148;
+  --chart-1: #2f5148;
+  --chart-2: #7a8b80;
+  --chart-3: #8e3b46;
+  --chart-4: #b08d57;
+  --chart-5: #4a6572;
+  --radius: 0.375rem;
+  --sidebar: #eaede5;
+  --sidebar-foreground: #1e2724;
+  --sidebar-primary: #2f5148;
+  --sidebar-primary-foreground: #f6f7f3;
+  --sidebar-accent: #dfe5da;
+  --sidebar-accent-foreground: #1f3a33;
+  --sidebar-border: #d3d8ce;
+  --sidebar-ring: #2f5148;
+}
+
+.dark {
+  --background: #161a18;
+  --foreground: #e7eae3;
+  --card: #1e2421;
+  --card-foreground: #e7eae3;
+  --popover: #1e2421;
+  --popover-foreground: #e7eae3;
+  --primary: #8fb3a4;
+  --primary-foreground: #14201c;
+  --secondary: #263029;
+  --secondary-foreground: #e7eae3;
+  --muted: #242b27;
+  --muted-foreground: #a3ada5;
+  --accent: #2a3530;
+  --accent-foreground: #dce7e0;
+  --destructive: #d08d96;
+  --border: #303a34;
+  --input: #303a34;
+  --ring: #8fb3a4;
+  --chart-1: #8fb3a4;
+  --chart-2: #7a8b80;
+  --chart-3: #d08d96;
+  --chart-4: #c4a878;
+  --chart-5: #8aa7b5;
+  --sidebar: #1a201d;
+  --sidebar-foreground: #e7eae3;
+  --sidebar-primary: #8fb3a4;
+  --sidebar-primary-foreground: #14201c;
+  --sidebar-accent: #263029;
+  --sidebar-accent-foreground: #dce7e0;
+  --sidebar-border: #2c3530;
+  --sidebar-ring: #8fb3a4;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+    color-scheme: light;
+  }
+  .dark {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+  button,
+  a {
+    touch-action: manipulation;
+  }
+  ::selection {
+    background-color: color-mix(in oklab, var(--primary) 24%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
+    scroll-behavior: auto;
+  }
+}
