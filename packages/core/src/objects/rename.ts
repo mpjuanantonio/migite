@@ -12,7 +12,13 @@ import {
 import { slugify } from "../slug.js";
 import { removeFileQuietly, writeFileAtomic, writeTempFile } from "./atomic.js";
 import { ObjectOperationError } from "./errors.js";
-import type { IncomingLink, LocatedObject, ObjectRecord, RenameReport } from "./model.js";
+import type {
+  DomainEvent,
+  IncomingLink,
+  LocatedObject,
+  ObjectRecord,
+  RenameReport,
+} from "./model.js";
 import { formatTimestamp } from "./timestamps.js";
 import {
   ensureVaultDirectory,
@@ -30,6 +36,7 @@ export type RenameHost = {
   invalidateIndex: () => void;
   invalidWrite: (problems: readonly string[]) => ObjectOperationError;
   ambiguousTitle: (title: string) => ObjectOperationError;
+  emit: (event: DomainEvent) => void;
 };
 
 export type RenameOperations = {
@@ -48,9 +55,6 @@ const errorCode = (error: unknown): string | undefined =>
   typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
     ? error.code
     : undefined;
-
-const detailOf = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
 
 const moveFile = (source: string, target: string): boolean => {
   if (source === target) {
@@ -98,6 +102,11 @@ const claimFileName = (
 };
 
 export const createRenameOperations = (host: RenameHost): RenameOperations => {
+  const detailOf = (error: unknown): string => {
+    const message = error instanceof Error ? error.message : String(error);
+    return message.replaceAll(host.vaultDir, ".");
+  };
+
   const renameFailed = (path: string, detail: string): ObjectOperationError =>
     new ObjectOperationError("error.objectRenameFailed", { path }, [detail]);
 
@@ -204,6 +213,7 @@ export const createRenameOperations = (host: RenameHost): RenameOperations => {
     const dir = object.folder === "" ? host.vaultDir : join(host.vaultDir, object.folder);
     const slug = slugify(title);
     const rewritten: string[] = [];
+    const rewrittenObjects: { objectId: string; path: string }[] = [];
     const skipped: { path: string; problems: string[] }[] = [];
     const unresolvedLinks: { path: string; link: string }[] = [];
     let fileName = object.fileName;
@@ -311,6 +321,7 @@ export const createRenameOperations = (host: RenameHost): RenameOperations => {
           const nextText = writeObjectFile(nextFrontmatter, nextBody, current);
           writeFileAtomic(entry.file.absolutePath, nextText);
           rewritten.push(path);
+          rewrittenObjects.push({ objectId: currentObject.id, path });
         } catch (error) {
           skipped.push({ path, problems: [detailOf(error)] });
           collectUnresolved(current, path);
@@ -330,6 +341,10 @@ export const createRenameOperations = (host: RenameHost): RenameOperations => {
       links,
       body,
     };
+    host.emit({ type: "ObjectUpdated", objectId: object.id, path });
+    for (const entry of rewrittenObjects) {
+      host.emit({ type: "ObjectUpdated", objectId: entry.objectId, path: entry.path });
+    }
     return { object: renamed, rewritten, skipped, unresolvedLinks };
   };
 
@@ -367,6 +382,7 @@ export const createRenameOperations = (host: RenameHost): RenameOperations => {
       throw host.invalidWrite([`no free file name for "${stem}" in folder "${target}"`]);
     }
     const path = target === "" ? fileName : `${target}/${fileName}`;
+    host.emit({ type: "ObjectUpdated", objectId: object.id, path });
     return { ...object, path, folder: target, fileName };
   };
 

@@ -31,6 +31,7 @@ const fsGates = vi.hoisted(() => {
     linkError: undefined as string | undefined,
     unlinkError: undefined as { path: string; code: string } | undefined,
     fsyncError: undefined as string | undefined,
+    readError: undefined as { suffix: string; onRead: number; code: string } | undefined,
     injectedError,
   };
 });
@@ -46,6 +47,11 @@ vi.mock("node:fs", async (importOriginal) => {
       const key = String(path);
       const count = (fsGates.reads.get(key) ?? 0) + 1;
       fsGates.reads.set(key, count);
+      const failure = fsGates.readError;
+      if (failure !== undefined && key.endsWith(failure.suffix) && count === failure.onRead) {
+        fsGates.readError = undefined;
+        throw fsGates.injectedError(failure.code, `read "${key}"`);
+      }
       const gate = fsGates.mutate;
       if (gate !== undefined && key.endsWith(gate.suffix) && count === gate.onRead) {
         fsGates.mutate = undefined;
@@ -116,6 +122,7 @@ afterEach(() => {
   fsGates.linkError = undefined;
   fsGates.unlinkError = undefined;
   fsGates.fsyncError = undefined;
+  fsGates.readError = undefined;
   for (const root of roots.splice(0)) {
     rmSync(root, { recursive: true, force: true });
   }
@@ -279,6 +286,36 @@ describe("renameObject", () => {
     expect(readdirSync(vaultDir).filter((name) => name.endsWith(".tmp"))).toEqual([]);
   });
 
+  it("sanitizes the vault path in rename failure problems", () => {
+    const { vaultDir, repo } = setupVault();
+    const target = repo.createObject({ title: "Destino", body: "contenido\n" });
+    fsGates.linkError = "EIO";
+
+    const error = captureError(() => repo.renameObject(target.id, "Objetivo"));
+
+    expect(error.key).toBe("error.objectRenameFailed");
+    const problems = error.problems.join(" ");
+    expect(problems).toContain("EIO");
+    expect(problems).not.toContain(vaultDir);
+    expect(problems).not.toContain("/tmp/");
+  });
+
+  it("sanitizes the vault path in the skipped problems of a rename report", () => {
+    const { vaultDir, repo } = setupVault();
+    const target = repo.createObject({ title: "Destino" });
+    repo.createObject({ title: "Fuente", body: "[[Destino]]\n" });
+    fsGates.reads.clear();
+    fsGates.readError = { suffix: "fuente.md", onRead: 3, code: "EACCES" };
+
+    const report = repo.renameObject(target.id, "Objetivo");
+
+    expect(report.skipped.map((entry) => entry.path)).toEqual(["fuente.md"]);
+    const problems = report.skipped[0]?.problems.join(" ") ?? "";
+    expect(problems).toContain("EACCES");
+    expect(problems).not.toContain(vaultDir);
+    expect(problems).not.toContain("/tmp/");
+  });
+
   it("skips an incoming file modified on disk after the scan and reports the broken links", () => {
     const { vaultDir, repo } = setupVault();
     const target = repo.createObject({ title: "Destino" });
@@ -407,7 +444,9 @@ describe("moveObject", () => {
     const error = captureError(() => repo.moveObject(record.id, "notas"));
 
     expect(error.key).toBe("error.objectRenameFailed");
-    expect(error.problems.join(" ")).toContain("EBUSY");
+    const problems = error.problems.join(" ");
+    expect(problems).toContain("EBUSY");
+    expect(problems).not.toContain(vaultDir);
     expect(existsSync(source)).toBe(true);
     expect(existsSync(join(vaultDir, "notas/mover.md"))).toBe(false);
     expect(repo.listObjects()).toHaveLength(1);

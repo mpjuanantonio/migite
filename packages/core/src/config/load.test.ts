@@ -472,6 +472,21 @@ describe("loadConfig", () => {
       });
     });
 
+    it("rejects a .env larger than the read limit before parsing", () => {
+      const root = createRoot({
+        "config/app.yaml": VALID_APP,
+        "config/llm.yaml": VALID_LLM,
+        ".env": "OPENAI_API_KEY=sk-test\n",
+      });
+      truncateSync(join(root, ".env"), MAX_TEXT_FILE_BYTES + 1);
+
+      const error = captureConfigError(() => loadConfig({ root }));
+
+      expect(error.path).toBe(".env");
+      expect(error.message).toContain("supera el límite");
+      expect(error.message).toContain(String(MAX_TEXT_FILE_BYTES));
+    });
+
     it("accepts comments and blank lines", () => {
       const root = createRoot({
         "config/app.yaml": VALID_APP,

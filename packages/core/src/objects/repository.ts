@@ -1,5 +1,5 @@
 import { unlinkSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import {
   type ObjectFrontmatter,
   parseObjectFile,
@@ -16,6 +16,7 @@ import { ObjectOperationError } from "./errors.js";
 import type {
   CreateObjectInput,
   DegradedObjectView,
+  DomainEvent,
   LocatedObject,
   ObjectRecord,
   ObjectRepository,
@@ -39,6 +40,7 @@ import {
 export type CreateObjectRepositoryOptions = {
   vaultDir: string;
   timeZone?: string;
+  onEvent?: (event: DomainEvent) => void;
 };
 
 type LoadedRegistry = {
@@ -80,6 +82,11 @@ export const createObjectRepository = (
   const vaultDir = resolve(options.vaultDir);
   const timeZone = assertTimeZone(options.timeZone ?? "UTC");
   const tiposDir = join(vaultDir, "tipos");
+  const sanitizePath = (message: string): string => message.replaceAll(vaultDir, ".");
+
+  const emit = (event: DomainEvent): void => {
+    options.onEvent?.(event);
+  };
 
   let registry: LoadedRegistry | undefined;
   let index: ObjectIndex | undefined;
@@ -120,7 +127,9 @@ export const createObjectRepository = (
   const requireDefinition = (typeId: string): TypeDefinition => {
     const definition = currentRegistry().types.get(typeId);
     if (definition === undefined) {
-      throw invalidWrite([`unknown type "${typeId}" (no type definition in ${tiposDir})`]);
+      throw invalidWrite([
+        `unknown type "${typeId}" (no type definition in ${basename(tiposDir)})`,
+      ]);
     }
     return definition;
   };
@@ -178,7 +187,7 @@ export const createObjectRepository = (
         result: {
           ok: false,
           path: file.relativePath,
-          problems: [message],
+          problems: [sanitizePath(message)],
           raw: { yamlText: "", body: "" },
           degraded: degradedView(file, ""),
         },
@@ -371,6 +380,7 @@ export const createObjectRepository = (
     }
     invalidateIndex();
     const relativePath = folder === "" ? fileName : `${folder}/${fileName}`;
+    emit({ type: "ObjectCreated", objectId: id, path: relativePath });
     return {
       id,
       type: typeId,
@@ -401,7 +411,7 @@ export const createObjectRepository = (
     }
     const requestedType: unknown = changes.type;
     if (requestedType !== undefined && requestedType !== object.type) {
-      throw invalidWrite(['the "tipo" field is immutable; updateObject cannot change it']);
+      throw new ObjectOperationError("error.typeImmutable");
     }
     const merged = { ...object.attributes, ...(changes.attributes ?? {}) };
     const attributes: Record<string, unknown> = {};
@@ -443,7 +453,10 @@ export const createObjectRepository = (
       current = readObjectText(located.file.absolutePath);
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
-      throw invalidWrite([`unreadable object file "${located.file.relativePath}"`, detail]);
+      throw invalidWrite([
+        `unreadable object file "${located.file.relativePath}"`,
+        sanitizePath(detail),
+      ]);
     }
     if (current !== located.text) {
       throw invalidWrite([
@@ -452,18 +465,21 @@ export const createObjectRepository = (
     }
     writeFileAtomic(located.file.absolutePath, text);
     invalidateIndex();
+    emit({ type: "ObjectUpdated", objectId: object.id, path: located.file.relativePath });
     return toRecord(located.file, frontmatter, body);
   };
 
   const deleteObject = (id: string): void => {
     const located = locate(id);
+    const objectId = located.result.ok ? located.result.object.id : id;
     try {
       unlinkSync(located.file.absolutePath);
     } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
+      const detail = sanitizePath(errorCode(error) ?? "unknown filesystem error");
       throw new ObjectOperationError("error.objectDeleteFailed", { id, detail }, [detail]);
     }
     invalidateIndex();
+    emit({ type: "ObjectDeleted", objectId, path: located.file.relativePath });
   };
 
   const listTypes = (): TypeDefinition[] =>
@@ -482,6 +498,7 @@ export const createObjectRepository = (
     invalidateIndex,
     invalidWrite,
     ambiguousTitle,
+    emit,
   });
 
   return {

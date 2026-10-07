@@ -14,7 +14,11 @@
   },
   "dependencies": {
     "@hono/node-server": "^2.1.0",
+    "@migite/contracts": "workspace:*",
     "@migite/core": "workspace:*",
+    "@migite/index": "workspace:*",
+    "@node-rs/argon2": "^2.2.1",
+    "drizzle-orm": "^0.45.3",
     "hono": "^4.13.0"
   },
   "devDependencies": {

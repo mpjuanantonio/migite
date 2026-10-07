@@ -10,5 +10,13 @@ export {
   WIRE_TO_ATTRIBUTE_ROLE,
   WIRE_TO_FIELD_TYPE,
 } from "./definitions.js";
+export { TypeOperationError } from "./errors.js";
 export { parseTypeYaml } from "./parse.js";
 export { loadTypeRegistry } from "./registry.js";
+export {
+  type CreateTypeInput,
+  createTypeFile,
+  deleteTypeFile,
+  type UpdateTypeChanges,
+  updateTypeFile,
+} from "./write.js";

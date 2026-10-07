@@ -4,6 +4,7 @@ export type {
   CreateObjectInput,
   DegradationReason,
   DegradedObjectView,
+  DomainEvent,
   IncomingLink,
   ObjectRecord,
   ObjectRepository,
@@ -21,4 +22,4 @@ export {
   removeAttribute,
   setAttribute,
 } from "./tray.js";
-export { RESERVED_ROOT_DIRS } from "./vault.js";
+export { MAX_OBJECT_BYTES, RESERVED_ROOT_DIRS } from "./vault.js";

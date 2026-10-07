@@ -1,0 +1,56 @@
+export {
+  type ApplyObjectEventOptions,
+  applyObjectEvent,
+  type BuildIndexOptions,
+  buildIndex,
+  createTitleCache,
+  type IndexObjectOptions,
+  indexObject,
+  type ReconcileOptions,
+  type ReconcileSummary,
+  type ReindexOptions,
+  type ReindexSummary,
+  reconcileIndex,
+  runReindex,
+  type TitleCache,
+} from "./indexer.js";
+export {
+  type IndexDatabase,
+  IndexError,
+  type IndexHandle,
+  type OpenIndexOptions,
+  openIndex,
+  SCHEMA_VERSION,
+  SCHEMA_VERSION_KEY,
+} from "./open.js";
+export * as indexSchema from "./schema.js";
+export {
+  acciones,
+  atributos,
+  conversaciones,
+  embeddings,
+  enlaces,
+  fragmentos,
+  LINK_CONTEXTS,
+  type LinkContext,
+  mensajes,
+  meta,
+  objetos,
+} from "./schema.js";
+export {
+  DEFAULT_LIST_LIMIT,
+  DEFAULT_SEARCH_LIMIT,
+  type IndexedObject,
+  type ListObjectsIndexedOptions,
+  listObjectsIndexed,
+  type ObjectFilters,
+  type SearchObjectsOptions,
+  type SearchResult,
+  searchObjects,
+} from "./search.js";
+export {
+  type StartWatcherOptions,
+  startWatcher,
+  type WatcherErrorHandler,
+  type WatcherHandle,
+} from "./watcher.js";
