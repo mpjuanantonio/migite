@@ -316,6 +316,85 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml down
 | `required variable VERSION is missing` | Comando compose sin la versión | `export VERSION=vX.Y.Z` antes de cualquier comando compose |
 | Puerto 3000 ocupado en el host | Otro servicio lo usa | Edita `ports` en `docker-compose.yml` o libera el puerto |
 
+## 13. Despliegue con Dockge
+
+[Dockge](https://github.com/louislam/dockge) gestiona stacks de `docker compose`
+desde una interfaz web: pegas el compose, editas el `.env` y arrancas el stack
+sin usar la terminal del servidor. Dockge usa **un único fichero de compose** por
+stack (no overlays), así que este repo incluye `docker-compose.dockge.yml` con la
+base y la producción ya fusionadas y **solo imagen** (sin `build:`).
+
+### 13.1 Crear el stack
+
+1. En Dockge, crea un stack nuevo llamado `migite`.
+2. Pega como compose el contenido de `docker-compose.dockge.yml` (del repo o de
+   GitHub; no hace falta clonarlo en el servidor).
+3. Antes de arrancar, la imagen debe ser accesible desde el servidor: si el
+   paquete de GHCR es público, listo; si es privado, ejecuta una vez
+   `docker login ghcr.io -u TU_USUARIO` en el host (token con permiso
+   `read:packages`) o haz público el paquete.
+
+### 13.2 Crear el `.env` del stack
+
+El editor de entorno de Dockge guarda el `.env` junto al compose. Define:
+
+| Variable | Obligatoria | Valor |
+| --- | --- | --- |
+| `VERSION` | Sí | Tag de la imagen a desplegar, p. ej. `v0.2.0`. Compose falla si falta. |
+| `MIGITE_USER` | Sí | Usuario del login. |
+| `MIGITE_PASSWORD_HASH` | Sí | Hash argon2id de la contraseña (paso 3.2), **entre comillas simples**. |
+| `MIGITE_SESSION_SECRET` | Sí | Secreto de firma de la cookie (paso 3.1). |
+| `MIGITE_SECURE_COOKIES` | No | `1` fuerza `Secure` en la cookie. |
+| `OPENAI_API_KEY` | No | Clave BYOK (paso 3.3). |
+
+Genera el secreto con `openssl rand -hex 32` (paso 3.1). Para el hash usa el
+comando del paso 3.2 (Opción B con Node 22, o la Opción A cambiando los overlays
+por `-f docker-compose.dockge.yml` si tienes el repo en el servidor). Ejemplo:
+
+```dotenv
+VERSION=v0.2.0
+MIGITE_USER=ana
+MIGITE_PASSWORD_HASH='$argon2id$v=19$m=19456,t=2,p=1$...$...'
+MIGITE_SESSION_SECRET=pega_aqui_la_salida_de_openssl_rand_hex_32
+# MIGITE_SECURE_COOKIES=1
+```
+
+El hash debe ir **entre comillas simples**: Compose también interpola los valores
+del `.env`, y sin comillas `$argon2id$v=19...` se convierte en `=19=...` (el
+valor llega corrupto al contenedor y el login falla). Las comillas simples pasan
+el valor literal.
+
+### 13.3 Arrancar y verificar
+
+Pulsa **Start** (o **Deploy**) en el stack; equivale a `docker compose up -d`.
+
+```bash
+curl -fsS http://IP_DEL_SERVIDOR:3000/api/health   # {"status":"ok"}
+```
+
+En la vista del stack el contenedor debe pasar a `healthy` (el healthcheck de la
+imagen tarda unos 10 segundos) y los logs no deben mostrar errores de
+configuración. Para el primer login y el firewall aplican los pasos 7 y 8.
+
+### 13.4 Actualización y rollback
+
+- **Actualizar:** cambia `VERSION` en el `.env` del stack, guarda y pulsa
+  **Update** en Dockge (hace `pull` de la nueva imagen y recrea el contenedor).
+- **Rollback:** vuelve a la `VERSION` anterior y pulsa **Update** de nuevo; si
+  esa imagen sigue en la caché local no hace falta red.
+
+Los volúmenes se conservan en ambos casos.
+
+### 13.5 Notas
+
+- `config/app.yaml` va **dentro de la imagen**: cambiar zona horaria, rutas o
+  proveedores LLM exige reconstruirla (sección 4) y desplegar una imagen nueva;
+  Dockge solo despliega imágenes ya construidas.
+- El stack de Dockge usa sus propios volúmenes (`migite_vault` y `migite_indice`
+  si el stack se llama `migite`); los pasos 9 (backup) y 8 siguen aplicando.
+- El `.env` que editas en Dockge es el del stack (p. ej.
+  `/opt/stacks/migite/.env`), no el del repo clonado.
+
 ## Verificación de esta guía
 
 Se ha comprobado en el repositorio:
@@ -323,6 +402,8 @@ Se ha comprobado en el repositorio:
 - `docker compose config` válido con las combinaciones base, base+dev y
   base+prod (Docker Compose v5.5.1), incluidas las interpolaciones de
   `VERSION`.
+- `docker-compose.dockge.yml` validado con `docker compose config` y un `.env`
+  de ejemplo (`VERSION` + variables de auth, con el hash entrecomillado).
 - El lockfile incluye el binario opcional `@node-rs/argon2-linux-x64-musl` y
   `better-sqlite3` trae `prebuilds/linuxmusl-x64.node`, que son los que usa la
   imagen Alpine.
