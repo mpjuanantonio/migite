@@ -41,7 +41,15 @@ describe("shell de la SPA", () => {
 
     expect(await screen.findByRole("heading", { level: 1, name: "Notas" })).toBeInTheDocument();
     const nav = screen.getByRole("navigation", { name: "Navegación principal" });
-    for (const label of ["Notas", "Tareas", "Calendario", "Proyectos", "Tipos", "Buscar"]) {
+    for (const label of [
+      "Notas",
+      "Tareas",
+      "Recordatorios",
+      "Calendario",
+      "Proyectos",
+      "Tipos",
+      "Buscar",
+    ]) {
       expect(within(nav).getByRole("link", { name: label })).toBeInTheDocument();
     }
     expect(screen.getByRole("link", { name: "Saltar al contenido" })).toBeInTheDocument();

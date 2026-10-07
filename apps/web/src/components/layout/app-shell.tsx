@@ -1,4 +1,5 @@
 import {
+  AlarmClock,
   CalendarDays,
   Folder,
   LayoutList,
@@ -26,6 +27,7 @@ type Section = {
 const sections: readonly Section[] = [
   { to: "/notas", labelKey: "nav.notas", icon: NotebookPen },
   { to: "/tareas", labelKey: "nav.tareas", icon: LayoutList },
+  { to: "/recordatorios", labelKey: "nav.recordatorios", icon: AlarmClock },
   { to: "/calendario", labelKey: "nav.calendario", icon: CalendarDays },
   { to: "/proyectos", labelKey: "nav.proyectos", icon: Folder },
   { to: "/tipos", labelKey: "nav.tipos", icon: Shapes },
