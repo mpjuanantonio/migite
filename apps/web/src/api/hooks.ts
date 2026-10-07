@@ -6,6 +6,8 @@ import {
   objetosPageSchema,
   type SesionStatus,
   sesionStatusSchema,
+  type TipoPayload,
+  tiposListSchema,
 } from "@migite/contracts";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "./api";
@@ -128,3 +130,24 @@ export const useGuardarObjeto = (id: string) => {
     },
   });
 };
+
+export const useGuardarAtributos = (id: string) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (atributos: Record<string, unknown>): Promise<ObjectPayload> =>
+      objectPayloadSchema.parse(
+        await apiFetch(objetoPath(id), { method: "PATCH", body: { atributos } }),
+      ),
+    onSuccess: (objeto) => {
+      queryClient.setQueryData(queryKeys.objeto(id), objeto);
+    },
+  });
+};
+
+export const useTipos = () =>
+  useQuery({
+    queryKey: queryKeys.tipos,
+    queryFn: async (): Promise<TipoPayload[]> =>
+      tiposListSchema.parse(await apiFetch("/api/tipos")).tipos,
+  });

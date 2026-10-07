@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { ApiError } from "@/api/api";
 import { useGuardarObjeto, useObjeto } from "@/api/hooks";
+import { BandejaAtributos } from "@/components/atributos/bandeja-atributos";
 import { MarkdownEditor } from "@/components/editor/markdown-editor";
 import { MarkdownPreview } from "@/components/editor/markdown-preview";
 import { Button } from "@/components/ui/button";
@@ -138,6 +139,8 @@ export const ObjetoPage = () => {
           </div>
         ) : null}
       </header>
+
+      <BandejaAtributos key={objeto.id} objeto={objeto} />
 
       {guardar.isError ? (
         <div
