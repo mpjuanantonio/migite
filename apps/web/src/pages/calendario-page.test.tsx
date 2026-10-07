@@ -21,6 +21,7 @@ import { errorResponse, jsonResponse, renderApp, sesionResponse } from "@/test/r
 let fetchMock: Mock<typeof fetch>;
 let listados: URL[];
 let posts: { readonly url: string; readonly body: CreateObjectBody }[];
+let parches: { readonly id: string; readonly atributos: Record<string, unknown> }[];
 
 const ahora = new Date();
 const mesActual = inicioDeMes(ahora);
@@ -56,7 +57,11 @@ const evento = (
   degraded: [],
 });
 
-const mockApi = (eventos: readonly ObjectPayload[] = []): void => {
+type OpcionesMock = {
+  readonly falloPatch?: boolean;
+};
+
+const mockApi = (eventos: readonly ObjectPayload[] = [], opciones: OpcionesMock = {}): void => {
   const actuales = [...eventos];
 
   fetchMock.mockImplementation(async (input, init) => {
@@ -92,6 +97,29 @@ const mockApi = (eventos: readonly ObjectPayload[] = []): void => {
       return jsonResponse({ objetos: actuales, siguienteCursor: null });
     }
 
+    if (url.pathname.startsWith("/api/objetos/") && method === "PATCH") {
+      const id = decodeURIComponent(url.pathname.slice("/api/objetos/".length));
+      const body = JSON.parse(String(init?.body ?? "{}")) as {
+        atributos?: Record<string, unknown>;
+      };
+      const atributos = body.atributos ?? {};
+      parches.push({ id, atributos });
+      if (opciones.falloPatch === true) {
+        return errorResponse("save_error", "No se pudieron guardar los cambios", 500);
+      }
+      const indice = actuales.findIndex((item) => item.id === id);
+      const previo = actuales[indice];
+      if (previo === undefined) {
+        return errorResponse("not_found", "No existe la ficha", 404);
+      }
+      const actualizado: ObjectPayload = {
+        ...previo,
+        atributos: { ...previo.atributos, ...atributos },
+      };
+      actuales[indice] = actualizado;
+      return jsonResponse(actualizado);
+    }
+
     if (url.pathname.startsWith("/api/objetos/")) {
       const id = decodeURIComponent(url.pathname.slice("/api/objetos/".length));
       const encontrado = actuales.find((item) => item.id === id);
@@ -125,10 +153,17 @@ const columnaDe = (vista: "semana" | "dia", clave: string): HTMLElement => {
   return columna;
 };
 
+const dataTransfer = (): DataTransfer =>
+  ({
+    setData: vi.fn(),
+    effectAllowed: "none",
+  }) as unknown as DataTransfer;
+
 beforeEach(() => {
   localStorage.clear();
   listados = [];
   posts = [];
+  parches = [];
   fetchMock = vi.fn<typeof fetch>();
   vi.stubGlobal("fetch", fetchMock);
 });
@@ -492,5 +527,145 @@ describe("vistas de semana y día", () => {
     await user.click(hueco as HTMLButtonElement);
 
     expect(await screen.findByLabelText("Inicio")).toHaveValue(`${claveDia(ahora)}T15:00`);
+  });
+});
+
+describe("mover eventos arrastrando", () => {
+  it("mueve un evento de mes a otro día conservando la hora y la duración", async () => {
+    mockApi([
+      evento("M1", "Revisión trimestral", diaEnMes(5, 10, 0), { fin: diaEnMes(5, 11, 30) }),
+    ]);
+    renderCalendario();
+
+    const chip = await screen.findByRole("link", { name: /Revisión trimestral/ });
+    const dt = dataTransfer();
+    fireEvent.dragStart(chip, { dataTransfer: dt });
+    fireEvent.drop(celdaDe(claveDia(diaEnMes(12))), { dataTransfer: dt });
+
+    const destino = diaEnMes(12, 10, 0);
+    expect(
+      within(celdaDe(claveDia(destino))).getByRole("link", { name: /Revisión trimestral/ }),
+    ).toBeInTheDocument();
+
+    await waitFor(() => expect(parches).toHaveLength(1));
+    expect(parches[0]).toEqual({
+      id: "M1",
+      atributos: {
+        inicio: destino.toISOString(),
+        fin: diaEnMes(12, 11, 30).toISOString(),
+      },
+    });
+    expect(dt.setData).toHaveBeenCalledWith("text/plain", "M1");
+  });
+
+  it("mueve un evento de la semana a otra fecha y hora conservando la duración", async () => {
+    const semana = construirSemana(ahora, ahora);
+    const miercoles = semana[2]?.fecha ?? ahora;
+    const jueves = semana[3]?.fecha ?? ahora;
+    const inicio = new Date(
+      miercoles.getFullYear(),
+      miercoles.getMonth(),
+      miercoles.getDate(),
+      10,
+      0,
+    );
+    const fin = new Date(miercoles.getFullYear(), miercoles.getMonth(), miercoles.getDate(), 11, 0);
+    mockApi([evento("S1", "Reunión semanal", inicio, { fin })]);
+    const user = userEvent.setup();
+    renderCalendario();
+
+    await user.click(await screen.findByRole("button", { name: "Semana" }));
+
+    const chip = within(columnaDe("semana", claveDia(miercoles))).getByRole("link", {
+      name: /Reunión semanal/,
+    });
+    const dt = dataTransfer();
+    fireEvent.dragStart(chip, { dataTransfer: dt });
+
+    const hueco = columnaDe("semana", claveDia(jueves)).querySelector<HTMLButtonElement>(
+      'button[data-hora="15"]',
+    );
+    expect(hueco).not.toBeNull();
+    fireEvent.drop(hueco as HTMLButtonElement, { dataTransfer: dt });
+
+    expect(
+      within(columnaDe("semana", claveDia(jueves))).getByRole("link", { name: /Reunión semanal/ }),
+    ).toBeInTheDocument();
+
+    const inicioDestino = new Date(
+      jueves.getFullYear(),
+      jueves.getMonth(),
+      jueves.getDate(),
+      15,
+      0,
+    );
+    const finDestino = new Date(jueves.getFullYear(), jueves.getMonth(), jueves.getDate(), 16, 0);
+    await waitFor(() => expect(parches).toHaveLength(1));
+    expect(parches[0]).toEqual({
+      id: "S1",
+      atributos: { inicio: inicioDestino.toISOString(), fin: finDestino.toISOString() },
+    });
+  });
+
+  it("mueve un evento de todo el día cambiando solo la fecha", async () => {
+    const inicio = new Date(ahora.getFullYear(), ahora.getMonth(), 12);
+    mockApi([evento("T1", "Festivo local", inicio, { todoElDia: true })]);
+    renderCalendario();
+
+    const chip = await screen.findByRole("link", { name: /Festivo local/ });
+    const dt = dataTransfer();
+    fireEvent.dragStart(chip, { dataTransfer: dt });
+    fireEvent.drop(celdaDe(claveDia(diaEnMes(20))), { dataTransfer: dt });
+
+    await waitFor(() => expect(parches).toHaveLength(1));
+    expect(parches[0]).toEqual({
+      id: "T1",
+      atributos: { inicio: new Date(ahora.getFullYear(), ahora.getMonth(), 20).toISOString() },
+    });
+    expect(
+      within(celdaDe(claveDia(diaEnMes(20)))).getByRole("link", { name: /Festivo local/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("no guarda cambios si se suelta en el mismo sitio", async () => {
+    const inicio = diaEnMes(5, 10, 0);
+    mockApi([evento("N1", "Sin cambios", inicio, { fin: diaEnMes(5, 11, 0) })]);
+    renderCalendario();
+
+    const chip = await screen.findByRole("link", { name: /Sin cambios/ });
+    const dt = dataTransfer();
+    fireEvent.dragStart(chip, { dataTransfer: dt });
+    fireEvent.drop(celdaDe(claveDia(inicio)), { dataTransfer: dt });
+
+    await new Promise((resolver) => setTimeout(resolver, 20));
+    expect(parches).toHaveLength(0);
+    expect(
+      within(celdaDe(claveDia(inicio))).getByRole("link", { name: /Sin cambios/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("revierte el movimiento y avisa si falla el guardado", async () => {
+    const inicio = diaEnMes(5, 10, 0);
+    const fin = diaEnMes(5, 11, 0);
+    mockApi([evento("F1", "Teletrabajo", inicio, { fin })], { falloPatch: true });
+    renderCalendario();
+
+    const chip = await screen.findByRole("link", { name: /Teletrabajo/ });
+    const dt = dataTransfer();
+    fireEvent.dragStart(chip, { dataTransfer: dt });
+    fireEvent.drop(celdaDe(claveDia(diaEnMes(12))), { dataTransfer: dt });
+
+    expect(
+      within(celdaDe(claveDia(diaEnMes(12)))).getByRole("link", { name: /Teletrabajo/ }),
+    ).toBeInTheDocument();
+
+    const alerta = await screen.findByRole("alert");
+    expect(alerta).toHaveTextContent("No se pudieron guardar los cambios");
+    expect(
+      within(celdaDe(claveDia(inicio))).getByRole("link", { name: /Teletrabajo/ }),
+    ).toBeInTheDocument();
+    expect(
+      within(celdaDe(claveDia(diaEnMes(12)))).queryByRole("link", { name: /Teletrabajo/ }),
+    ).toBeNull();
   });
 });
