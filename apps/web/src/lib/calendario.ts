@@ -129,6 +129,69 @@ export const MINUTOS_DIA = 24 * 60;
 
 export const MINUTOS_MINIMOS_EVENTO = 30;
 
+export type DestinoEvento =
+  | { readonly tipo: "dia"; readonly fecha: Date }
+  | { readonly tipo: "hora"; readonly fecha: Date; readonly hora: number };
+
+export type MovimientoEvento = {
+  readonly inicio: Date;
+  readonly fin: Date | undefined;
+};
+
+export const moverEventoADia = (
+  evento: EventoCalendario,
+  dia: Date,
+): MovimientoEvento | undefined => {
+  const inicio = new Date(
+    dia.getFullYear(),
+    dia.getMonth(),
+    dia.getDate(),
+    evento.inicio.getHours(),
+    evento.inicio.getMinutes(),
+    evento.inicio.getSeconds(),
+    evento.inicio.getMilliseconds(),
+  );
+  if (inicio.getTime() === evento.inicio.getTime()) {
+    return undefined;
+  }
+  const duracion = evento.fin.getTime() - evento.inicio.getTime();
+  return {
+    inicio,
+    fin: duracion > 0 ? new Date(inicio.getTime() + duracion) : undefined,
+  };
+};
+
+export const moverEventoAHora = (
+  evento: EventoCalendario,
+  dia: Date,
+  hora: number,
+): MovimientoEvento | undefined => {
+  const inicio = new Date(dia.getFullYear(), dia.getMonth(), dia.getDate(), hora);
+  if (inicio.getTime() === evento.inicio.getTime()) {
+    return undefined;
+  }
+  const duracion = Math.max(
+    evento.fin.getTime() - evento.inicio.getTime(),
+    MINUTOS_MINIMOS_EVENTO * 60_000,
+  );
+  return { inicio, fin: new Date(inicio.getTime() + duracion) };
+};
+
+export const claveDestinoDia = (fecha: Date): string => `dia:${claveDia(fecha)}`;
+
+export const claveDestinoHora = (fecha: Date, hora: number): string =>
+  `hora:${claveDia(fecha)}:${hora}`;
+
+type TransferenciaArrastre = {
+  readonly setData: (formato: string, datos: string) => void;
+  effectAllowed: string;
+};
+
+export const prepararArrastre = (transferencia: TransferenciaArrastre, id: string): void => {
+  transferencia.setData("text/plain", id);
+  transferencia.effectAllowed = "move";
+};
+
 export type EventoPosicionado = {
   readonly evento: EventoCalendario;
   readonly top: number;

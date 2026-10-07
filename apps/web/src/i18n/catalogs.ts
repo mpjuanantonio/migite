@@ -25,6 +25,8 @@ const webEs = {
   "page.calendario.invalidRange": "El fin no puede ser anterior al inicio",
   "page.calendario.loadError": "No se pudieron cargar los eventos",
   "page.calendario.loading": "Cargando eventos…",
+  "page.calendario.moveError": "No se pudo mover el evento",
+  "page.calendario.moveErrorDismiss": "Cerrar aviso",
   "page.calendario.newEvent": "Nuevo evento",
   "page.calendario.newEventDescription":
     "Ponle un título y su franja horaria; aparecerá en el calendario.",
@@ -233,6 +235,8 @@ const webEn = {
   "page.calendario.invalidRange": "The end cannot be earlier than the start",
   "page.calendario.loadError": "The events could not be loaded",
   "page.calendario.loading": "Loading events…",
+  "page.calendario.moveError": "The event could not be moved",
+  "page.calendario.moveErrorDismiss": "Dismiss notice",
   "page.calendario.newEvent": "New event",
   "page.calendario.newEventDescription":
     "Give it a title and its time slot; it will show up on the calendar.",

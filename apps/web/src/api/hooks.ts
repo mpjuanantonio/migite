@@ -167,17 +167,45 @@ export const useGuardarObjeto = (id: string) => {
   });
 };
 
+const guardarAtributosDe = async (
+  id: string,
+  atributos: Record<string, unknown>,
+): Promise<ObjectPayload> =>
+  objectPayloadSchema.parse(
+    await apiFetch(objetoPath(id), { method: "PATCH", body: { atributos } }),
+  );
+
+const aplicarAtributosGuardados = (queryClient: QueryClient, objeto: ObjectPayload): void => {
+  queryClient.setQueryData(queryKeys.objeto(objeto.id), objeto);
+  invalidarListasDeObjetos(queryClient);
+};
+
 export const useGuardarAtributos = (id: string) => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (atributos: Record<string, unknown>): Promise<ObjectPayload> =>
-      objectPayloadSchema.parse(
-        await apiFetch(objetoPath(id), { method: "PATCH", body: { atributos } }),
-      ),
+    mutationFn: (atributos: Record<string, unknown>): Promise<ObjectPayload> =>
+      guardarAtributosDe(id, atributos),
     onSuccess: (objeto) => {
-      queryClient.setQueryData(queryKeys.objeto(id), objeto);
-      invalidarListasDeObjetos(queryClient);
+      aplicarAtributosGuardados(queryClient, objeto);
+    },
+  });
+};
+
+export type MovimientoEventoBody = {
+  readonly id: string;
+  readonly inicio: string;
+  readonly fin?: string;
+};
+
+export const useMoverEvento = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, inicio, fin }: MovimientoEventoBody): Promise<ObjectPayload> =>
+      guardarAtributosDe(id, { inicio, ...(fin === undefined ? {} : { fin }) }),
+    onSuccess: (objeto) => {
+      aplicarAtributosGuardados(queryClient, objeto);
     },
   });
 };

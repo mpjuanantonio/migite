@@ -1,9 +1,9 @@
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { ApiError } from "@/api/api";
-import { useCrearObjeto, useObjetos } from "@/api/hooks";
+import { useCrearObjeto, useMoverEvento, useObjetos } from "@/api/hooks";
 import { ChipEvento } from "@/components/calendario/chip-evento";
-import { VistaPeriodo } from "@/components/calendario/vista-periodo";
+import { type ArrastreCalendario, VistaPeriodo } from "@/components/calendario/vista-periodo";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,12 +18,14 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useI18n } from "@/i18n/context";
 import {
+  claveDestinoDia,
   claveDia,
   claveHora,
   compararEventos,
   construirDia,
   construirMes,
   construirSemana,
+  type DestinoEvento,
   diasDeLaSemana,
   type EventoCalendario,
   etiquetaDia,
@@ -39,6 +41,9 @@ import {
   inicioDeMes,
   inicioDeSemana,
   interpretarEvento,
+  type MovimientoEvento,
+  moverEventoADia,
+  moverEventoAHora,
   solapa,
   sumarDias,
 } from "@/lib/calendario";
@@ -114,7 +119,12 @@ export const CalendarioPage = () => {
   const [cursor, setCursor] = useState(() => new Date());
   const [dialogoAbierto, setDialogoAbierto] = useState(false);
   const [borrador, setBorrador] = useState<Borrador>(() => borradorInicial(new Date()));
+  const [arrastrandoId, setArrastrandoId] = useState<string | null>(null);
+  const [destinoActivo, setDestinoActivo] = useState<string | null>(null);
+  const [cambios, setCambios] = useState<Record<string, MovimientoEvento>>({});
+  const [aviso, setAviso] = useState<string | null>(null);
   const crear = useCrearObjeto();
+  const moverEvento = useMoverEvento();
 
   const periodo = useMemo(() => {
     if (vista === "semana") {
@@ -150,8 +160,14 @@ export const CalendarioPage = () => {
         .filter(
           (evento): evento is EventoCalendario =>
             evento !== undefined && solapa(evento, periodo.desde, periodo.hasta),
-        ),
-    [lista.data, periodo],
+        )
+        .map((evento) => {
+          const movimiento = cambios[evento.objeto.id];
+          return movimiento === undefined
+            ? evento
+            : { ...evento, inicio: movimiento.inicio, fin: movimiento.fin ?? evento.fin };
+        }),
+    [cambios, lista.data, periodo],
   );
 
   const semanas = useMemo(() => {
@@ -249,6 +265,77 @@ export const CalendarioPage = () => {
     );
   };
 
+  const iniciarArrastre = (evento: EventoCalendario) => {
+    setArrastrandoId(evento.objeto.id);
+  };
+
+  const finalizarArrastre = () => {
+    setArrastrandoId(null);
+    setDestinoActivo(null);
+  };
+
+  const destacarDestino = (clave: string) => {
+    setDestinoActivo((actual) => (actual === clave ? actual : clave));
+  };
+
+  const soltarEn = (destino: DestinoEvento) => {
+    const id = arrastrandoId;
+    setArrastrandoId(null);
+    setDestinoActivo(null);
+    if (id === null) {
+      return;
+    }
+    const evento = eventos.find((item) => item.objeto.id === id);
+    if (evento === undefined) {
+      return;
+    }
+    const movimiento =
+      destino.tipo === "dia"
+        ? moverEventoADia(evento, destino.fecha)
+        : moverEventoAHora(evento, destino.fecha, destino.hora);
+    if (movimiento === undefined) {
+      return;
+    }
+    const previo = cambios[id];
+    setCambios((actuales) => ({ ...actuales, [id]: movimiento }));
+    setAviso(null);
+    moverEvento.mutate(
+      {
+        id,
+        inicio: movimiento.inicio.toISOString(),
+        ...(movimiento.fin === undefined ? {} : { fin: movimiento.fin.toISOString() }),
+      },
+      {
+        onError: (error) => {
+          setCambios((actuales) => {
+            const siguientes: Record<string, MovimientoEvento> = { ...actuales };
+            if (previo === undefined) {
+              delete siguientes[id];
+            } else {
+              siguientes[id] = previo;
+            }
+            return siguientes;
+          });
+          setAviso(error instanceof ApiError ? error.mensaje : t("error.genericError"));
+        },
+      },
+    );
+  };
+
+  const soltarEnDia = (fecha: Date) => soltarEn({ tipo: "dia", fecha });
+
+  const soltarEnHora = (fecha: Date, hora: number) => soltarEn({ tipo: "hora", fecha, hora });
+
+  const arrastre: ArrastreCalendario = {
+    eventoId: arrastrandoId ?? undefined,
+    destino: destinoActivo,
+    onIniciar: iniciarArrastre,
+    onFinalizar: finalizarArrastre,
+    onDestacar: destacarDestino,
+    onSoltarDia: soltarEnDia,
+    onSoltarHora: soltarEnHora,
+  };
+
   const nav = NAV_KEYS[vista];
 
   return (
@@ -265,6 +352,25 @@ export const CalendarioPage = () => {
           {t("page.calendario.newEvent")}
         </Button>
       </header>
+
+      {aviso !== null ? (
+        <div
+          role="alert"
+          className="flex items-start justify-between gap-4 rounded-md border border-destructive/30 bg-destructive/5 px-3.5 py-2.5 text-sm text-destructive"
+        >
+          <span>
+            <span className="font-medium">{t("page.calendario.moveError")}. </span>
+            {aviso}
+          </span>
+          <button
+            type="button"
+            onClick={() => setAviso(null)}
+            className="shrink-0 text-xs font-medium underline underline-offset-2"
+          >
+            {t("page.calendario.moveErrorDismiss")}
+          </button>
+        </div>
+      ) : null}
 
       <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
         <nav
@@ -356,13 +462,26 @@ export const CalendarioPage = () => {
                     const delDia = celda.fueraDeMes
                       ? []
                       : [...eventosDelDia(eventos, celda.fecha)].sort(compararEventos);
+                    const claveDestino = claveDestinoDia(celda.fecha);
                     return (
                       <td
                         key={celda.clave}
                         data-dia={celda.clave}
+                        data-destino={destinoActivo === claveDestino ? "true" : undefined}
+                        onDragOver={(eventoDrag) => {
+                          eventoDrag.preventDefault();
+                          destacarDestino(claveDestino);
+                        }}
+                        onDrop={(eventoDrag) => {
+                          eventoDrag.preventDefault();
+                          soltarEn({ tipo: "dia", fecha: celda.fecha });
+                        }}
                         className={cn(
                           "border-b border-l border-border align-top first:border-l-0",
                           celda.fueraDeMes ? "bg-muted/40" : "bg-card",
+                          destinoActivo === claveDestino
+                            ? "bg-primary/5 ring-2 ring-primary/30 ring-inset"
+                            : "",
                         )}
                       >
                         <div className="flex min-h-28 flex-col gap-1 p-1.5">
@@ -385,7 +504,13 @@ export const CalendarioPage = () => {
                           {delDia.length > 0 ? (
                             <ul className="flex flex-col gap-1">
                               {delDia.map((evento) => (
-                                <ChipEvento key={evento.objeto.id} evento={evento} />
+                                <ChipEvento
+                                  key={evento.objeto.id}
+                                  evento={evento}
+                                  arrastrando={arrastrandoId === evento.objeto.id}
+                                  onIniciarArrastre={iniciarArrastre}
+                                  onFinalizarArrastre={finalizarArrastre}
+                                />
                               ))}
                             </ul>
                           ) : null}
@@ -399,7 +524,13 @@ export const CalendarioPage = () => {
           </table>
         </div>
       ) : (
-        <VistaPeriodo dias={dias} eventos={eventos} etiqueta={etiqueta} onCrearEn={abrirNuevo} />
+        <VistaPeriodo
+          dias={dias}
+          eventos={eventos}
+          etiqueta={etiqueta}
+          onCrearEn={abrirNuevo}
+          arrastre={arrastre}
+        />
       )}
 
       <Dialog open={dialogoAbierto} onOpenChange={setDialogoAbierto}>
