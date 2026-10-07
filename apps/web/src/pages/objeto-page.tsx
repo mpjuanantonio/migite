@@ -7,14 +7,7 @@ import { MarkdownEditor } from "@/components/editor/markdown-editor";
 import { MarkdownPreview } from "@/components/editor/markdown-preview";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n/context";
-
-const formatFecha = (iso: string, locale: string): string => {
-  const fecha = new Date(iso);
-  if (Number.isNaN(fecha.getTime())) {
-    return iso;
-  }
-  return new Intl.DateTimeFormat(locale, { dateStyle: "long", timeStyle: "short" }).format(fecha);
-};
+import { formatFecha } from "@/lib/fecha";
 
 const etiquetaAtajo = (): string =>
   typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent)

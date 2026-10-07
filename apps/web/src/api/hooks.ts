@@ -1,4 +1,5 @@
 import {
+  type CreateObjectBody,
   type ObjectPayload,
   type ObjetosPage,
   objectPayloadSchema,
@@ -6,17 +7,25 @@ import {
   type SesionStatus,
   sesionStatusSchema,
 } from "@migite/contracts";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "./api";
 import { queryKeys } from "./keys";
 
 export type ObjetosParams = {
+  readonly tipo?: string;
+  readonly carpeta?: string;
   readonly limite?: number;
   readonly cursor?: string;
 };
 
 const objetosPath = (params?: ObjetosParams): string => {
   const query = new URLSearchParams();
+  if (params?.tipo !== undefined && params.tipo !== "") {
+    query.set("tipo", params.tipo);
+  }
+  if (params?.carpeta !== undefined && params.carpeta !== "") {
+    query.set("carpeta", params.carpeta);
+  }
   if (params?.limite !== undefined) {
     query.set("limite", String(params.limite));
   }
@@ -68,6 +77,33 @@ export const useObjetos = (params?: ObjetosParams) =>
     queryFn: async (): Promise<ObjetosPage> =>
       objetosPageSchema.parse(await apiFetch(objetosPath(params))),
   });
+
+export type ObjetosListaParams = {
+  readonly tipo?: string;
+  readonly carpeta?: string;
+  readonly limite?: number;
+};
+
+export const useObjetosInfinitos = (params?: ObjetosListaParams) =>
+  useInfiniteQuery({
+    queryKey: [...queryKeys.objetos, { infinito: true, ...(params ?? {}) }] as const,
+    initialPageParam: undefined as string | undefined,
+    queryFn: async ({ pageParam }): Promise<ObjetosPage> =>
+      objetosPageSchema.parse(await apiFetch(objetosPath({ ...params, cursor: pageParam }))),
+    getNextPageParam: (ultimaPagina) => ultimaPagina.siguienteCursor ?? undefined,
+  });
+
+export const useCrearObjeto = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (body: CreateObjectBody): Promise<ObjectPayload> =>
+      objectPayloadSchema.parse(await apiFetch("/api/objetos", { method: "POST", body })),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.objetos });
+    },
+  });
+};
 
 const objetoPath = (id: string): string => `/api/objetos/${encodeURIComponent(id)}`;
 
