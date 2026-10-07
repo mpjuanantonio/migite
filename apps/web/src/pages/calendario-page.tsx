@@ -1,8 +1,9 @@
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import { ApiError } from "@/api/api";
 import { useCrearObjeto, useObjetos } from "@/api/hooks";
+import { ChipEvento } from "@/components/calendario/chip-evento";
+import { VistaPeriodo } from "@/components/calendario/vista-periodo";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,17 +19,25 @@ import { Switch } from "@/components/ui/switch";
 import { useI18n } from "@/i18n/context";
 import {
   claveDia,
+  claveHora,
   compararEventos,
+  construirDia,
   construirMes,
+  construirSemana,
   diasDeLaSemana,
   type EventoCalendario,
+  etiquetaDia,
   etiquetaMes,
+  etiquetaSemana,
   eventosDelDia,
+  finDelDia,
   finDeMes,
+  finDeSemana,
   formatearDia,
-  formatearHora,
   HOLGURA_DIAS,
+  inicioDelDia,
   inicioDeMes,
+  inicioDeSemana,
   interpretarEvento,
   solapa,
   sumarDias,
@@ -36,6 +45,43 @@ import {
 import { cn } from "@/lib/utils";
 
 const LIMITE = 500;
+const CLAVE_VISTA = "migite.calendario.vista";
+
+type Vista = "mes" | "semana" | "dia";
+
+const VISTAS: readonly Vista[] = ["mes", "semana", "dia"];
+
+const VISTA_KEYS = {
+  mes: "page.calendario.viewMonth",
+  semana: "page.calendario.viewWeek",
+  dia: "page.calendario.viewDay",
+} as const;
+
+const NAV_KEYS = {
+  mes: { anterior: "page.calendario.previousMonth", siguiente: "page.calendario.nextMonth" },
+  semana: { anterior: "page.calendario.previousWeek", siguiente: "page.calendario.nextWeek" },
+  dia: { anterior: "page.calendario.previousDay", siguiente: "page.calendario.nextDay" },
+} as const;
+
+const esVista = (valor: string | null): valor is Vista =>
+  valor === "mes" || valor === "semana" || valor === "dia";
+
+const leerVista = (): Vista => {
+  try {
+    const guardada = localStorage.getItem(CLAVE_VISTA);
+    return esVista(guardada) ? guardada : "mes";
+  } catch {
+    return "mes";
+  }
+};
+
+const guardarVista = (vista: Vista): void => {
+  try {
+    localStorage.setItem(CLAVE_VISTA, vista);
+  } catch {
+    return;
+  }
+};
 
 type Borrador = {
   readonly titulo: string;
@@ -45,10 +91,10 @@ type Borrador = {
   readonly notas: string;
 };
 
-const borradorInicial = (dia: Date): Borrador => ({
+const borradorInicial = (dia: Date, hora = 9): Borrador => ({
   titulo: "",
   todoElDia: false,
-  inicio: `${claveDia(dia)}T09:00`,
+  inicio: `${claveDia(dia)}T${claveHora(hora)}`,
   fin: "",
   notas: "",
 });
@@ -62,79 +108,78 @@ const msDeValor = (valor: string, todoElDia: boolean, esFin: boolean): number | 
   return Number.isNaN(ms) ? undefined : ms;
 };
 
-type ChipEventoProps = {
-  readonly evento: EventoCalendario;
-  readonly locale: string;
-  readonly etiquetaTodoElDia: string;
-};
-
-const ChipEvento = ({ evento, locale, etiquetaTodoElDia }: ChipEventoProps) => (
-  <li>
-    <Link
-      to={`/objetos/${encodeURIComponent(evento.objeto.id)}`}
-      data-todo-el-dia={evento.todoElDia ? "true" : undefined}
-      className={cn(
-        "flex items-start gap-1.5 rounded-sm border px-1.5 py-1 text-xs leading-snug transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-        evento.todoElDia
-          ? "border-primary/40 bg-primary/10 hover:bg-primary/15"
-          : "border-border bg-background hover:border-primary/40",
-      )}
-    >
-      {evento.todoElDia ? (
-        <span className="sr-only">{etiquetaTodoElDia}</span>
-      ) : (
-        <time
-          dateTime={evento.inicio.toISOString()}
-          className="shrink-0 font-medium tabular-nums text-muted-foreground"
-        >
-          {formatearHora(evento.inicio, locale)}
-        </time>
-      )}
-      <span className="truncate font-medium text-foreground">{evento.objeto.titulo}</span>
-    </Link>
-  </li>
-);
-
 export const CalendarioPage = () => {
   const { locale, t } = useI18n();
-  const [mes, setMes] = useState(() => inicioDeMes(new Date()));
+  const [vista, setVista] = useState<Vista>(leerVista);
+  const [cursor, setCursor] = useState(() => new Date());
   const [dialogoAbierto, setDialogoAbierto] = useState(false);
   const [borrador, setBorrador] = useState<Borrador>(() => borradorInicial(new Date()));
   const crear = useCrearObjeto();
 
-  const params = useMemo(() => {
-    // El API filtra por `rango.inicio.desde`, así que ampliamos el rango 31 días hacia atrás
-    // para recuperar eventos que empiezan antes del mes y terminan dentro; el solape real se
-    // comprueba en cliente sobre las celdas del mes.
-    const desde = sumarDias(inicioDeMes(mes), -HOLGURA_DIAS);
-    return {
+  const periodo = useMemo(() => {
+    if (vista === "semana") {
+      return { desde: inicioDeSemana(cursor), hasta: finDeSemana(cursor) };
+    }
+    if (vista === "dia") {
+      return { desde: inicioDelDia(cursor), hasta: finDelDia(cursor) };
+    }
+    return { desde: inicioDeMes(cursor), hasta: finDeMes(cursor) };
+  }, [cursor, vista]);
+
+  const params = useMemo(
+    () => ({
       tipo: "evento",
       limite: LIMITE,
       rangoAtributo: [
-        { clave: "inicio", desde: desde.toISOString(), hasta: finDeMes(mes).toISOString() },
+        {
+          clave: "inicio",
+          desde: sumarDias(periodo.desde, -HOLGURA_DIAS).toISOString(),
+          hasta: periodo.hasta.toISOString(),
+        },
       ],
-    };
-  }, [mes]);
+    }),
+    [periodo],
+  );
 
   const lista = useObjetos(params);
 
-  const eventos = useMemo(() => {
-    const desde = inicioDeMes(mes);
-    const hasta = finDeMes(mes);
-    return (lista.data?.objetos ?? [])
-      .map(interpretarEvento)
-      .filter(
-        (evento): evento is EventoCalendario =>
-          evento !== undefined && solapa(evento, desde, hasta),
-      );
-  }, [lista.data, mes]);
+  const eventos = useMemo(
+    () =>
+      (lista.data?.objetos ?? [])
+        .map(interpretarEvento)
+        .filter(
+          (evento): evento is EventoCalendario =>
+            evento !== undefined && solapa(evento, periodo.desde, periodo.hasta),
+        ),
+    [lista.data, periodo],
+  );
 
   const semanas = useMemo(() => {
-    const celdas = construirMes(mes);
+    if (vista !== "mes") {
+      return [];
+    }
+    const celdas = construirMes(cursor);
     return Array.from({ length: celdas.length / 7 }, (_, indice) =>
       celdas.slice(indice * 7, indice * 7 + 7),
     );
-  }, [mes]);
+  }, [cursor, vista]);
+
+  const dias = useMemo(() => {
+    if (vista === "semana") {
+      return construirSemana(cursor);
+    }
+    if (vista === "dia") {
+      return [construirDia(cursor)];
+    }
+    return [];
+  }, [cursor, vista]);
+
+  const etiqueta =
+    vista === "semana"
+      ? etiquetaSemana(cursor, locale)
+      : vista === "dia"
+        ? etiquetaDia(cursor, locale)
+        : etiquetaMes(cursor, locale);
 
   const inicioMs = msDeValor(borrador.inicio, borrador.todoElDia, false);
   const finMs = msDeValor(borrador.fin, borrador.todoElDia, true);
@@ -142,10 +187,23 @@ export const CalendarioPage = () => {
   const puedeCrear =
     borrador.titulo.trim() !== "" && inicioMs !== undefined && !rangoInvalido && !crear.isPending;
 
-  const abrirNuevo = (dia: Date) => {
+  const abrirNuevo = (dia: Date, hora = 9) => {
     crear.reset();
-    setBorrador(borradorInicial(dia));
+    setBorrador(borradorInicial(dia, hora));
     setDialogoAbierto(true);
+  };
+
+  const cambiarVista = (siguiente: Vista) => {
+    setVista(siguiente);
+    guardarVista(siguiente);
+  };
+
+  const mover = (direccion: -1 | 1) => {
+    if (vista === "mes") {
+      setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + direccion, 1));
+      return;
+    }
+    setCursor(sumarDias(cursor, vista === "semana" ? 7 * direccion : direccion));
   };
 
   const alternarTodoElDia = (valor: boolean) => {
@@ -191,7 +249,7 @@ export const CalendarioPage = () => {
     );
   };
 
-  const etiqueta = etiquetaMes(mes, locale);
+  const nav = NAV_KEYS[vista];
 
   return (
     <div className="flex flex-col gap-6">
@@ -209,32 +267,51 @@ export const CalendarioPage = () => {
       </header>
 
       <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-        <h2 aria-live="polite" className="font-heading text-xl font-medium">
-          {etiqueta}
-        </h2>
-        <nav aria-label={t("page.calendario.periodNav")} className="flex items-center gap-1.5">
-          <Button
-            type="button"
-            variant="outline"
-            size="icon-sm"
-            aria-label={t("page.calendario.previousMonth")}
-            onClick={() => setMes(new Date(mes.getFullYear(), mes.getMonth() - 1, 1))}
-          >
-            <ChevronLeft aria-hidden="true" />
-          </Button>
-          <Button type="button" variant="outline" onClick={() => setMes(inicioDeMes(new Date()))}>
-            {t("page.calendario.today")}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon-sm"
-            aria-label={t("page.calendario.nextMonth")}
-            onClick={() => setMes(new Date(mes.getFullYear(), mes.getMonth() + 1, 1))}
-          >
-            <ChevronRight aria-hidden="true" />
-          </Button>
+        <nav
+          aria-label={t("page.calendario.viewNav")}
+          className="flex flex-wrap items-center gap-1.5"
+        >
+          {VISTAS.map((item) => (
+            <Button
+              key={item}
+              type="button"
+              size="sm"
+              variant={vista === item ? "secondary" : "ghost"}
+              aria-pressed={vista === item}
+              onClick={() => cambiarVista(item)}
+            >
+              {t(VISTA_KEYS[item])}
+            </Button>
+          ))}
         </nav>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+          <h2 aria-live="polite" className="font-heading text-xl font-medium">
+            {etiqueta}
+          </h2>
+          <nav aria-label={t("page.calendario.periodNav")} className="flex items-center gap-1.5">
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              aria-label={t(nav.anterior)}
+              onClick={() => mover(-1)}
+            >
+              <ChevronLeft aria-hidden="true" />
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setCursor(new Date())}>
+              {t("page.calendario.today")}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              aria-label={t(nav.siguiente)}
+              onClick={() => mover(1)}
+            >
+              <ChevronRight aria-hidden="true" />
+            </Button>
+          </nav>
+        </div>
       </div>
 
       {lista.isPending ? (
@@ -253,7 +330,7 @@ export const CalendarioPage = () => {
             {t("page.calendario.retry")}
           </Button>
         </section>
-      ) : (
+      ) : vista === "mes" ? (
         <div className="overflow-x-auto rounded-lg border border-border bg-card shadow-sheet">
           <table
             aria-label={t("page.calendario.gridLabel", { mes: etiqueta })}
@@ -308,12 +385,7 @@ export const CalendarioPage = () => {
                           {delDia.length > 0 ? (
                             <ul className="flex flex-col gap-1">
                               {delDia.map((evento) => (
-                                <ChipEvento
-                                  key={evento.objeto.id}
-                                  evento={evento}
-                                  locale={locale}
-                                  etiquetaTodoElDia={t("page.calendario.allDay")}
-                                />
+                                <ChipEvento key={evento.objeto.id} evento={evento} />
                               ))}
                             </ul>
                           ) : null}
@@ -326,6 +398,8 @@ export const CalendarioPage = () => {
             </tbody>
           </table>
         </div>
+      ) : (
+        <VistaPeriodo dias={dias} eventos={eventos} etiqueta={etiqueta} onCrearEn={abrirNuevo} />
       )}
 
       <Dialog open={dialogoAbierto} onOpenChange={setDialogoAbierto}>

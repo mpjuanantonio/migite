@@ -5,8 +5,12 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import {
   claveDia,
+  construirSemana,
+  etiquetaDia,
   etiquetaMes,
+  etiquetaSemana,
   finDeMes,
+  finDeSemana,
   formatearHora,
   HOLGURA_DIAS,
   inicioDeMes,
@@ -109,6 +113,16 @@ const celdaDe = (clave: string): HTMLElement => {
     throw new Error(`no se encontró la celda de ${clave}`);
   }
   return celda;
+};
+
+const columnaDe = (vista: "semana" | "dia", clave: string): HTMLElement => {
+  const columna = document.querySelector<HTMLElement>(
+    `[data-vista="${vista}"] [data-dia="${clave}"]`,
+  );
+  if (columna === null) {
+    throw new Error(`no se encontró la columna de ${clave} en la vista ${vista}`);
+  }
+  return columna;
 };
 
 beforeEach(() => {
@@ -304,5 +318,179 @@ describe("vista de calendario mensual", () => {
     await waitFor(() => expect(listados.length).toBeGreaterThan(0));
     const desde = new Date(String(listados[0]?.searchParams.get("rango.inicio.desde"))).getTime();
     expect(desde).toBeLessThanOrEqual(inicioLargo.getTime());
+  });
+});
+
+describe("vistas de semana y día", () => {
+  it("cambia de vista y recuerda la elección durante la sesión", async () => {
+    mockApi();
+    const user = userEvent.setup();
+    const { unmount } = renderCalendario();
+
+    const mes = await screen.findByRole("button", { name: "Mes" });
+    expect(mes).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Semana" })).toHaveAttribute("aria-pressed", "false");
+
+    await user.click(screen.getByRole("button", { name: "Semana" }));
+    expect(screen.getByRole("button", { name: "Semana" })).toHaveAttribute("aria-pressed", "true");
+    expect(document.querySelector('[data-vista="semana"]')).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Semana anterior" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Semana siguiente" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Día" }));
+    expect(document.querySelector('[data-vista="dia"]')).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Día anterior" })).toBeInTheDocument();
+
+    unmount();
+    renderCalendario();
+
+    expect(await screen.findByRole("button", { name: "Día" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(document.querySelector('[data-vista="dia"]')).not.toBeNull();
+  });
+
+  it("coloca los eventos de la semana en su franja y los de todo el día en la banda", async () => {
+    const semana = construirSemana(ahora, ahora);
+    const miercoles = semana[2]?.fecha ?? ahora;
+    const inicio = new Date(
+      miercoles.getFullYear(),
+      miercoles.getMonth(),
+      miercoles.getDate(),
+      10,
+      0,
+    );
+    const fin = new Date(
+      miercoles.getFullYear(),
+      miercoles.getMonth(),
+      miercoles.getDate(),
+      11,
+      30,
+    );
+    const paralelaInicio = new Date(
+      miercoles.getFullYear(),
+      miercoles.getMonth(),
+      miercoles.getDate(),
+      10,
+      30,
+    );
+    const paralelaFin = new Date(
+      miercoles.getFullYear(),
+      miercoles.getMonth(),
+      miercoles.getDate(),
+      11,
+      30,
+    );
+    mockApi([
+      evento("S1", "Reunión semanal", inicio, { fin }),
+      evento("S2", "Paralela", paralelaInicio, { fin: paralelaFin }),
+      evento("S3", "Festivo", miercoles, { todoElDia: true }),
+    ]);
+    const user = userEvent.setup();
+    renderCalendario();
+
+    await user.click(await screen.findByRole("button", { name: "Semana" }));
+
+    const cabeceraHoy = document.querySelector(`[data-cabecera="${claveDia(ahora)}"]`);
+    expect(cabeceraHoy).toHaveAttribute("data-hoy", "true");
+
+    const columna = columnaDe("semana", claveDia(miercoles));
+    const reunion = within(columna).getByRole("link", { name: /Reunión semanal/ });
+    expect(reunion).toHaveAttribute("data-evento", "S1");
+    expect(Number.parseFloat(reunion.style.top)).toBeCloseTo((600 / 1440) * 100, 3);
+    expect(Number.parseFloat(reunion.style.height)).toBeCloseTo((90 / 1440) * 100, 3);
+    expect(reunion.style.left).toBe("0%");
+
+    const paralela = within(columna).getByRole("link", { name: /Paralela/ });
+    expect(paralela.style.left).toBe("50%");
+    expect(paralela.style.width).toBe("50%");
+
+    const banda = document.querySelector<HTMLElement>(
+      `[data-todo-el-dia="${claveDia(miercoles)}"]`,
+    );
+    expect(banda).not.toBeNull();
+    expect(within(banda as HTMLElement).getByRole("link", { name: /Festivo/ })).toBeInTheDocument();
+    expect(within(columna).queryByRole("link", { name: /Festivo/ })).toBeNull();
+  });
+
+  it("muestra el día con la fecha completa y sus eventos posicionados", async () => {
+    const inicio = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate(), 14, 0);
+    const fin = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate(), 15, 0);
+    mockApi([evento("D1", "Fisioterapia", inicio, { fin })]);
+    const user = userEvent.setup();
+    renderCalendario();
+
+    await user.click(await screen.findByRole("button", { name: "Día" }));
+
+    expect(
+      screen.getByRole("heading", { level: 2, name: etiquetaDia(ahora, "es") }),
+    ).toBeInTheDocument();
+    const seccion = document.querySelector<HTMLElement>(
+      `[data-vista="dia"][aria-label="${etiquetaDia(ahora, "es")}"]`,
+    );
+    expect(seccion).not.toBeNull();
+    expect(seccion?.querySelectorAll("[data-dia]")).toHaveLength(1);
+
+    const columna = columnaDe("dia", claveDia(ahora));
+    const enlace = within(columna).getByRole("link", { name: /Fisioterapia/ });
+    expect(Number.parseFloat(enlace.style.top)).toBeCloseTo((840 / 1440) * 100, 3);
+    expect(Number.parseFloat(enlace.style.height)).toBeCloseTo((60 / 1440) * 100, 3);
+    expect(within(columna).getAllByRole("button")).toHaveLength(24);
+  });
+
+  it("navega por semanas y por días según la vista activa", async () => {
+    mockApi();
+    const user = userEvent.setup();
+    renderCalendario();
+
+    await screen.findByRole("button", { name: "Nuevo evento" });
+    await user.click(screen.getByRole("button", { name: "Semana" }));
+
+    expect(
+      screen.getByRole("heading", { level: 2, name: etiquetaSemana(ahora, "es") }),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      const ultima = listados.at(-1);
+      expect(new Date(String(ultima?.searchParams.get("rango.inicio.hasta"))).getTime()).toBe(
+        finDeSemana(ahora).getTime(),
+      );
+    });
+
+    await user.click(screen.getByRole("button", { name: "Semana siguiente" }));
+    expect(
+      screen.getByRole("heading", { level: 2, name: etiquetaSemana(sumarDias(ahora, 7), "es") }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Hoy" }));
+    expect(
+      screen.getByRole("heading", { level: 2, name: etiquetaSemana(ahora, "es") }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Día" }));
+    expect(
+      screen.getByRole("heading", { level: 2, name: etiquetaDia(ahora, "es") }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Día anterior" }));
+    expect(
+      screen.getByRole("heading", { level: 2, name: etiquetaDia(sumarDias(ahora, -1), "es") }),
+    ).toBeInTheDocument();
+  });
+
+  it("abre el diálogo con la fecha y hora del hueco pulsado", async () => {
+    mockApi();
+    const user = userEvent.setup();
+    renderCalendario();
+
+    await user.click(await screen.findByRole("button", { name: "Día" }));
+
+    const hueco = columnaDe("dia", claveDia(ahora)).querySelector<HTMLButtonElement>(
+      'button[data-hora="15"]',
+    );
+    expect(hueco).not.toBeNull();
+    await user.click(hueco as HTMLButtonElement);
+
+    expect(await screen.findByLabelText("Inicio")).toHaveValue(`${claveDia(ahora)}T15:00`);
   });
 });
