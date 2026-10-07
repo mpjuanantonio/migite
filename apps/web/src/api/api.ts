@@ -3,12 +3,14 @@ import { t } from "@migite/core";
 
 export class ApiError extends Error {
   readonly codigo: string;
+  readonly mensaje: string;
   readonly status: number;
 
   constructor(codigo: string, mensaje: string, status: number) {
     super(mensaje);
     this.name = "ApiError";
     this.codigo = codigo;
+    this.mensaje = mensaje;
     this.status = status;
   }
 }
