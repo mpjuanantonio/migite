@@ -49,6 +49,17 @@ export const useIniciarSesion = () => {
   });
 };
 
+export const useCerrarSesion = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => apiFetch<void>("/api/sesion", { method: "DELETE" }),
+    onSuccess: () => {
+      queryClient.clear();
+    },
+  });
+};
+
 export const useObjetos = (params?: ObjetosParams) =>
   useQuery({
     queryKey: [...queryKeys.objetos, params ?? {}],

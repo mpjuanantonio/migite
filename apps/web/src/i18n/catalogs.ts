@@ -35,12 +35,14 @@ const webEs = {
   "page.tipos.description": "Los moldes que definen los campos de cada ficha del archivo.",
   "page.tipos.empty": "Aquí verás los tipos de ficha que admite tu archivo.",
   "page.tipos.title": "Tipos",
-  "shell.access": "Acceder",
   "shell.brandTagline": "Archivo personal",
   "shell.language": "Idioma",
   "shell.languageEn": "Inglés",
   "shell.languageEs": "Español",
+  "shell.loggingOut": "Cerrando sesión…",
+  "shell.logout": "Cerrar sesión",
   "shell.mainNav": "Navegación principal",
+  "shell.sessionActive": "Sesión activa",
   "shell.skipToContent": "Saltar al contenido",
 } as const;
 
@@ -80,12 +82,14 @@ const webEn = {
   "page.tipos.description": "The templates that define the fields of every record in the archive.",
   "page.tipos.empty": "The record types your archive supports will appear here.",
   "page.tipos.title": "Types",
-  "shell.access": "Sign in",
   "shell.brandTagline": "Personal archive",
   "shell.language": "Language",
   "shell.languageEn": "English",
   "shell.languageEs": "Spanish",
+  "shell.loggingOut": "Signing out…",
+  "shell.logout": "Sign out",
   "shell.mainNav": "Main navigation",
+  "shell.sessionActive": "Signed in",
   "shell.skipToContent": "Skip to content",
 } satisfies Record<WebTranslationKey, string>;
 

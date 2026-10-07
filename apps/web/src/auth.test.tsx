@@ -1,6 +1,8 @@
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
+import { createQueryClient } from "@/api/client";
+import { queryKeys } from "@/api/keys";
 import { errorResponse, noContentResponse, renderApp, sesionResponse } from "@/test/render-app";
 
 let fetchMock: Mock<typeof fetch>;
@@ -76,6 +78,38 @@ describe("página de acceso", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Se requiere autenticación");
     expect(screen.getByRole("heading", { level: 1, name: "Acceso" })).toBeInTheDocument();
+  });
+});
+
+describe("cierre de sesión", () => {
+  it("cierra la sesión, limpia la cache y vuelve al acceso", async () => {
+    let autenticado = true;
+    fetchMock.mockImplementation(async (_input, init) => {
+      if ((init?.method ?? "GET") === "DELETE") {
+        autenticado = false;
+        return noContentResponse();
+      }
+      return sesionResponse(autenticado);
+    });
+    const client = createQueryClient();
+    const objetosKey = [...queryKeys.objetos, {}];
+    client.setQueryData(objetosKey, { objetos: [] });
+    const user = userEvent.setup();
+    const { router } = renderApp("/notas", client);
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Notas" })).toBeInTheDocument();
+    expect(client.getQueryData(queryKeys.sesion)).toEqual({ autenticado: true });
+
+    await user.click(screen.getByRole("button", { name: "Cerrar sesión" }));
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Acceso" })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/sesion",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    expect(router.state.location.pathname).toBe("/login");
+    expect(client.getQueryData(objetosKey)).toBeUndefined();
+    expect(client.getQueryData(queryKeys.sesion)).toEqual({ autenticado: false });
   });
 });
 
