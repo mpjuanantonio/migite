@@ -22,9 +22,35 @@ export const inicioDelDia = (fecha: Date): Date =>
 export const finDelDia = (fecha: Date): Date =>
   new Date(fecha.getFullYear(), fecha.getMonth(), fecha.getDate(), 23, 59, 59, 999);
 
-const inicioDeSemana = (fecha: Date): Date => {
+export const inicioDeSemana = (fecha: Date): Date => {
   const desplazamiento = (fecha.getDay() + 6) % 7;
   return sumarDias(fecha, -desplazamiento);
+};
+
+export const finDeSemana = (fecha: Date): Date => {
+  const inicio = inicioDeSemana(fecha);
+  return new Date(inicio.getFullYear(), inicio.getMonth(), inicio.getDate() + 6, 23, 59, 59, 999);
+};
+
+export type CeldaDia = {
+  readonly fecha: Date;
+  readonly clave: string;
+  readonly esHoy: boolean;
+};
+
+const celdaDia = (fecha: Date, claveHoy: string): CeldaDia => ({
+  fecha,
+  clave: claveDia(fecha),
+  esHoy: claveDia(fecha) === claveHoy,
+});
+
+export const construirDia = (fecha: Date, hoy: Date = new Date()): CeldaDia =>
+  celdaDia(inicioDelDia(fecha), claveDia(hoy));
+
+export const construirSemana = (fecha: Date, hoy: Date = new Date()): readonly CeldaDia[] => {
+  const inicio = inicioDeSemana(fecha);
+  const claveHoy = claveDia(hoy);
+  return Array.from({ length: 7 }, (_, indice) => celdaDia(sumarDias(inicio, indice), claveHoy));
 };
 
 export type CeldaMes = {
@@ -95,22 +121,121 @@ export const compararEventos = (a: EventoCalendario, b: EventoCalendario): numbe
   return porInicio !== 0 ? porInicio : a.objeto.titulo.localeCompare(b.objeto.titulo);
 };
 
+export const HORAS_DEL_DIA: readonly number[] = Array.from({ length: 24 }, (_, hora) => hora);
+
+export const claveHora = (hora: number): string => `${relleno(hora)}:00`;
+
+export const MINUTOS_DIA = 24 * 60;
+
+export const MINUTOS_MINIMOS_EVENTO = 30;
+
+export type EventoPosicionado = {
+  readonly evento: EventoCalendario;
+  readonly top: number;
+  readonly alto: number;
+  readonly columna: number;
+  readonly columnas: number;
+};
+
+type Tramo = {
+  readonly evento: EventoCalendario;
+  readonly inicio: number;
+  readonly fin: number;
+  columna: number;
+};
+
+export const distribuirEventos = (
+  eventos: readonly EventoCalendario[],
+  dia: Date,
+): readonly EventoPosicionado[] => {
+  const inicioDia = inicioDelDia(dia).getTime();
+  const finDia = sumarDias(inicioDelDia(dia), 1).getTime();
+  const minimo = MINUTOS_MINIMOS_EVENTO * 60_000;
+
+  const tramos = eventosDelDia(eventos, dia)
+    .filter((evento) => !evento.todoElDia)
+    .sort(compararEventos)
+    .map((evento): Tramo => {
+      const inicio = Math.max(evento.inicio.getTime(), inicioDia);
+      const fin = Math.min(Math.max(evento.fin.getTime(), inicio + minimo), finDia);
+      return {
+        evento,
+        inicio: (inicio - inicioDia) / 60_000,
+        fin: (fin - inicioDia) / 60_000,
+        columna: 0,
+      };
+    });
+
+  const posicionados: EventoPosicionado[] = [];
+  let grupo: Tramo[] = [];
+  let finGrupo = Number.NEGATIVE_INFINITY;
+  let columnasFin: number[] = [];
+
+  const cerrarGrupo = (): void => {
+    const columnas = grupo.reduce((maximo, tramo) => Math.max(maximo, tramo.columna + 1), 0);
+    for (const tramo of grupo) {
+      posicionados.push({
+        evento: tramo.evento,
+        top: (tramo.inicio / MINUTOS_DIA) * 100,
+        alto: ((tramo.fin - tramo.inicio) / MINUTOS_DIA) * 100,
+        columna: tramo.columna,
+        columnas,
+      });
+    }
+    grupo = [];
+    finGrupo = Number.NEGATIVE_INFINITY;
+  };
+
+  for (const tramo of tramos) {
+    if (tramo.inicio >= finGrupo) {
+      cerrarGrupo();
+      columnasFin = [];
+    }
+    const libre = columnasFin.findIndex((fin) => fin <= tramo.inicio);
+    if (libre === -1) {
+      tramo.columna = columnasFin.length;
+      columnasFin.push(tramo.fin);
+    } else {
+      tramo.columna = libre;
+      columnasFin[libre] = tramo.fin;
+    }
+    grupo.push(tramo);
+    finGrupo = Math.max(finGrupo, tramo.fin);
+  }
+  cerrarGrupo();
+
+  return posicionados;
+};
+
 const capitalizar = (texto: string): string => texto.charAt(0).toUpperCase() + texto.slice(1);
 
 export const etiquetaMes = (mes: Date, locale: string): string =>
   `${capitalizar(new Intl.DateTimeFormat(locale, { month: "long" }).format(mes))} ${mes.getFullYear()}`;
 
+export const nombreDiaCorto = (fecha: Date, locale: string): string =>
+  capitalizar(new Intl.DateTimeFormat(locale, { weekday: "short" }).format(fecha));
+
 export const diasDeLaSemana = (locale: string): readonly string[] => {
   const lunes = new Date(2024, 0, 1);
-  return Array.from({ length: 7 }, (_, indice) =>
-    capitalizar(
-      new Intl.DateTimeFormat(locale, { weekday: "short" }).format(sumarDias(lunes, indice)),
-    ),
-  );
+  return Array.from({ length: 7 }, (_, indice) => nombreDiaCorto(sumarDias(lunes, indice), locale));
+};
+
+export const etiquetaSemana = (fecha: Date, locale: string): string => {
+  const inicio = inicioDeSemana(fecha);
+  const fin = sumarDias(inicio, 6);
+  const formato = new Intl.DateTimeFormat(locale, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+  return capitalizar(`${formato.format(inicio)} – ${formato.format(fin)}`);
 };
 
 export const formatearDia = (fecha: Date, locale: string): string =>
   new Intl.DateTimeFormat(locale, { dateStyle: "full" }).format(fecha);
+
+export const etiquetaDia = (fecha: Date, locale: string): string =>
+  capitalizar(formatearDia(fecha, locale));
 
 export const formatearHora = (fecha: Date, locale: string): string =>
   new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }).format(fecha);
