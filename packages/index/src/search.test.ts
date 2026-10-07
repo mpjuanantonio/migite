@@ -348,6 +348,229 @@ describe("listObjectsIndexed", () => {
   });
 });
 
+describe("filtros por atributo", () => {
+  it("filtra por igualdad y pertenencia a lista", () => {
+    expect(listIds({ filters: { atributos: { estado: "pendiente" } } })).toEqual([
+      fixtures.tarea.id,
+    ]);
+    expect(listIds({ filters: { atributos: { estado: "hecha" } } })).toEqual([]);
+    expect(listIds({ filters: { atributos: { etiquetas: "verde" } } })).toEqual([fixtures.rojo.id]);
+    expect(listIds({ filters: { atributos: { etiquetas: ["rojo", "azul"] } } })).toEqual(
+      [fixtures.rojo.id, fixtures.azul.id].sort(),
+    );
+    expect(listIds({ filters: { atributos: { etiquetas: "rojo", puntuacion: "3" } } })).toEqual([
+      fixtures.rojo.id,
+    ]);
+    expect(listIds({ filters: { atributos: { etiquetas: "rojo", puntuacion: "4" } } })).toEqual([]);
+    expect(listIds({ filters: { atributos: { inexistente: "x" } } })).toEqual([]);
+  });
+
+  it("ignora claves y valores vacíos", () => {
+    const all = listObjectsIndexed(handle.db, {})
+      .map((result) => result.id)
+      .sort();
+
+    expect(listIds({ filters: { atributos: { estado: "" } } })).toEqual(all);
+    expect(listIds({ filters: { atributos: { "": "x" } } })).toEqual(all);
+    expect(listIds({ filters: { atributos: { etiquetas: [] } } })).toEqual(all);
+    expect(listIds({ filters: { atributos: { etiquetas: ["", "rojo"] } } })).toEqual([
+      fixtures.rojo.id,
+    ]);
+  });
+
+  it("combina atributos con tipo, carpeta y q", () => {
+    expect(listIds({ filters: { tipo: "etiquetado", atributos: { etiquetas: "rojo" } } })).toEqual([
+      fixtures.rojo.id,
+    ]);
+    expect(
+      listIds({ filters: { carpeta: "proyectos/sub", atributos: { etiquetas: "azul" } } }),
+    ).toEqual([fixtures.azul.id]);
+    expect(ids({ query: "alfa", filters: { atributos: { etiquetas: "rojo" } } })).toEqual([
+      fixtures.rojo.id,
+    ]);
+    expect(ids({ query: "alfa", filters: { atributos: { etiquetas: "azul" } } })).toEqual([
+      fixtures.azul.id,
+    ]);
+    expect(ids({ query: "busq", filters: { atributos: { estado: "pendiente" } } })).toEqual([
+      fixtures.tarea.id,
+    ]);
+  });
+});
+
+describe("filtros por rango de atributo", () => {
+  it("filtra por fechas normalizando instantes UTC y pagina con estabilidad", () => {
+    const instant = "2026-03-29T01:30:00.000Z";
+    const after = "2026-03-29T01:30:00.001Z";
+    const before = "2026-03-29T01:29:59.999Z";
+    const exacto = repo.createObject({
+      title: "Evento exacto",
+      type: "evento",
+      folder: "agenda",
+      attributes: { inicio: instant },
+    });
+    const offset = repo.createObject({
+      title: "Evento con offset",
+      type: "evento",
+      folder: "agenda",
+      attributes: { inicio: "2026-03-29T03:30:00.000+02:00" },
+    });
+    const despues = repo.createObject({
+      title: "Evento después",
+      type: "evento",
+      folder: "agenda",
+      attributes: { inicio: after },
+    });
+    const antes = repo.createObject({
+      title: "Evento antes",
+      type: "evento",
+      folder: "agenda",
+      attributes: { inicio: before },
+    });
+    const corto = repo.createObject({
+      title: "Evento corto",
+      type: "evento",
+      folder: "agenda",
+      attributes: { inicio: "2026-09-01T09:00:00.000Z", fin: "2026-09-01T10:00:00.000Z" },
+    });
+    repo.createObject({
+      title: "Evento largo",
+      type: "evento",
+      folder: "agenda",
+      attributes: { inicio: "2026-09-01T08:00:00.000Z", fin: "2026-09-01T12:00:00.000Z" },
+    });
+    buildIndex(handle.db, { vaultDir, timeZone: "UTC" });
+
+    const sameInstant = [exacto.id, offset.id].sort();
+    expect(
+      listIds({ filters: { rangoAtributo: { clave: "inicio", desde: instant, hasta: instant } } }),
+    ).toEqual(sameInstant);
+    expect(
+      listIds({
+        filters: {
+          rangoAtributo: {
+            clave: "inicio",
+            desde: "2026-03-29T03:30:00.000+02:00",
+            hasta: "2026-03-29T03:30:00.000+02:00",
+          },
+        },
+      }),
+    ).toEqual(sameInstant);
+    expect(
+      listIds({
+        filters: {
+          rangoAtributo: [
+            { clave: "inicio", desde: "2026-09-01T08:30:00.000Z" },
+            { clave: "fin", hasta: "2026-09-01T11:00:00.000Z" },
+          ],
+        },
+      }),
+    ).toEqual([corto.id]);
+    expect(
+      listIds({
+        filters: {
+          rangoAtributo: { clave: "inicio", desde: instant, hasta: after },
+        },
+      }),
+    ).toEqual([despues.id, exacto.id, offset.id].sort());
+    expect(listIds({ filters: { rangoAtributo: { clave: "inicio", hasta: instant } } })).toEqual(
+      [antes.id, exacto.id, offset.id].sort(),
+    );
+    expect(
+      listIds({
+        filters: { rangoAtributo: { clave: "inicio", desde: "2027-01-01T00:00:00.000Z" } },
+      }),
+    ).toEqual([]);
+
+    const all = listObjectsIndexed(handle.db, {})
+      .map((result) => result.id)
+      .sort();
+    expect(listIds({ filters: { rangoAtributo: { clave: "inicio" } } })).toEqual(all);
+    expect(listIds({ filters: { rangoAtributo: { clave: "" } } })).toEqual(all);
+
+    const filters = { tipo: "evento", rangoAtributo: { clave: "inicio", hasta: instant } };
+    const expected = listObjectsIndexed(handle.db, { filters }).map((result) => result.id);
+    expect(expected).toHaveLength(3);
+    const pages = [0, 1, 2].map((pageOffset) =>
+      listObjectsIndexed(handle.db, { filters, limit: 1, offset: pageOffset }).map(
+        (result) => result.id,
+      ),
+    );
+    expect(pages.map((page) => page.length)).toEqual([1, 1, 1]);
+    expect(pages.flat()).toEqual(expected);
+  });
+
+  it("compara la igualdad de atributos numéricos y de fecha normalizados", () => {
+    const instant = "2026-03-29T01:30:00.000Z";
+    const evento = repo.createObject({
+      title: "Evento igualdad",
+      type: "evento",
+      folder: "agenda",
+      attributes: { inicio: instant },
+    });
+    buildIndex(handle.db, { vaultDir, timeZone: "UTC" });
+
+    expect(
+      listIds({ filters: { atributos: { inicio: "2026-03-29T03:30:00.000+02:00" } } }),
+    ).toEqual([evento.id]);
+  });
+});
+
+describe("filtros por asociación", () => {
+  it("filtra objetos con enlaces al destino en cuerpo y frontmatter", () => {
+    const enlazaRojo = repo.createObject({
+      title: "Enlaza rojo",
+      type: "nota",
+      folder: "red",
+      body: "conexión con [[Ficha roja]]",
+    });
+    const enlazaAzul = repo.createObject({
+      title: "Enlaza azul",
+      type: "nota",
+      folder: "red",
+      body: "conexión con [[Ficha azul]]",
+      links: ["[[Ficha roja]]"],
+    });
+    const enlazaTercero = repo.createObject({
+      title: "Enlaza tercero",
+      type: "nota",
+      folder: "red",
+      body: "más [[Ficha roja]]",
+    });
+    repo.createObject({ title: "Nota suelta", type: "nota", folder: "red", body: "sin enlaces" });
+    buildIndex(handle.db, { vaultDir, timeZone: "UTC" });
+
+    const expected = [enlazaRojo.id, enlazaAzul.id, enlazaTercero.id].sort();
+    expect(listIds({ filters: { enlazadoA: fixtures.rojo.id } })).toEqual(expected);
+    expect(listIds({ filters: { enlazadoA: fixtures.azul.id } })).toEqual([enlazaAzul.id]);
+    expect(listIds({ filters: { enlazadoA: "no-existe" } })).toEqual([]);
+    expect(
+      listIds({ filters: { tipo: "nota", carpeta: "red", enlazadoA: fixtures.rojo.id } }),
+    ).toEqual(expected);
+
+    const all = listObjectsIndexed(handle.db, {})
+      .map((result) => result.id)
+      .sort();
+    expect(listIds({ filters: { enlazadoA: "" } })).toEqual(all);
+
+    expect(ids({ query: "conexión", filters: { enlazadoA: fixtures.azul.id } })).toEqual([
+      enlazaAzul.id,
+    ]);
+
+    const ordered = listObjectsIndexed(handle.db, {
+      filters: { enlazadoA: fixtures.rojo.id },
+    }).map((result) => result.id);
+    const pages = [0, 1, 2].map((offset) =>
+      listObjectsIndexed(handle.db, {
+        filters: { enlazadoA: fixtures.rojo.id },
+        limit: 1,
+        offset,
+      }).map((result) => result.id),
+    );
+    expect(pages.flat()).toEqual(ordered);
+    expect(new Set(pages.flat()).size).toBe(ordered.length);
+  });
+});
+
 describe("paginación con offset", () => {
   it("recorre tres páginas sin duplicados ni pérdidas", () => {
     const expectedList = listObjectsIndexed(handle.db, {

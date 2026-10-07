@@ -3,7 +3,13 @@ import { QueryClient } from "@tanstack/react-query";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
-import { errorResponse, jsonResponse, renderApp, sesionResponse } from "@/test/render-app";
+import {
+  errorResponse,
+  jsonResponse,
+  noContentResponse,
+  renderApp,
+  sesionResponse,
+} from "@/test/render-app";
 
 vi.mock("@uiw/react-codemirror", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@uiw/react-codemirror")>();
@@ -34,10 +40,14 @@ type PatchBody = {
 
 type PatchHandler = (body: PatchBody, attempt: number) => Response;
 
+type RenameHandler = (nuevoTitulo: string, attempt: number) => Response;
+
 type ObjetoApiOptions = {
   readonly objeto?: ObjectPayload;
   readonly getError?: Response;
   readonly patch?: PatchHandler;
+  readonly rename?: RenameHandler;
+  readonly deleteResponse?: Response;
 };
 
 const TIPOS: readonly TipoPayload[] = [
@@ -90,12 +100,16 @@ const objetoDePrueba = (overrides: Partial<ObjectPayload> = {}): ObjectPayload =
 
 const mockObjetoApi = (options: ObjetoApiOptions = {}): void => {
   let intentos = 0;
+  let intentosRenombrado = 0;
   const objeto = options.objeto ?? objetoDePrueba();
 
   fetchMock.mockImplementation(async (input, init) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     if (url.startsWith("/api/tipos")) {
       return jsonResponse({ tipos: TIPOS });
+    }
+    if (url === "/api/objetos") {
+      return jsonResponse({ objetos: [], siguienteCursor: null });
     }
     if (!url.startsWith("/api/objetos/")) {
       return sesionResponse(true);
@@ -114,6 +128,21 @@ const mockObjetoApi = (options: ObjetoApiOptions = {}): void => {
           ? {}
           : { atributos: { ...objeto.atributos, ...body.atributos } }),
       });
+    }
+    if (method === "POST" && url.endsWith("/renombrar")) {
+      intentosRenombrado += 1;
+      const body = JSON.parse(String(init?.body ?? "{}")) as { readonly nuevoTitulo?: string };
+      const nuevoTitulo = body.nuevoTitulo ?? objeto.titulo;
+      if (options.rename !== undefined) {
+        return options.rename(nuevoTitulo, intentosRenombrado);
+      }
+      return jsonResponse({
+        objeto: { ...objeto, titulo: nuevoTitulo },
+        informe: { reescritos: [], omitidos: [], enlacesSinResolver: [] },
+      });
+    }
+    if (method === "DELETE") {
+      return options.deleteResponse ?? noContentResponse();
     }
     if (options.getError !== undefined) {
       return options.getError;
@@ -427,5 +456,150 @@ describe("bandeja de atributos", () => {
 
     expect(await screen.findByText("Atributos guardados")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
+const abrirDialogoRenombrar = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.click(await screen.findByRole("button", { name: "Renombrar" }));
+  return screen.findByRole("dialog");
+};
+
+describe("renombrar y borrar la ficha", () => {
+  it("renombra la ficha y muestra el informe de ficheros reescritos", async () => {
+    mockObjetoApi({
+      rename: (nuevoTitulo) =>
+        jsonResponse({
+          objeto: objetoDePrueba({ titulo: nuevoTitulo }),
+          informe: {
+            reescritos: ["diario/ref.md", "tareas/x.md"],
+            omitidos: [],
+            enlacesSinResolver: [],
+          },
+        }),
+    });
+    const user = userEvent.setup();
+    renderObjeto();
+
+    const dialogo = await abrirDialogoRenombrar(user);
+    const campo = within(dialogo).getByLabelText("Nuevo título");
+    expect(campo).toHaveValue("Cuaderno de campo");
+    await user.clear(campo);
+    await user.type(campo, "Cuaderno nuevo");
+    await user.click(within(dialogo).getByRole("button", { name: "Renombrar" }));
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Cuaderno nuevo" }),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
+    const llamada = fetchMock.mock.calls.find(([input]) => String(input).endsWith("/renombrar"));
+    expect(llamada?.[0]).toBe("/api/objetos/01JALFA/renombrar");
+    expect(llamada?.[1]?.method).toBe("POST");
+    expect(JSON.parse(String(llamada?.[1]?.body))).toEqual({ nuevoTitulo: "Cuaderno nuevo" });
+
+    expect(await screen.findByText("Ficha renombrada")).toBeInTheDocument();
+    expect(screen.getByText("Ficheros reescritos (2)")).toBeInTheDocument();
+    expect(screen.getByText("diario/ref.md")).toBeInTheDocument();
+    expect(screen.getByText("tareas/x.md")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("avisa de los enlaces sin resolver y de los ficheros omitidos", async () => {
+    mockObjetoApi({
+      rename: () =>
+        jsonResponse({
+          objeto: objetoDePrueba({ titulo: "Cuaderno nuevo" }),
+          informe: {
+            reescritos: [],
+            omitidos: [{ path: "roto.md", problems: ["frontmatter ilegible"] }],
+            enlacesSinResolver: [{ path: "notas/otra.md", link: "[[Cuaderno de campo]]" }],
+          },
+        }),
+    });
+    const user = userEvent.setup();
+    renderObjeto();
+
+    const dialogo = await abrirDialogoRenombrar(user);
+    await user.clear(within(dialogo).getByLabelText("Nuevo título"));
+    await user.type(within(dialogo).getByLabelText("Nuevo título"), "Cuaderno nuevo");
+    await user.click(within(dialogo).getByRole("button", { name: "Renombrar" }));
+
+    expect(await screen.findByText("Ficheros omitidos")).toBeInTheDocument();
+    expect(screen.getByText(/frontmatter ilegible/)).toBeInTheDocument();
+    const aviso = await screen.findByRole("alert");
+    expect(aviso).toHaveTextContent("Enlaces sin resolver");
+    expect(aviso).toHaveTextContent("«[[Cuaderno de campo]]» en notas/otra.md");
+  });
+
+  it("muestra el error del API cuando el título está duplicado", async () => {
+    mockObjetoApi({
+      rename: () => errorResponse("ambiguous_title", "Ya existe una ficha con ese título", 409),
+    });
+    const user = userEvent.setup();
+    renderObjeto();
+
+    const dialogo = await abrirDialogoRenombrar(user);
+    await user.clear(within(dialogo).getByLabelText("Nuevo título"));
+    await user.type(within(dialogo).getByLabelText("Nuevo título"), "Otro título");
+    await user.click(within(dialogo).getByRole("button", { name: "Renombrar" }));
+
+    const alerta = await screen.findByRole("alert");
+    expect(alerta).toHaveTextContent("Ya existe una ficha con ese título");
+    expect(within(dialogo).getByLabelText("Nuevo título")).toHaveValue("Otro título");
+    expect(screen.getByText("Cuaderno de campo", { selector: "h1" })).toBeInTheDocument();
+  });
+
+  it("no llama al API si el borrado no se confirma", async () => {
+    mockObjetoApi();
+    const user = userEvent.setup();
+    const { router } = renderObjeto();
+
+    await user.click(await screen.findByRole("button", { name: "Borrar" }));
+    const dialogo = await screen.findByRole("dialog");
+    expect(dialogo).toHaveTextContent("¿Borrar «Cuaderno de campo»?");
+    expect(dialogo).toHaveTextContent("Esta acción no se puede deshacer.");
+
+    await user.click(within(dialogo).getByRole("button", { name: "Cancelar" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === "DELETE")).toBe(false);
+    expect(router.state.location.pathname).toBe("/objetos/01JALFA");
+  });
+
+  it("borra la ficha con confirmación y navega a notas", async () => {
+    mockObjetoApi();
+    const user = userEvent.setup();
+    const { router } = renderObjeto();
+
+    await user.click(await screen.findByRole("button", { name: "Borrar" }));
+    const dialogo = await screen.findByRole("dialog");
+    await user.click(within(dialogo).getByRole("button", { name: "Borrar ficha" }));
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/notas");
+    });
+    const llamada = fetchMock.mock.calls.find(([, init]) => init?.method === "DELETE");
+    expect(llamada?.[0]).toBe("/api/objetos/01JALFA?confirmar=1");
+    expect(await screen.findByRole("heading", { level: 1, name: "Notas" })).toBeInTheDocument();
+  });
+
+  it("muestra el error y no navega cuando el borrado falla", async () => {
+    mockObjetoApi({
+      deleteResponse: errorResponse("write_error", "No se pudo borrar el archivo", 500),
+    });
+    const user = userEvent.setup();
+    const { router } = renderObjeto();
+
+    await user.click(await screen.findByRole("button", { name: "Borrar" }));
+    const dialogo = await screen.findByRole("dialog");
+    await user.click(within(dialogo).getByRole("button", { name: "Borrar ficha" }));
+
+    const alerta = await screen.findByRole("alert");
+    expect(alerta).toHaveTextContent("No se pudo borrar el archivo");
+    expect(router.state.location.pathname).toBe("/objetos/01JALFA");
   });
 });

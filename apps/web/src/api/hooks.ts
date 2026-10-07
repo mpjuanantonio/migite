@@ -4,20 +4,36 @@ import {
   type ObjetosPage,
   objectPayloadSchema,
   objetosPageSchema,
+  type RenameReport,
+  renameReportSchema,
   type SesionStatus,
   sesionStatusSchema,
   type TipoPayload,
   tiposListSchema,
 } from "@migite/contracts";
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  type QueryClient,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { apiFetch } from "./api";
 import { queryKeys } from "./keys";
+
+export type RangoAtributo = {
+  readonly clave: string;
+  readonly desde?: string;
+  readonly hasta?: string;
+};
 
 export type ObjetosParams = {
   readonly tipo?: string;
   readonly carpeta?: string;
   readonly limite?: number;
   readonly cursor?: string;
+  readonly atributos?: Readonly<Record<string, string | readonly string[]>>;
+  readonly rangoAtributo?: readonly RangoAtributo[];
 };
 
 const objetosPath = (params?: ObjetosParams): string => {
@@ -27,6 +43,23 @@ const objetosPath = (params?: ObjetosParams): string => {
   }
   if (params?.carpeta !== undefined && params.carpeta !== "") {
     query.set("carpeta", params.carpeta);
+  }
+  if (params?.atributos !== undefined) {
+    for (const [clave, valor] of Object.entries(params.atributos)) {
+      for (const item of typeof valor === "string" ? [valor] : valor) {
+        query.append(`atributo.${clave}`, item);
+      }
+    }
+  }
+  if (params?.rangoAtributo !== undefined) {
+    for (const rango of params.rangoAtributo) {
+      if (rango.desde !== undefined && rango.desde !== "") {
+        query.set(`rango.${rango.clave}.desde`, rango.desde);
+      }
+      if (rango.hasta !== undefined && rango.hasta !== "") {
+        query.set(`rango.${rango.clave}.hasta`, rango.hasta);
+      }
+    }
   }
   if (params?.limite !== undefined) {
     query.set("limite", String(params.limite));
@@ -80,11 +113,7 @@ export const useObjetos = (params?: ObjetosParams) =>
       objetosPageSchema.parse(await apiFetch(objetosPath(params))),
   });
 
-export type ObjetosListaParams = {
-  readonly tipo?: string;
-  readonly carpeta?: string;
-  readonly limite?: number;
-};
+export type ObjetosListaParams = Omit<ObjetosParams, "cursor">;
 
 export const useObjetosInfinitos = (params?: ObjetosListaParams) =>
   useInfiniteQuery({
@@ -109,6 +138,13 @@ export const useCrearObjeto = () => {
 
 const objetoPath = (id: string): string => `/api/objetos/${encodeURIComponent(id)}`;
 
+const invalidarListasDeObjetos = (queryClient: QueryClient): void => {
+  void queryClient.invalidateQueries({
+    predicate: (query) =>
+      query.queryKey[0] === queryKeys.objetos[0] && typeof query.queryKey[1] !== "string",
+  });
+};
+
 export const useObjeto = (id: string | undefined) =>
   useQuery({
     queryKey: queryKeys.objeto(id ?? ""),
@@ -131,16 +167,76 @@ export const useGuardarObjeto = (id: string) => {
   });
 };
 
+const guardarAtributosDe = async (
+  id: string,
+  atributos: Record<string, unknown>,
+): Promise<ObjectPayload> =>
+  objectPayloadSchema.parse(
+    await apiFetch(objetoPath(id), { method: "PATCH", body: { atributos } }),
+  );
+
+const aplicarAtributosGuardados = (queryClient: QueryClient, objeto: ObjectPayload): void => {
+  queryClient.setQueryData(queryKeys.objeto(objeto.id), objeto);
+  invalidarListasDeObjetos(queryClient);
+};
+
 export const useGuardarAtributos = (id: string) => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (atributos: Record<string, unknown>): Promise<ObjectPayload> =>
-      objectPayloadSchema.parse(
-        await apiFetch(objetoPath(id), { method: "PATCH", body: { atributos } }),
-      ),
+    mutationFn: (atributos: Record<string, unknown>): Promise<ObjectPayload> =>
+      guardarAtributosDe(id, atributos),
     onSuccess: (objeto) => {
-      queryClient.setQueryData(queryKeys.objeto(id), objeto);
+      aplicarAtributosGuardados(queryClient, objeto);
+    },
+  });
+};
+
+export type MovimientoEventoBody = {
+  readonly id: string;
+  readonly inicio: string;
+  readonly fin?: string;
+};
+
+export const useMoverEvento = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, inicio, fin }: MovimientoEventoBody): Promise<ObjectPayload> =>
+      guardarAtributosDe(id, { inicio, ...(fin === undefined ? {} : { fin }) }),
+    onSuccess: (objeto) => {
+      aplicarAtributosGuardados(queryClient, objeto);
+    },
+  });
+};
+
+export const useRenombrarObjeto = (id: string) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (nuevoTitulo: string): Promise<RenameReport> =>
+      renameReportSchema.parse(
+        await apiFetch(`${objetoPath(id)}/renombrar`, {
+          method: "POST",
+          body: { nuevoTitulo },
+        }),
+      ),
+    onSuccess: (reporte) => {
+      queryClient.setQueryData(queryKeys.objeto(id), reporte.objeto);
+      invalidarListasDeObjetos(queryClient);
+    },
+  });
+};
+
+export const useBorrarObjeto = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiFetch<void>(`${objetoPath(id)}?confirmar=1`, { method: "DELETE" }),
+    onSuccess: (_resultado, id) => {
+      queryClient.removeQueries({ queryKey: queryKeys.objeto(id) });
+      invalidarListasDeObjetos(queryClient);
     },
   });
 };

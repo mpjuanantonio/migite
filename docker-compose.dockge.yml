@@ -1,0 +1,20 @@
+# docker-compose.dockge.yml — stack único para Dockge (sin overlays ni build).
+# Pega este fichero como compose del stack en Dockge y crea su `.env` con:
+#   VERSION, MIGITE_USER, MIGITE_PASSWORD_HASH y MIGITE_SESSION_SECRET.
+# Detalles y generación de secretos: docs/despliegue.md ("Despliegue con Dockge").
+services:
+  app:
+    image: ghcr.io/mpjuanantonio/migite:${VERSION:?Define VERSION=vX.Y.Z en .env}
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file: .env
+    environment:
+      NODE_ENV: production
+    volumes:
+      - vault:/app/vault
+      - indice:/app/data
+
+volumes:
+  vault:
+  indice:
