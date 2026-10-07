@@ -182,6 +182,25 @@ const writeEnlaza = (): void => {
   writeFileSync(join(vaultDir, "enlaza.md"), text, "utf8");
 };
 
+const EVENTO_A = "01JEVENTOA000000000000000000";
+const EVENTO_B = "01JEVENTOB000000000000000000";
+
+const writeEvento = (id: string, titulo: string, archivo: string, inicio: string): void => {
+  const text = writeObjectFile(
+    {
+      id,
+      type: "evento",
+      title: titulo,
+      created: "2026-03-01T09:00:00.000+01:00",
+      updated: "2026-03-01T09:00:00.000+01:00",
+      links: [],
+      attributes: { inicio },
+    },
+    "",
+  );
+  writeFileSync(join(vaultDir, archivo), text, "utf8");
+};
+
 const idsOf = (body: ListBody): string[] => body.objetos.map((objeto) => objeto.id);
 
 beforeEach(() => {
@@ -254,6 +273,94 @@ describe("GET /api/objetos", () => {
       GAMMA,
       DELTA,
     ]);
+  });
+
+  it("filters by attribute equality and list membership", async () => {
+    expect(idsOf(await getJson<ListBody>("/api/objetos?atributo.estado=pendiente"))).toEqual([
+      BETA,
+    ]);
+    expect(idsOf(await getJson<ListBody>("/api/objetos?atributo.estado=en%20curso"))).toEqual([]);
+    expect(idsOf(await getJson<ListBody>("/api/objetos?atributo.etiquetas=personal"))).toEqual([
+      GAMMA,
+      DELTA,
+    ]);
+    expect(
+      idsOf(
+        await getJson<ListBody>(
+          "/api/objetos?atributo.etiquetas=trabajo&atributo.etiquetas=urgente",
+        ),
+      ),
+    ).toEqual([ALFA, BETA, EPSILON]);
+    expect(
+      idsOf(await getJson<ListBody>("/api/objetos?tipo=tarea&atributo.estado=pendiente")),
+    ).toEqual([BETA]);
+  });
+
+  it("filters events by attribute range with UTC normalisation", async () => {
+    writeEvento(EVENTO_A, "Evento Alfa", "evento-alfa.md", "2026-03-29T01:30:00.000Z");
+    writeEvento(EVENTO_B, "Evento Beta", "evento-beta.md", "2026-03-29T03:30:00.000+02:00");
+    buildIndex(handle.db, { vaultDir });
+
+    const instant = encodeURIComponent("2026-03-29T01:30:00.000Z");
+    const same = await getJson<ListBody>(
+      `/api/objetos?rango.inicio.desde=${instant}&rango.inicio.hasta=${instant}`,
+    );
+    expect(idsOf(same).sort()).toEqual([EVENTO_A, EVENTO_B].sort());
+
+    const combined = await getJson<ListBody>(
+      `/api/objetos?tipo=evento&rango.inicio.desde=${instant}&rango.inicio.hasta=${instant}`,
+    );
+    expect(idsOf(combined).sort()).toEqual([EVENTO_A, EVENTO_B].sort());
+
+    const none = await getJson<ListBody>(
+      `/api/objetos?rango.inicio.desde=${encodeURIComponent("2027-01-01T00:00:00.000Z")}`,
+    );
+    expect(idsOf(none)).toEqual([]);
+  });
+
+  it("filters by association to a destination", async () => {
+    writeEnlaza();
+    buildIndex(handle.db, { vaultDir });
+
+    expect(idsOf(await getJson<ListBody>(`/api/objetos?enlazadoA=${BETA}`))).toEqual([ENLAZA]);
+    expect(idsOf(await getJson<ListBody>(`/api/objetos?enlazadoA=${ALFA}`))).toEqual([]);
+    expect(idsOf(await getJson<ListBody>(`/api/objetos?q=Enlace&enlazadoA=${BETA}`))).toEqual([
+      ENLAZA,
+    ]);
+    expect(
+      idsOf(await getJson<ListBody>(`/api/objetos?carpeta=proyectos&enlazadoA=${BETA}`)),
+    ).toEqual([]);
+  });
+
+  it("paginates with attribute filters without duplicates or losses", async () => {
+    const first = await getJson<ListBody>("/api/objetos?atributo.etiquetas=trabajo&limite=1");
+    const second = await getJson<ListBody>(
+      `/api/objetos?atributo.etiquetas=trabajo&limite=1&cursor=${encodeURIComponent(String(first.siguienteCursor))}`,
+    );
+    const third = await getJson<ListBody>(
+      `/api/objetos?atributo.etiquetas=trabajo&limite=1&cursor=${encodeURIComponent(String(second.siguienteCursor))}`,
+    );
+
+    expect([...idsOf(first), ...idsOf(second), ...idsOf(third)]).toEqual([ALFA, BETA, EPSILON]);
+    expect(third.siguienteCursor).toBeNull();
+  });
+
+  it("rejects malformed attribute filters with validation_error", async () => {
+    const repeated = Array.from({ length: 33 }, (_, index) => `atributo.x=${index}`).join("&");
+    const paths = [
+      "/api/objetos?atributo.=x",
+      "/api/objetos?atributo.a.b=x",
+      "/api/objetos?rango.inicio=x",
+      "/api/objetos?rango.inicio.desde=2026-01-01&rango.inicio.desde=2026-02-01",
+      `/api/objetos?atributo.x=${"y".repeat(513)}`,
+      `/api/objetos?${repeated}`,
+    ];
+
+    for (const path of paths) {
+      const res = await app.request(path, { headers: headers() });
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as ErrorBody).error.codigo).toBe("validation_error");
+    }
   });
 
   it("searches with the q free text filter", async () => {

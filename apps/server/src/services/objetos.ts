@@ -205,6 +205,9 @@ export const filtersOf = (params: SearchParams): ObjectFilters => ({
   tag: params.tag,
   desde: params.desde,
   hasta: params.hasta,
+  atributos: params.atributos,
+  rangoAtributo: params.rangoAtributo,
+  enlazadoA: params.enlazadoA,
 });
 
 export const listObjetos = (
