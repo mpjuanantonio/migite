@@ -96,16 +96,17 @@ node -e "import('@node-rs/argon2').then((a) => a.hash('TU_CONTRASENA').then(cons
 ```
 
 Ambas opciones imprimen una línea que empieza por `$argon2id$v=19$m=...`.
-Cópiala **literal** como valor de `MIGITE_PASSWORD_HASH` (en `.env` no hace
-falta entrecomillarla; si la exportas por shell, usa comillas simples para que
-`$` no se expanda).
+Cópiala **literal** como valor de `MIGITE_PASSWORD_HASH`, **entre comillas
+simples**: Compose interpola también los `$` del `.env` y, sin comillas,
+`$argon2id$v=19...` se convierte en `=19=...` (el login falla con el hash
+corrupto).
 
 ### 3.3 Contenido del `.env`
 
 ```dotenv
 # Autenticación (obligatorias: el arranque falla si faltan o no son válidas)
 MIGITE_USER=ana
-MIGITE_PASSWORD_HASH=$argon2id$v=19$m=19456,t=2,p=1$...$...
+MIGITE_PASSWORD_HASH='$argon2id$v=19$m=19456,t=2,p=1$...$...'
 MIGITE_SESSION_SECRET=pega_aqui_la_salida_de_openssl_rand_hex_32
 
 # Opcional: fuerza `Secure` en la cookie de sesión aunque no llegue `X-Forwarded-Proto`.
