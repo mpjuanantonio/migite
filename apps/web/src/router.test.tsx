@@ -1,31 +1,30 @@
-import { QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { createMemoryRouter, RouterProvider } from "react-router-dom";
-import { beforeEach, describe, expect, it } from "vitest";
-import { createQueryClient } from "@/api/client";
-import { I18nProvider } from "@/i18n/context";
-import { routes } from "@/router";
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
+import { renderApp, sesionResponse } from "@/test/render-app";
 
-const renderAt = (path: string) => {
-  render(
-    <I18nProvider>
-      <QueryClientProvider client={createQueryClient()}>
-        <RouterProvider router={createMemoryRouter(routes, { initialEntries: [path] })} />
-      </QueryClientProvider>
-    </I18nProvider>,
-  );
+let fetchMock: Mock<typeof fetch>;
+
+const mockSesion = (autenticado: boolean): void => {
+  fetchMock.mockResolvedValue(sesionResponse(autenticado));
 };
 
 beforeEach(() => {
   localStorage.clear();
+  fetchMock = vi.fn<typeof fetch>();
+  vi.stubGlobal("fetch", fetchMock);
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("shell de la SPA", () => {
-  it("monta el layout con la navegación y la página de notas", () => {
-    renderAt("/notas");
+  it("monta el layout con la navegación y la página de notas", async () => {
+    mockSesion(true);
+    renderApp("/notas");
 
-    expect(screen.getByRole("heading", { level: 1, name: "Notas" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Notas" })).toBeInTheDocument();
     const nav = screen.getByRole("navigation", { name: "Navegación principal" });
     for (const label of ["Notas", "Tareas", "Calendario", "Proyectos", "Tipos", "Buscar"]) {
       expect(within(nav).getByRole("link", { name: label })).toBeInTheDocument();
@@ -34,33 +33,38 @@ describe("shell de la SPA", () => {
     expect(screen.getByRole("button", { name: "Español" })).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("redirige la raíz a notas", () => {
-    renderAt("/");
+  it("redirige la raíz a notas", async () => {
+    mockSesion(true);
+    renderApp("/");
 
-    expect(screen.getByRole("heading", { level: 1, name: "Notas" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Notas" })).toBeInTheDocument();
   });
 
   it("cambia todo el texto al inglés desde el selector del layout", async () => {
+    mockSesion(true);
     const user = userEvent.setup();
-    renderAt("/notas");
+    renderApp("/notas");
 
+    await screen.findByRole("heading", { level: 1, name: "Notas" });
     await user.click(screen.getByRole("button", { name: "Inglés" }));
 
     expect(screen.getByRole("heading", { level: 1, name: "Notes" })).toBeInTheDocument();
     expect(document.documentElement.lang).toBe("en");
   });
 
-  it("muestra el acceso como página independiente, sin navegación", () => {
-    renderAt("/login");
+  it("muestra el acceso como página independiente, sin navegación", async () => {
+    mockSesion(false);
+    renderApp("/login");
 
-    expect(screen.getByRole("heading", { level: 1, name: "Acceso" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Acceso" })).toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: "Navegación principal" })).toBeNull();
   });
 
-  it("muestra el identificador en una ficha de objeto", () => {
-    renderAt("/objetos/01JALFA0000000000000000000");
+  it("muestra el identificador en una ficha de objeto", async () => {
+    mockSesion(true);
+    renderApp("/objetos/01JALFA0000000000000000000");
 
-    expect(screen.getByRole("heading", { level: 1, name: "Ficha" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Ficha" })).toBeInTheDocument();
     expect(screen.getByText("01JALFA0000000000000000000")).toBeInTheDocument();
   });
 });

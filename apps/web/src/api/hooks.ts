@@ -4,7 +4,7 @@ import {
   type SesionStatus,
   sesionStatusSchema,
 } from "@migite/contracts";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "./api";
 import { queryKeys } from "./keys";
 
@@ -31,6 +31,23 @@ export const useSesion = () =>
     queryFn: async (): Promise<SesionStatus> =>
       sesionStatusSchema.parse(await apiFetch("/api/sesion")),
   });
+
+export type Credenciales = {
+  readonly usuario: string;
+  readonly contrasena: string;
+};
+
+export const useIniciarSesion = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (credenciales: Credenciales) =>
+      apiFetch<void>("/api/sesion", { method: "POST", body: credenciales }),
+    onSuccess: () => {
+      queryClient.setQueryData<SesionStatus>(queryKeys.sesion, { autenticado: true });
+    },
+  });
+};
 
 export const useObjetos = (params?: ObjetosParams) =>
   useQuery({
