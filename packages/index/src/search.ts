@@ -1,12 +1,21 @@
 import { type SQL, sql } from "drizzle-orm";
 import type { IndexDatabase } from "./open.js";
 
+export type AttributeRangeFilter = {
+  readonly clave: string;
+  readonly desde?: string;
+  readonly hasta?: string;
+};
+
 export type ObjectFilters = {
   readonly tipo?: string;
   readonly carpeta?: string;
   readonly tag?: string;
   readonly desde?: string;
   readonly hasta?: string;
+  readonly atributos?: Readonly<Record<string, string | readonly string[]>>;
+  readonly rangoAtributo?: AttributeRangeFilter | readonly AttributeRangeFilter[];
+  readonly enlazadoA?: string;
 };
 
 export type IndexedObject = {
@@ -84,6 +93,67 @@ const queryTerms = (query: string): string[] =>
 const matchExpression = (terms: readonly string[]): string =>
   terms.map((term) => `"${term.replaceAll('"', '""')}"*`).join(" ");
 
+const attributeValueCondition = (value: string): SQL => {
+  const branches: SQL[] = [sql`a.valor_texto = ${value}`];
+  const numeric = Number(value);
+  if (value.trim() !== "" && Number.isFinite(numeric)) {
+    branches.push(sql`a.valor_numero = ${numeric}`);
+  }
+  branches.push(
+    sql`(a.valor_fecha IS NOT NULL AND unixepoch(a.valor_fecha, 'subsec') = unixepoch(${value}, 'subsec'))`,
+  );
+  return sql.join(branches, sql` OR `);
+};
+
+const attributeConditions = (
+  atributos: Readonly<Record<string, string | readonly string[]>>,
+): SQL[] => {
+  const conditions: SQL[] = [];
+  for (const [clave, raw] of Object.entries(atributos)) {
+    if (clave === "") {
+      continue;
+    }
+    const values = (typeof raw === "string" ? [raw] : raw).filter((value) => value !== "");
+    if (values.length === 0) {
+      continue;
+    }
+    const matches = sql.join(values.map(attributeValueCondition), sql` OR `);
+    conditions.push(sql`EXISTS (
+      SELECT 1 FROM atributos a
+      WHERE a.objeto_id = o.id AND a.clave = ${clave} AND (${matches})
+    )`);
+  }
+  return conditions;
+};
+
+const rangeAttributeConditions = (
+  rangoAtributo: AttributeRangeFilter | readonly AttributeRangeFilter[],
+): SQL[] => {
+  const ranges = "clave" in rangoAtributo ? [rangoAtributo] : rangoAtributo;
+  const conditions: SQL[] = [];
+  for (const range of ranges) {
+    if (range.clave === "") {
+      continue;
+    }
+    const bounds: SQL[] = [];
+    if (range.desde !== undefined && range.desde !== "") {
+      bounds.push(sql`unixepoch(a.valor_fecha, 'subsec') >= unixepoch(${range.desde}, 'subsec')`);
+    }
+    if (range.hasta !== undefined && range.hasta !== "") {
+      bounds.push(sql`unixepoch(a.valor_fecha, 'subsec') <= unixepoch(${range.hasta}, 'subsec')`);
+    }
+    if (bounds.length === 0) {
+      continue;
+    }
+    conditions.push(sql`EXISTS (
+      SELECT 1 FROM atributos a
+      WHERE a.objeto_id = o.id AND a.clave = ${range.clave} AND a.valor_fecha IS NOT NULL
+        AND ${sql.join(bounds, sql` AND `)}
+    )`);
+  }
+  return conditions;
+};
+
 const filterConditions = (filters: ObjectFilters | undefined): SQL[] => {
   if (filters === undefined) {
     return [];
@@ -109,6 +179,19 @@ const filterConditions = (filters: ObjectFilters | undefined): SQL[] => {
     conditions.push(
       sql`unixepoch(o.actualizado, 'subsec') <= unixepoch(${filters.hasta}, 'subsec')`,
     );
+  }
+  if (filters.atributos !== undefined) {
+    conditions.push(...attributeConditions(filters.atributos));
+  }
+  if (filters.rangoAtributo !== undefined) {
+    conditions.push(...rangeAttributeConditions(filters.rangoAtributo));
+  }
+  if (filters.enlazadoA !== undefined && filters.enlazadoA !== "") {
+    conditions.push(sql`EXISTS (
+      SELECT 1 FROM enlaces e
+      WHERE e.origen_id = o.id AND e.destino_id = ${filters.enlazadoA}
+        AND e.contexto IN ('cuerpo', 'frontmatter')
+    )`);
   }
   return conditions;
 };

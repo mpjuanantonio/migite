@@ -38,6 +38,7 @@ export {
   objetos,
 } from "./schema.js";
 export {
+  type AttributeRangeFilter,
   DEFAULT_LIST_LIMIT,
   DEFAULT_SEARCH_LIMIT,
   type IndexedObject,
