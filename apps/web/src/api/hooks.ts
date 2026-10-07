@@ -21,11 +21,19 @@ import {
 import { apiFetch } from "./api";
 import { queryKeys } from "./keys";
 
+export type RangoAtributo = {
+  readonly clave: string;
+  readonly desde?: string;
+  readonly hasta?: string;
+};
+
 export type ObjetosParams = {
   readonly tipo?: string;
   readonly carpeta?: string;
   readonly limite?: number;
   readonly cursor?: string;
+  readonly atributos?: Readonly<Record<string, string | readonly string[]>>;
+  readonly rangoAtributo?: readonly RangoAtributo[];
 };
 
 const objetosPath = (params?: ObjetosParams): string => {
@@ -35,6 +43,23 @@ const objetosPath = (params?: ObjetosParams): string => {
   }
   if (params?.carpeta !== undefined && params.carpeta !== "") {
     query.set("carpeta", params.carpeta);
+  }
+  if (params?.atributos !== undefined) {
+    for (const [clave, valor] of Object.entries(params.atributos)) {
+      for (const item of typeof valor === "string" ? [valor] : valor) {
+        query.append(`atributo.${clave}`, item);
+      }
+    }
+  }
+  if (params?.rangoAtributo !== undefined) {
+    for (const rango of params.rangoAtributo) {
+      if (rango.desde !== undefined && rango.desde !== "") {
+        query.set(`rango.${rango.clave}.desde`, rango.desde);
+      }
+      if (rango.hasta !== undefined && rango.hasta !== "") {
+        query.set(`rango.${rango.clave}.hasta`, rango.hasta);
+      }
+    }
   }
   if (params?.limite !== undefined) {
     query.set("limite", String(params.limite));
@@ -88,11 +113,7 @@ export const useObjetos = (params?: ObjetosParams) =>
       objetosPageSchema.parse(await apiFetch(objetosPath(params))),
   });
 
-export type ObjetosListaParams = {
-  readonly tipo?: string;
-  readonly carpeta?: string;
-  readonly limite?: number;
-};
+export type ObjetosListaParams = Omit<ObjetosParams, "cursor">;
 
 export const useObjetosInfinitos = (params?: ObjetosListaParams) =>
   useInfiniteQuery({
@@ -156,6 +177,7 @@ export const useGuardarAtributos = (id: string) => {
       ),
     onSuccess: (objeto) => {
       queryClient.setQueryData(queryKeys.objeto(id), objeto);
+      invalidarListasDeObjetos(queryClient);
     },
   });
 };
