@@ -4,12 +4,20 @@ import {
   type ObjetosPage,
   objectPayloadSchema,
   objetosPageSchema,
+  type RenameReport,
+  renameReportSchema,
   type SesionStatus,
   sesionStatusSchema,
   type TipoPayload,
   tiposListSchema,
 } from "@migite/contracts";
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  type QueryClient,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { apiFetch } from "./api";
 import { queryKeys } from "./keys";
 
@@ -109,6 +117,13 @@ export const useCrearObjeto = () => {
 
 const objetoPath = (id: string): string => `/api/objetos/${encodeURIComponent(id)}`;
 
+const invalidarListasDeObjetos = (queryClient: QueryClient): void => {
+  void queryClient.invalidateQueries({
+    predicate: (query) =>
+      query.queryKey[0] === queryKeys.objetos[0] && typeof query.queryKey[1] !== "string",
+  });
+};
+
 export const useObjeto = (id: string | undefined) =>
   useQuery({
     queryKey: queryKeys.objeto(id ?? ""),
@@ -141,6 +156,37 @@ export const useGuardarAtributos = (id: string) => {
       ),
     onSuccess: (objeto) => {
       queryClient.setQueryData(queryKeys.objeto(id), objeto);
+    },
+  });
+};
+
+export const useRenombrarObjeto = (id: string) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (nuevoTitulo: string): Promise<RenameReport> =>
+      renameReportSchema.parse(
+        await apiFetch(`${objetoPath(id)}/renombrar`, {
+          method: "POST",
+          body: { nuevoTitulo },
+        }),
+      ),
+    onSuccess: (reporte) => {
+      queryClient.setQueryData(queryKeys.objeto(id), reporte.objeto);
+      invalidarListasDeObjetos(queryClient);
+    },
+  });
+};
+
+export const useBorrarObjeto = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiFetch<void>(`${objetoPath(id)}?confirmar=1`, { method: "DELETE" }),
+    onSuccess: (_resultado, id) => {
+      queryClient.removeQueries({ queryKey: queryKeys.objeto(id) });
+      invalidarListasDeObjetos(queryClient);
     },
   });
 };
