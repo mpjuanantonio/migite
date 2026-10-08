@@ -11,21 +11,40 @@ const MIN_SECRET_LENGTH = 32;
 const MIN_SECRET_DISTINCT_CHARS = 16;
 const ARGON2_PREFIX = "$argon2";
 
+export type AuthCredentials = {
+  readonly usuario: string;
+  readonly passwordHash: string;
+};
+
 export type SessionStore = {
   readonly generacion: () => number;
   readonly invalidar: () => number;
-};
-
-export type AuthConfig = {
-  readonly usuario: string;
-  readonly passwordHash: string;
   readonly secretoSesion: string;
+  readonly credenciales: () => AuthCredentials | undefined;
+  readonly definirCredenciales: (credentials: AuthCredentials) => void;
 };
 
-export type AuthOptions = AuthConfig & {
+export type AuthOptions = {
   readonly store: SessionStore;
   readonly ttlMs?: number;
 };
+
+export type AuthEnvConfig = {
+  readonly credentials?: AuthCredentials;
+  readonly secretoSesion?: string;
+};
+
+export const createStaticSessionStore = (config: {
+  readonly usuario: string;
+  readonly passwordHash: string;
+  readonly secretoSesion: string;
+}): SessionStore => ({
+  generacion: () => 0,
+  invalidar: () => 1,
+  secretoSesion: config.secretoSesion,
+  credenciales: () => ({ usuario: config.usuario, passwordHash: config.passwordHash }),
+  definirCredenciales: () => undefined,
+});
 
 export type SessionTokenPayload = {
   readonly usuario: string;
@@ -162,42 +181,56 @@ export const verifySessionToken = (
 export const loadAuthConfig = (
   locale: Locale = defaultLocale,
   env: Readonly<Record<string, string | undefined>> = process.env,
-): AuthConfig => {
+): AuthEnvConfig => {
   const issues: string[] = [];
 
   const usuario = env.MIGITE_USER?.trim() ?? "";
-  if (usuario.length === 0) {
-    issues.push("MIGITE_USER no está definido");
-  }
-
   const passwordHash = env.MIGITE_PASSWORD_HASH?.trim() ?? "";
-  if (passwordHash.length === 0) {
-    issues.push("MIGITE_PASSWORD_HASH no está definido");
-  } else if (!passwordHash.startsWith(ARGON2_PREFIX)) {
-    issues.push("MIGITE_PASSWORD_HASH no es un hash argon2 válido");
+  let credentials: AuthCredentials | undefined;
+
+  if (usuario.length > 0 || passwordHash.length > 0) {
+    if (usuario.length === 0) {
+      issues.push("MIGITE_USER no está definido");
+    }
+    if (passwordHash.length === 0) {
+      issues.push("MIGITE_PASSWORD_HASH no está definido");
+    } else if (!passwordHash.startsWith(ARGON2_PREFIX)) {
+      issues.push("MIGITE_PASSWORD_HASH no es un hash argon2 válido");
+    }
+    if (issues.length === 0) {
+      credentials = { usuario, passwordHash };
+    }
   }
 
   const secretoSesion = env.MIGITE_SESSION_SECRET ?? "";
-  const issueSecreto = secretIssue(secretoSesion);
-  if (issueSecreto !== undefined) {
-    issues.push(issueSecreto);
+  let secretoSesionValido: string | undefined;
+  if (secretoSesion.length > 0) {
+    const issueSecreto = secretIssue(secretoSesion);
+    if (issueSecreto === undefined) {
+      secretoSesionValido = secretoSesion;
+    } else {
+      issues.push(issueSecreto);
+    }
   }
 
   if (issues.length > 0) {
     throw new ConfigError(".env", issues, locale);
   }
 
-  return { usuario, passwordHash, secretoSesion };
+  return {
+    ...(credentials === undefined ? {} : { credentials }),
+    ...(secretoSesionValido === undefined ? {} : { secretoSesion: secretoSesionValido }),
+  };
 };
 
 export const verifyCredentials = async (
-  auth: Pick<AuthOptions, "usuario" | "passwordHash">,
+  expected: AuthCredentials,
   credentials: Credentials,
 ): Promise<boolean> => {
-  const usuarioCorrecto = constantTimeEqual(credentials.usuario, auth.usuario);
+  const usuarioCorrecto = constantTimeEqual(credentials.usuario, expected.usuario);
   let contrasenaCorrecta = false;
   try {
-    contrasenaCorrecta = await verify(auth.passwordHash, credentials.contrasena);
+    contrasenaCorrecta = await verify(expected.passwordHash, credentials.contrasena);
   } catch {
     contrasenaCorrecta = false;
   }

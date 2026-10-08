@@ -42,10 +42,10 @@ beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "migite-sesion-"));
   handle = openIndex({ dbPath: join(root, "index.db") });
   auth = {
-    usuario: USUARIO,
-    passwordHash: PASSWORD_HASH,
-    secretoSesion: SECRETO,
-    store: createIndexSessionStore(handle.db),
+    store: createIndexSessionStore(handle.db, {
+      credentials: { usuario: USUARIO, passwordHash: PASSWORD_HASH },
+      secretoSesion: SECRETO,
+    }),
   };
   app = createApp({ auth });
 });
@@ -71,7 +71,7 @@ describe("POST /api/sesion", () => {
 
     const estado = await app.request("/api/sesion", { headers: withCookie(cookie) });
     expect(estado.status).toBe(200);
-    expect(await estado.json()).toEqual({ autenticado: true });
+    expect(await estado.json()).toEqual({ autenticado: true, setupRequerido: false });
   });
 
   it("keeps the session across app instances", async () => {
@@ -79,7 +79,7 @@ describe("POST /api/sesion", () => {
     const reloaded = createApp({ auth });
 
     const estado = await reloaded.request("/api/sesion", { headers: withCookie(cookie) });
-    expect(await estado.json()).toEqual({ autenticado: true });
+    expect(await estado.json()).toEqual({ autenticado: true, setupRequerido: false });
   });
 
   it("answers the same generic error for a wrong password and an unknown user", async () => {
@@ -192,11 +192,17 @@ describe("GET /api/sesion", () => {
   it("reports the session state without sensitive data", async () => {
     const anonymous = await app.request("/api/sesion");
     expect(anonymous.status).toBe(200);
-    expect(sesionStatusSchema.parse(await anonymous.json())).toEqual({ autenticado: false });
+    expect(sesionStatusSchema.parse(await anonymous.json())).toEqual({
+      autenticado: false,
+      setupRequerido: false,
+    });
 
     const cookie = cookieFrom(await login());
     const authenticated = await app.request("/api/sesion", { headers: withCookie(cookie) });
-    expect(sesionStatusSchema.parse(await authenticated.json())).toEqual({ autenticado: true });
+    expect(sesionStatusSchema.parse(await authenticated.json())).toEqual({
+      autenticado: true,
+      setupRequerido: false,
+    });
   });
 
   it("rejects tampered and expired cookies", async () => {
@@ -213,7 +219,7 @@ describe("GET /api/sesion", () => {
     for (const cookie of [tampered, expired]) {
       const estado = await app.request("/api/sesion", { headers: { cookie } });
       expect(estado.status).toBe(200);
-      expect(await estado.json()).toEqual({ autenticado: false });
+      expect(await estado.json()).toEqual({ autenticado: false, setupRequerido: false });
       expect((await app.request("/api/objetos", { headers: { cookie } })).status).toBe(401);
     }
   });
@@ -253,14 +259,14 @@ describe("DELETE /api/sesion", () => {
     expect(logout.headers.get("set-cookie")).toContain("Max-Age=0");
 
     const oldState = await app.request("/api/sesion", { headers: withCookie(oldCookie) });
-    expect(await oldState.json()).toEqual({ autenticado: false });
+    expect(await oldState.json()).toEqual({ autenticado: false, setupRequerido: false });
     expect((await app.request("/api/objetos", { headers: withCookie(oldCookie) })).status).toBe(
       401,
     );
 
     const newCookie = cookieFrom(await login());
     const newState = await app.request("/api/sesion", { headers: withCookie(newCookie) });
-    expect(await newState.json()).toEqual({ autenticado: true });
+    expect(await newState.json()).toEqual({ autenticado: true, setupRequerido: false });
   });
 });
 
@@ -298,5 +304,133 @@ describe("session middleware", () => {
     expect(lines).not.toContain(CONTRASENA);
     expect(lines).not.toContain(PASSWORD_HASH);
     expect(lines).not.toContain(SECRETO);
+  });
+});
+
+describe("modo setup", () => {
+  const NUEVO_USUARIO = "nueva";
+  const NUEVA_CONTRASENA = "contrasena-de-setup";
+  const validos = { usuario: NUEVO_USUARIO, contrasena: NUEVA_CONTRASENA };
+
+  const enModoSetup = (): void => {
+    auth = { store: createIndexSessionStore(handle.db) };
+    app = createApp({ auth });
+  };
+
+  const setup = async (body: Record<string, unknown>): Promise<Response> =>
+    app.request("/api/sesion/setup", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+  it("expone setupRequerido sin credenciales en el entorno ni en meta", async () => {
+    enModoSetup();
+
+    const estado = await app.request("/api/sesion");
+    expect(estado.status).toBe(200);
+    expect(await estado.json()).toEqual({ autenticado: false, setupRequerido: true });
+  });
+
+  it("define las credenciales y crea la sesión directamente", async () => {
+    enModoSetup();
+
+    const res = await setup(validos);
+    expect(res.status).toBe(204);
+    const cookie = cookieFrom(res);
+    expect(cookie.startsWith(`${SESSION_COOKIE}=`)).toBe(true);
+
+    const estado = await app.request("/api/sesion", { headers: withCookie(cookie) });
+    expect(await estado.json()).toEqual({ autenticado: true, setupRequerido: false });
+  });
+
+  it("persiste el secreto autogenerado y las credenciales entre reinicios", async () => {
+    enModoSetup();
+    const secreto = auth.store.secretoSesion;
+
+    const cookie = cookieFrom(await setup(validos));
+
+    handle.close();
+    handle = openIndex({ dbPath: join(root, "index.db") });
+    auth = { store: createIndexSessionStore(handle.db) };
+    app = createApp({ auth });
+
+    expect(auth.store.secretoSesion).toBe(secreto);
+    const estado = await app.request("/api/sesion", { headers: withCookie(cookie) });
+    expect(await estado.json()).toEqual({ autenticado: true, setupRequerido: false });
+  });
+
+  it("rechaza un segundo setup con forbidden", async () => {
+    enModoSetup();
+    expect((await setup(validos)).status).toBe(204);
+
+    const segundo = await setup({ usuario: "otra", contrasena: "otra-contrasena" });
+    expect(segundo.status).toBe(403);
+    expect(await segundo.json()).toEqual({
+      error: { codigo: "forbidden", mensaje: "No tienes permiso para realizar esta acción" },
+    });
+  });
+
+  it("permite iniciar sesión con la contraseña definida y falla genérico con otra", async () => {
+    enModoSetup();
+    await setup(validos);
+
+    expect((await login(NUEVA_CONTRASENA, NUEVO_USUARIO)).status).toBe(204);
+    const mala = await login("otra-contrasena", NUEVO_USUARIO);
+    expect(mala.status).toBe(401);
+    expect(await mala.json()).toEqual({
+      error: { codigo: "unauthorized", mensaje: "Se requiere autenticación" },
+    });
+  });
+
+  it("rechaza el login mientras no hay credenciales definidas", async () => {
+    enModoSetup();
+
+    const res = await login(NUEVA_CONTRASENA, NUEVO_USUARIO);
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({
+      error: { codigo: "unauthorized", mensaje: "Se requiere autenticación" },
+    });
+  });
+
+  it("valida usuario y longitud mínima de contraseña sin salir del modo setup", async () => {
+    enModoSetup();
+
+    expect((await setup({ usuario: "  ", contrasena: NUEVA_CONTRASENA })).status).toBe(400);
+    expect((await setup({ usuario: NUEVO_USUARIO, contrasena: "corta" })).status).toBe(400);
+
+    const estado = await app.request("/api/sesion");
+    expect(await estado.json()).toEqual({ autenticado: false, setupRequerido: true });
+  });
+
+  it("comparte el rate-limit con el login", async () => {
+    enModoSetup();
+    for (let intento = 0; intento < 5; intento += 1) {
+      expect((await login("mala-contrasena", NUEVO_USUARIO)).status).toBe(401);
+    }
+
+    expect((await setup(validos)).status).toBe(429);
+  });
+
+  it("desactiva el setup cuando hay credenciales en el entorno", async () => {
+    const estado = await app.request("/api/sesion");
+    expect(await estado.json()).toEqual({ autenticado: false, setupRequerido: false });
+
+    expect((await setup(validos)).status).toBe(403);
+  });
+
+  it("prioriza las credenciales del entorno sobre las de meta", async () => {
+    enModoSetup();
+    await setup({ usuario: "meta", contrasena: "contrasena-de-meta" });
+
+    auth = {
+      store: createIndexSessionStore(handle.db, {
+        credentials: { usuario: USUARIO, passwordHash: PASSWORD_HASH },
+      }),
+    };
+    app = createApp({ auth });
+
+    expect((await login()).status).toBe(204);
+    expect((await login("contrasena-de-meta", "meta")).status).toBe(401);
   });
 });

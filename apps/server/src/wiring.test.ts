@@ -4,7 +4,12 @@ import { join } from "node:path";
 import type { AppConfig } from "@migite/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
-import { type AuthOptions, createSessionToken, SESSION_COOKIE } from "./auth.js";
+import {
+  type AuthOptions,
+  createSessionToken,
+  createStaticSessionStore,
+  SESSION_COOKIE,
+} from "./auth.js";
 import { configureObjetos } from "./routes/objetos.js";
 import { startRuntime } from "./runtime.js";
 
@@ -14,11 +19,15 @@ const config: AppConfig = {
   locale: "es",
 };
 
+const USUARIO = "ana";
+const SECRETO = "secreto-de-test-suficientemente-largo";
+
 const auth: AuthOptions = {
-  usuario: "ana",
-  passwordHash: "$argon2id$test",
-  secretoSesion: "secreto-de-test-suficientemente-largo",
-  store: { generacion: () => 0, invalidar: () => 1 },
+  store: createStaticSessionStore({
+    usuario: USUARIO,
+    passwordHash: "$argon2id$test",
+    secretoSesion: SECRETO,
+  }),
 };
 
 describe("wiring de objetos desde el runtime", () => {
@@ -40,9 +49,9 @@ describe("wiring de objetos desde el runtime", () => {
     const app = createApp({ auth });
     const headers = {
       cookie: `${SESSION_COOKIE}=${createSessionToken({
-        usuario: auth.usuario,
+        usuario: USUARIO,
         generacion: 0,
-        secret: auth.secretoSesion,
+        secret: SECRETO,
       })}`,
     };
 

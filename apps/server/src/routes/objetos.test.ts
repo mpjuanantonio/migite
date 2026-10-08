@@ -12,7 +12,12 @@ import { buildIndex, type IndexHandle, openIndex } from "@migite/index";
 import type { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../app.js";
-import { type AuthOptions, createSessionToken, SESSION_COOKIE } from "../auth.js";
+import {
+  type AuthOptions,
+  createSessionToken,
+  createStaticSessionStore,
+  SESSION_COOKIE,
+} from "../auth.js";
 import type { ServerEnv } from "../env.js";
 import { encodeCursor, MAX_LIST_OFFSET } from "../services/objetos.js";
 import { configureObjetos } from "./objetos.js";
@@ -110,10 +115,11 @@ actualizado: 2026-10-06T09:00:00.000+02:00
 Cuerpo recuperable de la nota rota.`;
 
 const auth: AuthOptions = {
-  usuario: USUARIO,
-  passwordHash: "$argon2id$test",
-  secretoSesion: SECRETO,
-  store: { generacion: () => 0, invalidar: () => 1 },
+  store: createStaticSessionStore({
+    usuario: USUARIO,
+    passwordHash: "$argon2id$test",
+    secretoSesion: SECRETO,
+  }),
 };
 
 type ListBody = {

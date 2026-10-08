@@ -23,22 +23,30 @@ const isSecureRequest = (c: Context<ServerEnv>): boolean => {
 };
 
 export const hasValidSession = (c: Context<ServerEnv>, auth: AuthOptions): boolean => {
+  const credentials = auth.store.credenciales();
+  if (credentials === undefined) {
+    return false;
+  }
   const token = getCookie(c, SESSION_COOKIE);
   return (
     verifySessionToken(token, {
-      secret: auth.secretoSesion,
+      secret: auth.store.secretoSesion,
       generacion: auth.store.generacion(),
-      usuario: auth.usuario,
+      usuario: credentials.usuario,
     }) !== undefined
   );
 };
 
 export const setSessionCookie = (c: Context<ServerEnv>, auth: AuthOptions): void => {
+  const credentials = auth.store.credenciales();
+  if (credentials === undefined) {
+    throw new HTTPException(500);
+  }
   const ttlMs = sessionTtlMs(auth);
   const token = createSessionToken({
-    usuario: auth.usuario,
+    usuario: credentials.usuario,
     generacion: auth.store.generacion(),
-    secret: auth.secretoSesion,
+    secret: auth.store.secretoSesion,
     ttlMs,
   });
   setCookie(c, SESSION_COOKIE, token, {

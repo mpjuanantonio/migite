@@ -54,7 +54,7 @@ const start = (): void => {
   });
   const app = createApp({
     locale: config.app.locale,
-    auth: { ...authConfig, store: createIndexSessionStore(runtime.db) },
+    auth: { store: createIndexSessionStore(runtime.db, authConfig) },
   });
 
   const shutdown = (): void => {

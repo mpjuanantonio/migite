@@ -6,7 +6,12 @@ import { bootstrapVault } from "@migite/core";
 import type { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../app.js";
-import { type AuthOptions, createSessionToken, SESSION_COOKIE } from "../auth.js";
+import {
+  type AuthOptions,
+  createSessionToken,
+  createStaticSessionStore,
+  SESSION_COOKIE,
+} from "../auth.js";
 import type { ServerEnv } from "../env.js";
 import { configureExport } from "./export.js";
 
@@ -22,10 +27,11 @@ type ErrorBody = {
 };
 
 const auth: AuthOptions = {
-  usuario: USUARIO,
-  passwordHash: "$argon2id$test",
-  secretoSesion: SECRETO,
-  store: { generacion: () => 0, invalidar: () => 1 },
+  store: createStaticSessionStore({
+    usuario: USUARIO,
+    passwordHash: "$argon2id$test",
+    secretoSesion: SECRETO,
+  }),
 };
 
 const readZip = (bytes: Uint8Array): Map<string, Buffer> => {

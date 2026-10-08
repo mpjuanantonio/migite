@@ -99,16 +99,28 @@ describe("createSessionToken / verifySessionToken", () => {
 });
 
 describe("loadAuthConfig", () => {
-  it("loads and trims the three credentials", () => {
+  it("loads and trims the env credentials when the whole pair is present", () => {
     expect(loadAuthConfig("es", { ...validEnv, MIGITE_USER: "  ana  " })).toEqual({
-      usuario: "ana",
-      passwordHash: validEnv.MIGITE_PASSWORD_HASH,
+      credentials: { usuario: "ana", passwordHash: validEnv.MIGITE_PASSWORD_HASH },
       secretoSesion: SECRET,
     });
   });
 
-  it("requires every credential", () => {
-    for (const name of ["MIGITE_USER", "MIGITE_PASSWORD_HASH", "MIGITE_SESSION_SECRET"]) {
+  it("falls back to setup mode when no env credentials are present", () => {
+    expect(loadAuthConfig("es", {})).toEqual({});
+    expect(loadAuthConfig("es", { MIGITE_SESSION_SECRET: undefined })).toEqual({});
+  });
+
+  it("does not require a session secret anymore", () => {
+    const envSinSecreto = { ...validEnv, MIGITE_SESSION_SECRET: undefined };
+
+    expect(loadAuthConfig("es", envSinSecreto)).toEqual({
+      credentials: { usuario: "ana", passwordHash: validEnv.MIGITE_PASSWORD_HASH },
+    });
+  });
+
+  it("rejects a half-configured env credential pair", () => {
+    for (const name of ["MIGITE_USER", "MIGITE_PASSWORD_HASH"]) {
       const env = { ...validEnv, [name]: undefined };
       const error = captureConfigError(env);
       expect(error.path).toBe(".env");
@@ -154,8 +166,7 @@ describe("loadAuthConfig", () => {
     const fuerte = "0123456789abcdefghijklmnopqrstuvwxyzABCDEF";
 
     expect(loadAuthConfig("es", { ...validEnv, MIGITE_SESSION_SECRET: fuerte })).toEqual({
-      usuario: "ana",
-      passwordHash: validEnv.MIGITE_PASSWORD_HASH,
+      credentials: { usuario: "ana", passwordHash: validEnv.MIGITE_PASSWORD_HASH },
       secretoSesion: fuerte,
     });
   });
