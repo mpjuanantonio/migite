@@ -55,59 +55,20 @@ locale: es
 
 ## 3. Crear el `.env`
 
-El `.env` vive en la raíz del repo, contiene los secretos, no se versiona y no
-se copia a la imagen (está en `.dockerignore`). Compose lo inyecta en el
-contenedor (`env_file`). Restringe sus permisos:
+El `.env` vive en la raíz del repo, no se versiona y no se copia a la imagen
+(está en `.dockerignore`). Compose lo usa para interpolar `${VERSION}` y para
+inyectar variables opcionales en el contenedor (`env_file`). Restringe sus
+permisos:
 
 ```bash
 chmod 600 .env
 ```
 
-### 3.1 `MIGITE_SESSION_SECRET`
-
-Secreto para firmar la cookie de sesión. Debe tener **al menos 32 caracteres**, con
-al menos 16 caracteres distintos y sin patrones repetidos:
-
-```bash
-openssl rand -hex 32
-```
-
-### 3.2 `MIGITE_USER` y `MIGITE_PASSWORD_HASH`
-
-El hash es **argon2** (argon2id). El usuario es el que usarás en el login, sin
-espacios alrededor.
-
-**Opción A — con el propio contenedor (recomendada en el servidor).** Construye
-primero la imagen (paso 4) y ejecuta:
-
-```bash
-export VERSION=v0.1.0
-docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm \
-  -w /app/apps/server app \
-  node -e "import('@node-rs/argon2').then((a) => a.hash('TU_CONTRASENA').then(console.log))"
-```
-
-**Opción B — con Node 22 en el host.** Requiere las dependencias instaladas
-(`pnpm install --frozen-lockfile` en la raíz del repo):
-
-```bash
-cd apps/server
-node -e "import('@node-rs/argon2').then((a) => a.hash('TU_CONTRASENA').then(console.log))"
-```
-
-Ambas opciones imprimen una línea que empieza por `$argon2id$v=19$m=...`.
-Cópiala **literal** como valor de `MIGITE_PASSWORD_HASH`, **entre comillas
-simples**: Compose interpola también los `$` del `.env` y, sin comillas,
-`$argon2id$v=19...` se convierte en `=19=...` (el login falla con el hash
-corrupto).
-
-### 3.3 Contenido del `.env`
+Contenido de partida:
 
 ```dotenv
-# Autenticación (obligatorias: el arranque falla si faltan o no son válidas)
-MIGITE_USER=ana
-MIGITE_PASSWORD_HASH='$argon2id$v=19$m=19456,t=2,p=1$...$...'
-MIGITE_SESSION_SECRET=pega_aqui_la_salida_de_openssl_rand_hex_32
+# Obligatoria: versión que se va a desplegar. Compose falla si falta.
+VERSION=v0.1.0
 
 # Opcional: fuerza `Secure` en la cookie de sesión aunque no llegue `X-Forwarded-Proto`.
 # MIGITE_SECURE_COOKIES=1
@@ -115,6 +76,11 @@ MIGITE_SESSION_SECRET=pega_aqui_la_salida_de_openssl_rand_hex_32
 # Opcional (BYOK, ver config/llm.yaml). El arranque avisa si falta, pero no falla.
 # OPENAI_API_KEY=sk-...
 ```
+
+Las credenciales **no se configuran aquí**: al abrir la app por primera vez se
+definen desde la web (paso 7) y la propia aplicación genera y guarda el secreto
+que firma la cookie. Si necesitas fijarlas por entorno (automatización),
+consulta la sección 14.
 
 `PORT` es opcional (por defecto 3000); cambiarlo exige ajustar también el mapeo
 `ports` del compose y el healthcheck. Las variables que ya existan en el entorno
@@ -168,29 +134,24 @@ curl -fsS http://localhost:3000/api/health
 - Los logs no deben contener errores de configuración. Las migraciones de SQLite
   se aplican solas al arrancar; no hay paso manual.
 
-## 7. Primer login
+## 7. Primer arranque: crea tu contraseña
 
-La interfaz web todavía no incluye formulario de login (llega en una fase
-posterior), así que verifica la autenticación contra la API:
+Abre la aplicación en el navegador (`http://IP_DEL_SERVIDOR:3000`). La primera
+vez que arranca no hay credenciales, así que verás la pantalla **"Crea tu
+contraseña"**: define el usuario y una contraseña de al menos 8 caracteres (se
+pide dos veces para confirmarla). Al guardarla se inicia la sesión y entras
+directamente en la aplicación.
 
-```bash
-curl -i -c cookies.txt -X POST http://localhost:3000/api/sesion \
-  -H 'content-type: application/json' \
-  -d '{"usuario":"ana","contrasena":"TU_CONTRASENA"}'
-```
-
-Respuesta esperada: `204 No Content` y una cabecera `Set-Cookie:
-migite_session=...`. Comprueba que la sesión protege la API:
-
-```bash
-curl -b cookies.txt http://localhost:3000/api/objetos   # 200 con sesión
-curl http://localhost:3000/api/objetos                  # 401 sin sesión
-curl -b cookies.txt -X DELETE http://localhost:3000/api/sesion  # logout
-```
-
-La sesión dura 12 horas y la cookie es `HttpOnly` + `SameSite=Strict`; se marca
-`Secure` automáticamente cuando la petición llega por HTTPS o con
-`X-Forwarded-Proto: https`.
+- La contraseña se guarda como hash argon2 y el secreto que firma la cookie de
+  sesión se genera automáticamente; ambos persisten en el índice SQLite
+  (volumen `migite_indice`). Sobreviven a reinicios y actualizaciones: no hay
+  que copiarlos ni configurarlos a mano.
+- La pantalla de setup solo aparece mientras no existan credenciales. Si las
+  defines por variables de entorno (sección 14) la app arranca con el login
+  normal desde el primer momento.
+- La sesión dura 12 horas y la cookie es `HttpOnly` + `SameSite=Strict`; se
+  marca `Secure` automáticamente cuando la petición llega por HTTPS o con
+  `X-Forwarded-Proto: https`.
 
 ## 8. Red y seguridad
 
@@ -308,10 +269,10 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml down
 
 | Síntoma | Causa probable | Solución |
 | --- | --- | --- |
-| El contenedor reinicia en bucle y el log menciona `MIGITE_USER` | `.env` ausente en la raíz o variable mal escrita | Revisa el `.env` (paso 3) y `docker compose logs app` |
-| `MIGITE_SESSION_SECRET debe tener al menos 32 caracteres` | Secreto corto | Regénéralo con `openssl rand -hex 32` |
-| `MIGITE_PASSWORD_HASH no es un hash argon2 válido` | Se pegó la contraseña en claro o un hash de otro algoritmo | Genera el hash con el paso 3.2 (debe empezar por `$argon2`) |
-| Login devuelve `401` | Usuario o contraseña no coinciden | Repite el paso 3.2 y reinicia (`up -d` fuerza recreación) |
+| El contenedor reinicia en bucle y el log menciona `ConfigError` | Variables de autenticación (sección 14) incompletas o inválidas | Corrige esas variables o bórralas del `.env`: sin ellas la app pide crear la contraseña en la web |
+| `MIGITE_SESSION_SECRET debe tener al menos 32 caracteres` | Secreto por entorno demasiado corto | Regénéralo con `openssl rand -hex 32` o bórralo (sección 14) |
+| `MIGITE_PASSWORD_HASH no es un hash argon2 válido` | Se pegó la contraseña en claro o un hash de otro algoritmo | Genera el hash con la sección 14 (debe empezar por `$argon2`) |
+| Login devuelve `401` | Usuario o contraseña no coinciden | Reintenta en la pantalla de acceso; si vienen del entorno, revisa la sección 14 |
 | `unhealthy` o `curl` falla | El server no arrancó o el puerto está ocupado | `docker compose exec app curl -fsS http://localhost:3000/api/health` y revisa logs |
 | Build falla en un smoke check de nativos | El prebuild musl no cargó (`better-sqlite3`, `@node-rs/argon2`) | No despliegues esa imagen; revisa el error del `require` y reporta |
 | `required variable VERSION is missing` | Comando compose sin la versión | `export VERSION=vX.Y.Z` antes de cualquier comando compose |
@@ -337,33 +298,26 @@ base y la producción ya fusionadas y **solo imagen** (sin `build:`).
 
 ### 13.2 Crear el `.env` del stack
 
-El editor de entorno de Dockge guarda el `.env` junto al compose. Define:
+El editor de entorno de Dockge guarda el `.env` junto al compose. Para el flujo
+normal basta con:
 
 | Variable | Obligatoria | Valor |
 | --- | --- | --- |
 | `VERSION` | Sí | Tag de la imagen a desplegar, p. ej. `v0.2.0`. Compose falla si falta. |
-| `MIGITE_USER` | Sí | Usuario del login. |
-| `MIGITE_PASSWORD_HASH` | Sí | Hash argon2id de la contraseña (paso 3.2), **entre comillas simples**. |
-| `MIGITE_SESSION_SECRET` | Sí | Secreto de firma de la cookie (paso 3.1). |
 | `MIGITE_SECURE_COOKIES` | No | `1` fuerza `Secure` en la cookie. |
-| `OPENAI_API_KEY` | No | Clave BYOK (paso 3.3). |
+| `OPENAI_API_KEY` | No | Clave BYOK (paso 3). |
+| `MIGITE_USER` / `MIGITE_PASSWORD_HASH` / `MIGITE_SESSION_SECRET` | No | Solo para automatización (sección 14); el hash, **entre comillas simples**. |
 
-Genera el secreto con `openssl rand -hex 32` (paso 3.1). Para el hash usa el
-comando del paso 3.2 (Opción B con Node 22, o la Opción A cambiando los overlays
-por `-f docker-compose.dockge.yml` si tienes el repo en el servidor). Ejemplo:
+Ejemplo:
 
 ```dotenv
 VERSION=v0.2.0
-MIGITE_USER=ana
-MIGITE_PASSWORD_HASH='$argon2id$v=19$m=19456,t=2,p=1$...$...'
-MIGITE_SESSION_SECRET=pega_aqui_la_salida_de_openssl_rand_hex_32
 # MIGITE_SECURE_COOKIES=1
 ```
 
-El hash debe ir **entre comillas simples**: Compose también interpola los valores
-del `.env`, y sin comillas `$argon2id$v=19...` se convierte en `=19=...` (el
-valor llega corrupto al contenedor y el login falla). Las comillas simples pasan
-el valor literal.
+El usuario y la contraseña se definen al abrir la app por primera vez (paso 7):
+la aplicación genera el hash y el secreto de sesión, así que no hay que
+prepararlos a mano.
 
 ### 13.3 Arrancar y verificar
 
@@ -375,7 +329,9 @@ curl -fsS http://IP_DEL_SERVIDOR:3000/api/health   # {"status":"ok"}
 
 En la vista del stack el contenedor debe pasar a `healthy` (el healthcheck de la
 imagen tarda unos 10 segundos) y los logs no deben mostrar errores de
-configuración. Para el primer login y el firewall aplican los pasos 7 y 8.
+configuración. Abre `http://IP_DEL_SERVIDOR:3000` y define usuario y contraseña
+en la pantalla **"Crea tu contraseña"** (paso 7); para el firewall aplica el
+paso 8.
 
 ### 13.4 Actualización y rollback
 
@@ -396,6 +352,68 @@ Los volúmenes se conservan en ambos casos.
 - El `.env` que editas en Dockge es el del stack (p. ej.
   `/opt/stacks/migite/.env`), no el del repo clonado.
 
+## 14. Opcional: credenciales por variables de entorno (automatización)
+
+La vía normal es crear las credenciales desde la web (paso 7). Para
+automatizaciones que no pueden pasar por esa pantalla, puedes fijar usuario,
+contraseña y secreto de sesión en el `.env`. Si defines `MIGITE_USER` y
+`MIGITE_PASSWORD_HASH`, la aplicación arranca con esas credenciales y muestra el
+login habitual en vez del setup; no se pueden cambiar después desde la web. El
+secreto de sesión es opcional: sin él, la app genera uno y lo persiste en el
+índice.
+
+### 14.1 `MIGITE_USER` y `MIGITE_PASSWORD_HASH`
+
+El hash es **argon2** (argon2id). El usuario es el que usarás en el login, sin
+espacios alrededor.
+
+**Opción A — con el propio contenedor (recomendada en el servidor).** Construye
+primero la imagen (paso 4) y ejecuta:
+
+```bash
+export VERSION=v0.1.0
+docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm \
+  -w /app/apps/server app \
+  node -e "import('@node-rs/argon2').then((a) => a.hash('TU_CONTRASENA').then(console.log))"
+```
+
+**Opción B — con Node 22 en el host.** Requiere las dependencias instaladas
+(`pnpm install --frozen-lockfile` en la raíz del repo):
+
+```bash
+cd apps/server
+node -e "import('@node-rs/argon2').then((a) => a.hash('TU_CONTRASENA').then(console.log))"
+```
+
+Ambas opciones imprimen una línea que empieza por `$argon2id$v=19$m=...`.
+Cópiala **literal** como valor de `MIGITE_PASSWORD_HASH`, **entre comillas
+simples**: Compose interpola también los `$` del `.env` y, sin comillas,
+`$argon2id$v=19...` se convierte en `=19=...` (el login falla con el hash
+corrupto).
+
+### 14.2 `MIGITE_SESSION_SECRET` (opcional)
+
+Secreto para firmar la cookie de sesión. Si no se define, la aplicación genera
+uno aleatorio y lo guarda en el índice. Si lo defines, debe tener **al menos 32
+caracteres**, con al menos 16 caracteres distintos y sin patrones repetidos:
+
+```bash
+openssl rand -hex 32
+```
+
+### 14.3 Ejemplo de `.env` con credenciales por entorno
+
+```dotenv
+VERSION=v0.1.0
+MIGITE_USER=ana
+MIGITE_PASSWORD_HASH='$argon2id$v=19$m=19456,t=2,p=1$...$...'
+MIGITE_SESSION_SECRET=pega_aqui_la_salida_de_openssl_rand_hex_32
+```
+
+En el despliegue con Dockge (sección 13) estas variables van en el `.env` del
+stack. Si defines solo una parte de `MIGITE_USER` / `MIGITE_PASSWORD_HASH`, el
+arranque falla con `ConfigError`; define ambas o ninguna.
+
 ## Verificación de esta guía
 
 Se ha comprobado en el repositorio:
@@ -404,7 +422,8 @@ Se ha comprobado en el repositorio:
   base+prod (Docker Compose v5.5.1), incluidas las interpolaciones de
   `VERSION`.
 - `docker-compose.dockge.yml` validado con `docker compose config` y un `.env`
-  de ejemplo (`VERSION` + variables de auth, con el hash entrecomillado).
+  de ejemplo (`VERSION` y, opcionalmente, las variables de auth de la
+  sección 14, con el hash entrecomillado).
 - El lockfile incluye el binario opcional `@node-rs/argon2-linux-x64-musl` y
   `better-sqlite3` trae `prebuilds/linuxmusl-x64.node`, que son los que usa la
   imagen Alpine.
