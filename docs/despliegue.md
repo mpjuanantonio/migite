@@ -153,6 +153,15 @@ directamente en la aplicación.
   marca `Secure` automáticamente cuando la petición llega por HTTPS o con
   `X-Forwarded-Proto: https`.
 
+**Si olvidas la contraseña**, hay dos vías:
+
+- Definir `MIGITE_USER` y `MIGITE_PASSWORD_HASH` en el `.env` y reiniciar: las
+  credenciales del entorno tienen precedencia sobre las guardadas (sección 14).
+- Volver al modo setup: con la app parada, borra las filas `auth.username` y
+  `auth.password_hash` de la tabla `meta` del índice (`data/index.db`, volumen
+  `migite_indice`) y reinicia. La próxima visita pedirá crear la contraseña de
+  nuevo. Haz una copia de seguridad antes (sección 9).
+
 ## 8. Red y seguridad
 
 El compose publica `3000:3000` en todas las interfaces. Para cumplir RNF-021
