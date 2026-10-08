@@ -95,6 +95,21 @@ export const useIniciarSesion = () => {
   });
 };
 
+export const useConfigurarCredenciales = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (credenciales: Credenciales) =>
+      apiFetch<void>("/api/sesion/setup", { method: "POST", body: credenciales }),
+    onSuccess: () => {
+      queryClient.setQueryData<SesionStatus>(queryKeys.sesion, {
+        autenticado: true,
+        setupRequerido: false,
+      });
+    },
+  });
+};
+
 export const useCerrarSesion = () => {
   const queryClient = useQueryClient();
 

@@ -32,7 +32,8 @@ export const jsonResponse = (body: unknown, status = 200): Response =>
 
 export const noContentResponse = (): Response => new Response(null, { status: 204 });
 
-export const sesionResponse = (autenticado: boolean): Response => jsonResponse({ autenticado });
+export const sesionResponse = (autenticado: boolean, setupRequerido?: boolean): Response =>
+  jsonResponse({ autenticado, ...(setupRequerido === undefined ? {} : { setupRequerido }) });
 
 export const errorResponse = (codigo: string, mensaje: string, status: number): Response =>
   jsonResponse({ error: { codigo, mensaje } }, status);

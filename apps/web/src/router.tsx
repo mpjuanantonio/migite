@@ -17,6 +17,7 @@ import { NotasPage } from "@/pages/notas-page";
 import { ObjetoPage } from "@/pages/objeto-page";
 import { ProyectosPage } from "@/pages/proyectos-page";
 import { RecordatoriosPage } from "@/pages/recordatorios-page";
+import { SetupPage } from "@/pages/setup-page";
 import { TareasPage } from "@/pages/tareas-page";
 import { TiposPage } from "@/pages/tipos-page";
 
@@ -59,11 +60,15 @@ const OnlyGuest = () => {
   const { data, isPending } = useSesion();
   const location = useLocation();
 
-  if (!isPending && data?.autenticado === true) {
+  if (isPending) {
+    return null;
+  }
+
+  if (data?.autenticado === true) {
     return <Navigate to={readLoginDestino(location.state)} replace />;
   }
 
-  return <LoginPage />;
+  return data?.setupRequerido === true ? <SetupPage /> : <LoginPage />;
 };
 
 export const routes: RouteObject[] = [
