@@ -1,13 +1,10 @@
 import type { CreateObjectBody, ObjectPayload } from "@migite/contracts";
 import { QueryClient } from "@tanstack/react-query";
-import { configure, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import { fechaLocal, finDelDia } from "@/lib/tareas";
 import { errorResponse, jsonResponse, renderApp, sesionResponse } from "@/test/render-app";
-
-configure({ asyncUtilTimeout: 5000 });
-vi.setConfig({ testTimeout: 10_000 });
 
 let fetchMock: Mock<typeof fetch>;
 let listados: URL[];

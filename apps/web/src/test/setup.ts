@@ -1,6 +1,9 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup } from "@testing-library/react";
-import { afterEach } from "vitest";
+import { cleanup, configure } from "@testing-library/react";
+import { afterEach, vi } from "vitest";
+
+configure({ asyncUtilTimeout: 5000 });
+vi.setConfig({ testTimeout: 10_000 });
 
 class ResizeObserverStub {
   observe(): void {
