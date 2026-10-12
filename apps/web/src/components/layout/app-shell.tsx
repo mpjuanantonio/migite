@@ -13,6 +13,7 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useCerrarSesion } from "@/api/hooks";
 import { BrandMark } from "@/components/brand-mark";
 import { LanguageSwitcher } from "@/components/language-switcher";
+import { ThemeSwitcher } from "@/components/theme-switcher";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n/context";
 import type { AppTranslationKey } from "@/i18n/translate";
@@ -70,17 +71,20 @@ export const AppShell = () => {
               <span aria-hidden="true" className="size-1.5 rounded-full bg-primary" />
               {t("shell.sessionActive")}
             </span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
-              onClick={handleLogout}
-              disabled={cerrarSesion.isPending}
-              className="text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-            >
-              <LogOut aria-hidden="true" />
-              {cerrarSesion.isPending ? t("shell.loggingOut") : t("shell.logout")}
-            </Button>
+            <div className="flex items-center gap-1">
+              <ThemeSwitcher />
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                onClick={handleLogout}
+                disabled={cerrarSesion.isPending}
+                className="text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              >
+                <LogOut aria-hidden="true" />
+                {cerrarSesion.isPending ? t("shell.loggingOut") : t("shell.logout")}
+              </Button>
+            </div>
           </div>
         </header>
         <nav aria-label={t("shell.mainNav")} className="lg:flex-1">

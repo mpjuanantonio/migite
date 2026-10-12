@@ -4,6 +4,7 @@ import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { createQueryClient } from "@/api/client";
 import { I18nProvider } from "@/i18n/context";
 import { routes } from "@/router";
+import { TemaProvider } from "@/theme/context";
 
 export type RenderAppResult = RenderResult & {
   readonly router: ReturnType<typeof createMemoryRouter>;
@@ -16,9 +17,11 @@ export const renderApp = (
   const router = createMemoryRouter(routes, { initialEntries: [path] });
   const result = render(
     <I18nProvider>
-      <QueryClientProvider client={client}>
-        <RouterProvider router={router} />
-      </QueryClientProvider>
+      <TemaProvider>
+        <QueryClientProvider client={client}>
+          <RouterProvider router={router} />
+        </QueryClientProvider>
+      </TemaProvider>
     </I18nProvider>,
   );
   return { ...result, router };

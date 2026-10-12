@@ -214,6 +214,10 @@ const webEs = {
   "shell.mainNav": "Navegación principal",
   "shell.sessionActive": "Sesión activa",
   "shell.skipToContent": "Saltar al contenido",
+  "shell.tema": "Tema",
+  "shell.temaClaro": "Claro",
+  "shell.temaOscuro": "Oscuro",
+  "shell.temaSistema": "Sistema",
 } as const;
 
 export type WebTranslationKey = keyof typeof webEs;
@@ -431,6 +435,10 @@ const webEn = {
   "shell.mainNav": "Main navigation",
   "shell.sessionActive": "Signed in",
   "shell.skipToContent": "Skip to content",
+  "shell.tema": "Theme",
+  "shell.temaClaro": "Light",
+  "shell.temaOscuro": "Dark",
+  "shell.temaSistema": "System",
 } satisfies Record<WebTranslationKey, string>;
 
 export const webCatalogs: Record<Locale, Readonly<Partial<Record<WebTranslationKey, string>>>> = {
