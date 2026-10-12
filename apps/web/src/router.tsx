@@ -20,6 +20,8 @@ import { ProyectosPage } from "@/pages/proyectos-page";
 import { RecordatoriosPage } from "@/pages/recordatorios-page";
 import { SetupPage } from "@/pages/setup-page";
 import { TareasPage } from "@/pages/tareas-page";
+import { TipoNuevoPage } from "@/pages/tipo-nuevo-page";
+import { TipoPage } from "@/pages/tipo-page";
 import { TiposPage } from "@/pages/tipos-page";
 
 const UnauthorizedBridge = () => {
@@ -94,6 +96,8 @@ export const routes: RouteObject[] = [
           { path: "proyectos", element: <ProyectosPage /> },
           { path: "proyectos/:id", element: <ProyectoPage /> },
           { path: "tipos", element: <TiposPage /> },
+          { path: "tipos/nuevo", element: <TipoNuevoPage /> },
+          { path: "tipos/:id", element: <TipoPage /> },
           { path: "buscar", element: <BuscarPage /> },
           { path: "*", element: <Navigate to="/notas" replace /> },
         ],

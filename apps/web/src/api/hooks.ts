@@ -1,4 +1,5 @@
 import {
+  type AttributePayload,
   type CreateObjectBody,
   type ObjectPayload,
   type ObjetosPage,
@@ -9,6 +10,7 @@ import {
   type SesionStatus,
   sesionStatusSchema,
   type TipoPayload,
+  tipoPayloadSchema,
   tiposListSchema,
 } from "@migite/contracts";
 import {
@@ -266,3 +268,62 @@ export const useTipos = () =>
     queryFn: async (): Promise<TipoPayload[]> =>
       tiposListSchema.parse(await apiFetch("/api/tipos")).tipos,
   });
+
+export type TipoCambios = {
+  readonly nombre?: string;
+  readonly descripcion?: string;
+  readonly atributos?: readonly AttributePayload[];
+};
+
+const TIPOS_PATH = "/api/tipos";
+
+const tipoPath = (id: string): string => `${TIPOS_PATH}/${encodeURIComponent(id)}`;
+
+const reemplazarTipo = (previos: TipoPayload[] | undefined, tipo: TipoPayload): TipoPayload[] =>
+  previos === undefined
+    ? [tipo]
+    : previos.some((item) => item.id === tipo.id)
+      ? previos.map((item) => (item.id === tipo.id ? tipo : item))
+      : [...previos, tipo];
+
+export const useCrearTipo = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (body: TipoPayload): Promise<TipoPayload> =>
+      tipoPayloadSchema.parse(await apiFetch(TIPOS_PATH, { method: "POST", body })),
+    onSuccess: (tipo) => {
+      queryClient.setQueryData<TipoPayload[]>(queryKeys.tipos, (previos) =>
+        reemplazarTipo(previos, tipo),
+      );
+    },
+  });
+};
+
+export const useActualizarTipo = (id: string) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (cambios: TipoCambios): Promise<TipoPayload> =>
+      tipoPayloadSchema.parse(await apiFetch(tipoPath(id), { method: "PATCH", body: cambios })),
+    onSuccess: (tipo) => {
+      queryClient.setQueryData<TipoPayload[]>(queryKeys.tipos, (previos) =>
+        reemplazarTipo(previos, tipo),
+      );
+    },
+  });
+};
+
+export const useBorrarTipo = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string): Promise<void> =>
+      apiFetch<void>(`${tipoPath(id)}?confirmar=1`, { method: "DELETE" }),
+    onSuccess: (_resultado, id) => {
+      queryClient.setQueryData<TipoPayload[]>(queryKeys.tipos, (previos) =>
+        (previos ?? []).filter((item) => item.id !== id),
+      );
+    },
+  });
+};
