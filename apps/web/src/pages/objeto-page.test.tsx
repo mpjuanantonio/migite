@@ -42,12 +42,19 @@ type PatchHandler = (body: PatchBody, attempt: number) => Response;
 
 type RenameHandler = (nuevoTitulo: string, attempt: number) => Response;
 
+type CrearHandler = (titulo: string) => Response;
+
+type ResolverHandler = (titulo: string) => Response | undefined;
+
 type ObjetoApiOptions = {
   readonly objeto?: ObjectPayload;
+  readonly objetos?: readonly ObjectPayload[];
   readonly getError?: Response;
   readonly patch?: PatchHandler;
   readonly rename?: RenameHandler;
   readonly deleteResponse?: Response;
+  readonly crear?: CrearHandler;
+  readonly resolver?: ResolverHandler;
 };
 
 const TIPOS: readonly TipoPayload[] = [
@@ -102,19 +109,38 @@ const mockObjetoApi = (options: ObjetoApiOptions = {}): void => {
   let intentos = 0;
   let intentosRenombrado = 0;
   const objeto = options.objeto ?? objetoDePrueba();
+  const creados: ObjectPayload[] = [];
+  const catalogo = (): readonly ObjectPayload[] => [objeto, ...(options.objetos ?? []), ...creados];
 
   fetchMock.mockImplementation(async (input, init) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     if (url.startsWith("/api/tipos")) {
       return jsonResponse({ tipos: TIPOS });
     }
-    if (url === "/api/objetos") {
-      return jsonResponse({ objetos: [], siguienteCursor: null });
+    const method = init?.method ?? "GET";
+    if (url === "/api/objetos" || url.startsWith("/api/objetos?")) {
+      if (method === "POST") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as {
+          readonly titulo?: string;
+          readonly cuerpo?: string;
+        };
+        if (options.crear !== undefined) {
+          return options.crear(body.titulo ?? "");
+        }
+        const creado = objetoDePrueba({
+          id: `01JCREADO${creados.length + 1}`,
+          titulo: body.titulo ?? "Sin título",
+          cuerpo: body.cuerpo ?? "",
+          ruta: `notas/creada-${creados.length + 1}.md`,
+        });
+        creados.push(creado);
+        return jsonResponse(creado);
+      }
+      return jsonResponse({ objetos: options.objetos ?? [], siguienteCursor: null });
     }
     if (!url.startsWith("/api/objetos/")) {
       return sesionResponse(true);
     }
-    const method = init?.method ?? "GET";
     if (method === "PATCH") {
       intentos += 1;
       const body = JSON.parse(String(init?.body ?? "{}")) as PatchBody;
@@ -144,10 +170,22 @@ const mockObjetoApi = (options: ObjetoApiOptions = {}): void => {
     if (method === "DELETE") {
       return options.deleteResponse ?? noContentResponse();
     }
-    if (options.getError !== undefined) {
-      return options.getError;
+    const ruta = decodeURIComponent(url.split("?")[0] ?? url);
+    if (ruta === `/api/objetos/${objeto.id}`) {
+      if (options.getError !== undefined) {
+        return options.getError;
+      }
+      return jsonResponse(objeto);
     }
-    return jsonResponse(objeto);
+    const titulo = ruta.slice("/api/objetos/".length);
+    const manual = options.resolver?.(titulo);
+    if (manual !== undefined) {
+      return manual;
+    }
+    const encontrado = catalogo().find((item) => item.id === titulo || item.titulo === titulo);
+    return encontrado === undefined
+      ? errorResponse("object_not_found", `No existe «${titulo}»`, 404)
+      : jsonResponse(encontrado);
   });
 };
 
@@ -600,6 +638,171 @@ describe("renombrar y borrar la ficha", () => {
 
     const alerta = await screen.findByRole("alert");
     expect(alerta).toHaveTextContent("No se pudo borrar el archivo");
+    expect(router.state.location.pathname).toBe("/objetos/01JALFA");
+  });
+});
+
+describe("wikilinks", () => {
+  const diarioDeViaje = (): ObjectPayload =>
+    objetoDePrueba({ id: "01JDIARIO", titulo: "Diario de viaje", cuerpo: "" });
+
+  const tareasDelMes = (): ObjectPayload =>
+    objetoDePrueba({ id: "01JOTRA", titulo: "Tareas del mes", cuerpo: "" });
+
+  const enfocarEditor = async (user: ReturnType<typeof userEvent.setup>, valor: string) => {
+    const editor = await screen.findByLabelText("Cuerpo de la ficha en markdown");
+    await user.click(editor);
+    fireEvent.change(editor, { target: { value: valor } });
+    return editor;
+  };
+
+  it("sugiere objetos al escribir «[[» y filtra por lo tecleado", async () => {
+    mockObjetoApi({
+      objeto: objetoDePrueba({ cuerpo: "" }),
+      objetos: [diarioDeViaje(), tareasDelMes()],
+    });
+    const user = userEvent.setup();
+    renderObjeto();
+
+    const editor = await enfocarEditor(user, "[[Dia");
+
+    const opcion = await screen.findByRole("option", { name: "Diario de viaje" });
+    expect(screen.queryByRole("option", { name: "Tareas del mes" })).toBeNull();
+
+    await user.click(opcion);
+
+    expect(editor).toHaveValue("[[Diario de viaje]]");
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("recorre las sugerencias con las flechas e inserta con Enter", async () => {
+    mockObjetoApi({
+      objeto: objetoDePrueba({ cuerpo: "" }),
+      objetos: [diarioDeViaje(), tareasDelMes()],
+    });
+    const user = userEvent.setup();
+    renderObjeto();
+
+    const editor = await enfocarEditor(user, "[[");
+    await screen.findByRole("listbox");
+    await user.keyboard("{ArrowDown}");
+
+    expect(screen.getByRole("option", { name: "Tareas del mes" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+
+    await user.keyboard("{Enter}");
+
+    expect(editor).toHaveValue("[[Tareas del mes]]");
+  });
+
+  it("cierra las sugerencias con Escape", async () => {
+    mockObjetoApi({
+      objeto: objetoDePrueba({ cuerpo: "" }),
+      objetos: [diarioDeViaje()],
+    });
+    const user = userEvent.setup();
+    renderObjeto();
+
+    await enfocarEditor(user, "[[");
+    await screen.findByRole("listbox");
+
+    await user.keyboard("{Escape}");
+
+    await waitFor(() => {
+      expect(screen.queryByRole("listbox")).toBeNull();
+    });
+  });
+
+  it("ofrece crear la nota cuando no hay coincidencias e inserta «[[texto]]»", async () => {
+    mockObjetoApi({
+      objeto: objetoDePrueba({ cuerpo: "" }),
+      objetos: [diarioDeViaje()],
+    });
+    const user = userEvent.setup();
+    renderObjeto();
+
+    const editor = await enfocarEditor(user, "[[Zeta");
+
+    const opcion = await screen.findByRole("option", { name: "Crear nota «Zeta»" });
+    await user.click(opcion);
+
+    expect(editor).toHaveValue("[[Zeta]]");
+  });
+
+  it("resuelve el wikilink del preview y navega al objeto existente", async () => {
+    mockObjetoApi({
+      objeto: objetoDePrueba({ cuerpo: "Enlaza [[Diario de viaje]] aquí." }),
+      objetos: [diarioDeViaje()],
+    });
+    const user = userEvent.setup();
+    const { router } = renderObjeto();
+
+    const preview = await screen.findByRole("region", { name: "Vista previa" });
+    const enlace = await within(preview).findByRole("link", { name: "Diario de viaje" });
+    await user.click(enlace);
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/objetos/01JDIARIO");
+    });
+    expect(
+      fetchMock.mock.calls.some(([input]) => String(input) === "/api/objetos/Diario%20de%20viaje"),
+    ).toBe(true);
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Diario de viaje" }),
+    ).toBeInTheDocument();
+  });
+
+  it("respeta el alias de «[[Título|alias]]» al navegar", async () => {
+    mockObjetoApi({
+      objeto: objetoDePrueba({ cuerpo: "Lee [[Diario de viaje|el diario]]." }),
+      objetos: [diarioDeViaje()],
+    });
+    const user = userEvent.setup();
+    const { router } = renderObjeto();
+
+    const preview = await screen.findByRole("region", { name: "Vista previa" });
+    const enlace = await within(preview).findByRole("link", { name: "el diario" });
+    await user.click(enlace);
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/objetos/01JDIARIO");
+    });
+  });
+
+  it("crea la nota desde un enlace sin resolver y navega a ella", async () => {
+    mockObjetoApi({ objeto: objetoDePrueba({ cuerpo: "Falta [[Nota nueva]]." }) });
+    const user = userEvent.setup();
+    const { router } = renderObjeto();
+
+    const crear = await screen.findByRole("button", { name: "Crear nota" });
+    await user.click(crear);
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/objetos/01JCREADO1");
+    });
+    const llamada = fetchMock.mock.calls.find(
+      ([input, init]) => String(input) === "/api/objetos" && init?.method === "POST",
+    );
+    expect(JSON.parse(String(llamada?.[1]?.body))).toEqual({ titulo: "Nota nueva" });
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Nota nueva" }),
+    ).toBeInTheDocument();
+  });
+
+  it("muestra el error y no navega cuando falla la creación", async () => {
+    mockObjetoApi({
+      objeto: objetoDePrueba({ cuerpo: "Falta [[Nota nueva]]." }),
+      crear: () => errorResponse("write_error", "No se pudo escribir el archivo", 500),
+    });
+    const user = userEvent.setup();
+    const { router } = renderObjeto();
+
+    await user.click(await screen.findByRole("button", { name: "Crear nota" }));
+
+    const alerta = await screen.findByRole("alert");
+    expect(alerta).toHaveTextContent("No se pudo escribir el archivo");
     expect(router.state.location.pathname).toBe("/objetos/01JALFA");
   });
 });

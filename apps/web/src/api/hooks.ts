@@ -22,7 +22,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { apiFetch } from "./api";
+import { ApiError, apiFetch } from "./api";
 import { queryKeys } from "./keys";
 
 export type RangoAtributo = {
@@ -220,6 +220,23 @@ export const useObjeto = (id: string | undefined) =>
     enabled: id !== undefined,
     queryFn: async (): Promise<ObjectPayload> =>
       objectPayloadSchema.parse(await apiFetch(objetoPath(id ?? ""))),
+  });
+
+export const useResolverObjeto = (titulo: string) =>
+  useQuery({
+    queryKey: queryKeys.objeto(titulo),
+    enabled: titulo !== "",
+    retry: false,
+    queryFn: async (): Promise<ObjectPayload | null> => {
+      try {
+        return objectPayloadSchema.parse(await apiFetch(objetoPath(titulo)));
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) {
+          return null;
+        }
+        throw error;
+      }
+    },
   });
 
 export const useGuardarObjeto = (id: string) => {

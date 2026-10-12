@@ -3,7 +3,13 @@ import { CircleCheck, FileWarning, Pencil, Save, Trash2, TriangleAlert } from "l
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "@/api/api";
-import { useBorrarObjeto, useGuardarObjeto, useObjeto, useRenombrarObjeto } from "@/api/hooks";
+import {
+  useBorrarObjeto,
+  useGuardarObjeto,
+  useObjeto,
+  useObjetos,
+  useRenombrarObjeto,
+} from "@/api/hooks";
 import { BandejaAtributos } from "@/components/atributos/bandeja-atributos";
 import { MarkdownEditor } from "@/components/editor/markdown-editor";
 import { MarkdownPreview } from "@/components/editor/markdown-preview";
@@ -134,6 +140,7 @@ export const ObjetoPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const objetoQuery = useObjeto(id);
+  const objetosSugeridos = useObjetos({ limite: 100 });
   const guardar = useGuardarObjeto(id ?? "");
   const renombrar = useRenombrarObjeto(id ?? "");
   const borrar = useBorrarObjeto();
@@ -145,6 +152,7 @@ export const ObjetoPage = () => {
   const [borrarAbierto, setBorrarAbierto] = useState(false);
 
   const objeto = objetoQuery.data;
+  const titulosSugeridos = (objetosSugeridos.data?.objetos ?? []).map((item) => item.titulo);
   const cuerpo =
     borrador !== undefined && borrador.id === id ? borrador.valor : (objeto?.cuerpo ?? "");
   const guardando = guardar.isPending;
@@ -349,6 +357,7 @@ export const ObjetoPage = () => {
                 onChange={(valor) => setBorrador({ id: objeto.id, valor })}
                 ariaLabel={t("page.objeto.editorLabel")}
                 placeholder={t("page.objeto.editorPlaceholder")}
+                sugerencias={titulosSugeridos}
               />
             </div>
           </section>
@@ -359,7 +368,11 @@ export const ObjetoPage = () => {
               </h2>
             </header>
             <div className="h-[22rem] overflow-y-auto px-5 py-4 sm:h-[30rem] lg:px-6">
-              <MarkdownPreview markdown={cuerpo} emptyLabel={t("page.objeto.previewEmpty")} />
+              <MarkdownPreview
+                markdown={cuerpo}
+                emptyLabel={t("page.objeto.previewEmpty")}
+                enlacesWikilink
+              />
             </div>
           </section>
         </div>
