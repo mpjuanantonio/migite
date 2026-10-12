@@ -51,7 +51,9 @@ describe("partirFragmento", () => {
   });
 
   it("no marca nada si no hay términos", () => {
-    expect(partirFragmento("texto", "  ")).toEqual([{ texto: "texto", coincide: false }]);
+    expect(partirFragmento("texto", "  ")).toEqual([
+      { inicio: 0, texto: "texto", coincide: false },
+    ]);
   });
 
   it("trata los caracteres especiales como texto literal", () => {

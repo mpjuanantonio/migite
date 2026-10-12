@@ -21,6 +21,7 @@ export const agruparResultados = (
 };
 
 export type ParteFragmento = {
+  readonly inicio: number;
   readonly texto: string;
   readonly coincide: boolean;
 };
@@ -34,7 +35,7 @@ export const partirFragmento = (fragmento: string, terminos: string): readonly P
     .filter((palabra) => palabra !== "")
     .map(escaparRegex);
   if (palabras.length === 0 || fragmento === "") {
-    return [{ texto: fragmento, coincide: false }];
+    return [{ inicio: 0, texto: fragmento, coincide: false }];
   }
   const patron = new RegExp(palabras.join("|"), "gi");
   const partes: ParteFragmento[] = [];
@@ -42,13 +43,13 @@ export const partirFragmento = (fragmento: string, terminos: string): readonly P
   for (const coincidencia of fragmento.matchAll(patron)) {
     const inicio = coincidencia.index ?? 0;
     if (inicio > ultimo) {
-      partes.push({ texto: fragmento.slice(ultimo, inicio), coincide: false });
+      partes.push({ inicio: ultimo, texto: fragmento.slice(ultimo, inicio), coincide: false });
     }
-    partes.push({ texto: coincidencia[0], coincide: true });
+    partes.push({ inicio, texto: coincidencia[0], coincide: true });
     ultimo = inicio + coincidencia[0].length;
   }
   if (ultimo < fragmento.length) {
-    partes.push({ texto: fragmento.slice(ultimo), coincide: false });
+    partes.push({ inicio: ultimo, texto: fragmento.slice(ultimo), coincide: false });
   }
   return partes;
 };
