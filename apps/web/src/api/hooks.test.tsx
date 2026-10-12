@@ -104,3 +104,72 @@ describe("invalidación de enlaces entrantes", () => {
     expect(cliente.getQueryData(queryKeys.enlacesEntrantes("01JALFA"))).toBeUndefined();
   });
 });
+
+describe("invalidación de la resolución por título", () => {
+  it("refetchea la resolución del título nuevo al renombrar", async () => {
+    const renombrado = { ...objetoDePrueba, titulo: "Cuaderno nuevo" };
+    fetchMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/api/objetos/01JALFA/renombrar") {
+        return jsonResponse({
+          objeto: renombrado,
+          informe: { reescritos: [], omitidos: [], enlacesSinResolver: [] },
+        });
+      }
+      if (url === "/api/objetos/Cuaderno%20nuevo") {
+        return jsonResponse(renombrado);
+      }
+      return errorResponse("not_found", "Ruta desconocida", 404);
+    });
+
+    cliente.setQueryData(queryKeys.resolver("Cuaderno nuevo"), null);
+
+    const resolucion = renderHook(() => useResolverObjeto("Cuaderno nuevo"), {
+      wrapper: envolver,
+    });
+    await waitFor(() => {
+      expect(resolucion.result.current.isSuccess).toBe(true);
+    });
+    expect(resolucion.result.current.data).toBeNull();
+
+    const renombrar = renderHook(() => useRenombrarObjeto("01JALFA"), { wrapper: envolver });
+    await act(async () => {
+      await renombrar.result.current.mutateAsync("Cuaderno nuevo");
+    });
+
+    await waitFor(() => {
+      expect(resolucion.result.current.data?.titulo).toBe("Cuaderno nuevo");
+    });
+  });
+
+  it("refetchea la resolución del título al borrar", async () => {
+    fetchMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/api/objetos/01JALFA?confirmar=1") {
+        return new Response(null, { status: 204 });
+      }
+      if (url === "/api/objetos/Cuaderno%20de%20campo") {
+        return errorResponse("object_not_found", "No existe «Cuaderno de campo»", 404);
+      }
+      return errorResponse("not_found", "Ruta desconocida", 404);
+    });
+
+    cliente.setQueryData(queryKeys.resolver("Cuaderno de campo"), objetoDePrueba);
+
+    const resolucion = renderHook(() => useResolverObjeto("Cuaderno de campo"), {
+      wrapper: envolver,
+    });
+    await waitFor(() => {
+      expect(resolucion.result.current.data?.id).toBe("01JALFA");
+    });
+
+    const borrar = renderHook(() => useBorrarObjeto(), { wrapper: envolver });
+    await act(async () => {
+      await borrar.result.current.mutateAsync("01JALFA");
+    });
+
+    await waitFor(() => {
+      expect(resolucion.result.current.data).toBeNull();
+    });
+  });
+});

@@ -220,6 +220,10 @@ const invalidarListasDeObjetos = (queryClient: QueryClient): void => {
   });
 };
 
+const invalidarResolucionesDeTitulo = (queryClient: QueryClient): void => {
+  void queryClient.invalidateQueries({ queryKey: [...queryKeys.objetos, "resolver"] });
+};
+
 export const useObjeto = (id: string | undefined) =>
   useQuery({
     queryKey: queryKeys.objeto(id ?? ""),
@@ -325,6 +329,7 @@ export const useRenombrarObjeto = (id: string) => {
       queryClient.setQueryData(queryKeys.objeto(id), reporte.objeto);
       void queryClient.invalidateQueries({ queryKey: queryKeys.enlacesEntrantes(id) });
       invalidarListasDeObjetos(queryClient);
+      invalidarResolucionesDeTitulo(queryClient);
     },
   });
 };
@@ -339,6 +344,7 @@ export const useBorrarObjeto = () => {
       queryClient.removeQueries({ queryKey: queryKeys.objeto(id) });
       queryClient.removeQueries({ queryKey: queryKeys.enlacesEntrantes(id) });
       invalidarListasDeObjetos(queryClient);
+      invalidarResolucionesDeTitulo(queryClient);
     },
   });
 };
