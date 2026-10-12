@@ -1,5 +1,6 @@
 import {
   createObjectBodySchema,
+  enlacesEntrantesSchema,
   objectPayloadSchema,
   objetosPageSchema,
   patchObjectBodySchema,
@@ -15,6 +16,7 @@ import {
   createObjeto,
   decodeCursor,
   deleteObjeto,
+  getEnlacesEntrantes,
   getObjeto,
   listObjetos,
   MAX_LIST_OFFSET,
@@ -58,6 +60,10 @@ objetosRouter.get("/", (c) => {
   }
   return c.json(objetosPageSchema.parse(listObjetos(currentDeps(), params, offset)));
 });
+
+objetosRouter.get("/:id/enlaces-entrantes", (c) =>
+  c.json(enlacesEntrantesSchema.parse(getEnlacesEntrantes(currentDeps(), c.req.param("id")))),
+);
 
 objetosRouter.get("/:id", (c) =>
   c.json(objectPayloadSchema.parse(getObjeto(currentDeps(), c.req.param("id")))),

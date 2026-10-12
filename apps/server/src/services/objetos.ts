@@ -1,5 +1,6 @@
 import {
   type CreateObjectBody,
+  type EnlacesEntrantes,
   type ObjectPayload,
   objectPayloadSchema,
   type PatchObjectBody,
@@ -113,6 +114,27 @@ const payloadOf = (repository: ObjectRepository, id: string): ObjectPayload | un
 export const getObjeto = (deps: ObjetosDeps, ref: string): ObjectPayload => {
   const result = createRepository(deps).readObject(ref);
   return result.ok ? toPayload(result.object) : toDegradedPayload(ref, result);
+};
+
+export const getEnlacesEntrantes = (deps: ObjetosDeps, ref: string): EnlacesEntrantes => {
+  const repository = createRepository(deps);
+  const titulos = new Map(repository.listObjects().map((objeto) => [objeto.id, objeto.title]));
+  const vistos = new Set<string>();
+  const entrantes: EnlacesEntrantes["entrantes"] = [];
+  for (const enlace of repository.findIncomingLinks(ref)) {
+    const clave = `${enlace.objectId}\u0000${enlace.context}`;
+    if (vistos.has(clave)) {
+      continue;
+    }
+    vistos.add(clave);
+    entrantes.push({
+      id: enlace.objectId,
+      titulo: titulos.get(enlace.objectId) ?? enlace.objectId,
+      ruta: enlace.path,
+      contexto: enlace.context,
+    });
+  }
+  return { entrantes };
 };
 
 export type RenameReportPayload = {

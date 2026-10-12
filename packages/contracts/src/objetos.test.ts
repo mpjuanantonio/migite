@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   createObjectBodySchema,
   degradationReasonSchema,
+  enlaceEntranteSchema,
+  enlacesEntrantesSchema,
   objectPayloadSchema,
   patchObjectBodySchema,
   renameObjectBodySchema,
@@ -170,5 +172,30 @@ describe("renameReportSchema", () => {
         informe: { ...informe, omitidos: [{ path: "roto.md" }] },
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("enlacesEntrantesSchema", () => {
+  const entrante = {
+    id: "01J8Z9K3M4N5P6Q7R8S9T0V1W2",
+    titulo: "Fuente",
+    ruta: "notas/fuente.md",
+    contexto: "body",
+  };
+
+  it("accepts incoming links from the body and the frontmatter", () => {
+    const body = { entrantes: [entrante, { ...entrante, contexto: "frontmatter" }] };
+
+    expect(enlacesEntrantesSchema.parse(body)).toEqual(body);
+  });
+
+  it("accepts an empty list", () => {
+    expect(enlacesEntrantesSchema.parse({ entrantes: [] })).toEqual({ entrantes: [] });
+  });
+
+  it("rejects an unknown context or missing fields", () => {
+    expect(enlaceEntranteSchema.safeParse({ ...entrante, contexto: "otro" }).success).toBe(false);
+    expect(enlaceEntranteSchema.safeParse({ ...entrante, titulo: undefined }).success).toBe(false);
+    expect(enlacesEntrantesSchema.safeParse({}).success).toBe(false);
   });
 });

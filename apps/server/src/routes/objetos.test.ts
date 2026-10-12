@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  enlacesEntrantesSchema,
   type ObjectPayload,
   objectPayloadSchema,
   objetosPageSchema,
@@ -186,6 +187,24 @@ const writeEnlaza = (): void => {
     "Enlace a [[Beta]] desde el cuerpo.",
   );
   writeFileSync(join(vaultDir, "enlaza.md"), text, "utf8");
+};
+
+const ENLAZA_FM = "01JENLAZAFM000000000000000";
+
+const writeEnlaceFrontmatter = (): void => {
+  const text = writeObjectFile(
+    {
+      id: ENLAZA_FM,
+      type: "nota",
+      title: "Enlaza FM",
+      created: "2026-10-01T09:00:00.000+02:00",
+      updated: "2026-10-01T09:00:00.000+02:00",
+      links: ["[[Beta]]", "[[Beta|alias]]"],
+      attributes: {},
+    },
+    "Sin enlaces en el cuerpo.",
+  );
+  writeFileSync(join(vaultDir, "enlaza-fm.md"), text, "utf8");
 };
 
 const EVENTO_A = "01JEVENTOA000000000000000000";
@@ -505,6 +524,63 @@ describe("GET /api/objetos/:id", () => {
     expect(await res.json()).toEqual({
       error: { codigo: "unauthorized", mensaje: "Se requiere autenticación" },
     });
+  });
+});
+
+describe("GET /api/objetos/:id/enlaces-entrantes", () => {
+  it("returns incoming links from the body and the frontmatter, deduplicated per source and context", async () => {
+    writeEnlaza();
+    writeEnlaceFrontmatter();
+    buildIndex(handle.db, { vaultDir });
+
+    const res = await app.request(`/api/objetos/${BETA}/enlaces-entrantes`, {
+      headers: headers(),
+    });
+
+    expect(res.status).toBe(200);
+    const body = enlacesEntrantesSchema.parse(await res.json());
+    expect(body.entrantes).toHaveLength(2);
+    expect(body.entrantes).toEqual(
+      expect.arrayContaining([
+        { id: ENLAZA, titulo: "Enlaza", ruta: "enlaza.md", contexto: "body" },
+        { id: ENLAZA_FM, titulo: "Enlaza FM", ruta: "enlaza-fm.md", contexto: "frontmatter" },
+      ]),
+    );
+  });
+
+  it("resolves the target by title and by path", async () => {
+    writeEnlaza();
+    buildIndex(handle.db, { vaultDir });
+
+    const byTitle = await getJson<{ entrantes: unknown[] }>("/api/objetos/Beta/enlaces-entrantes");
+    const byPath = await getJson<{ entrantes: unknown[] }>(
+      `/api/objetos/${encodeURIComponent("proyectos/beta.md")}/enlaces-entrantes`,
+    );
+
+    expect(byTitle.entrantes).toHaveLength(1);
+    expect(byPath.entrantes).toEqual(byTitle.entrantes);
+  });
+
+  it("returns an empty list when nobody links to the object", async () => {
+    const body = await getJson<{ entrantes: unknown[] }>(`/api/objetos/${DELTA}/enlaces-entrantes`);
+
+    expect(body.entrantes).toEqual([]);
+  });
+
+  it("answers 404 with object_not_found when the object does not exist", async () => {
+    const res = await app.request("/api/objetos/no-existe/enlaces-entrantes", {
+      headers: headers(),
+    });
+
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as ErrorBody).error.codigo).toBe("object_not_found");
+  });
+
+  it("requires a valid session", async () => {
+    const res = await app.request(`/api/objetos/${BETA}/enlaces-entrantes`);
+
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as ErrorBody).error.codigo).toBe("unauthorized");
   });
 });
 

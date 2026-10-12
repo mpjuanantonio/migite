@@ -63,6 +63,21 @@ export const renameObjectBodySchema = z.strictObject({
 
 export type RenameObjectBody = z.infer<typeof renameObjectBodySchema>;
 
+export const enlaceEntranteSchema = z.object({
+  id: z.string(),
+  titulo: z.string(),
+  ruta: z.string(),
+  contexto: z.enum(["body", "frontmatter"]),
+});
+
+export type EnlaceEntrante = z.infer<typeof enlaceEntranteSchema>;
+
+export const enlacesEntrantesSchema = z.object({
+  entrantes: z.array(enlaceEntranteSchema),
+});
+
+export type EnlacesEntrantes = z.infer<typeof enlacesEntrantesSchema>;
+
 export const renameReportSchema = z.object({
   objeto: objectPayloadSchema,
   informe: z.object({
