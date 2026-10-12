@@ -7,7 +7,9 @@ import {
   objetosPageSchema,
   type RenameReport,
   renameReportSchema,
+  type SearchResults,
   type SesionStatus,
+  searchResultsSchema,
   sesionStatusSchema,
   type TipoPayload,
   tipoPayloadSchema,
@@ -76,6 +78,52 @@ const objetosPath = (params?: ObjetosParams): string => {
   const suffix = query.toString();
   return suffix === "" ? "/api/objetos" : `/api/objetos?${suffix}`;
 };
+
+export type BuscarParams = {
+  readonly q?: string;
+  readonly tipo?: string;
+  readonly tag?: string;
+  readonly desde?: string;
+  readonly hasta?: string;
+  readonly limite?: number;
+};
+
+const buscarPath = (params: BuscarParams & { readonly cursor?: string }): string => {
+  const query = new URLSearchParams();
+  if (params.q !== undefined && params.q !== "") {
+    query.set("q", params.q);
+  }
+  if (params.tipo !== undefined && params.tipo !== "") {
+    query.set("tipo", params.tipo);
+  }
+  if (params.tag !== undefined && params.tag !== "") {
+    query.set("tag", params.tag);
+  }
+  if (params.desde !== undefined && params.desde !== "") {
+    query.set("desde", params.desde);
+  }
+  if (params.hasta !== undefined && params.hasta !== "") {
+    query.set("hasta", params.hasta);
+  }
+  if (params.limite !== undefined) {
+    query.set("limite", String(params.limite));
+  }
+  if (params.cursor !== undefined) {
+    query.set("cursor", params.cursor);
+  }
+  const suffix = query.toString();
+  return suffix === "" ? "/api/buscar" : `/api/buscar?${suffix}`;
+};
+
+export const useBuscarInfinitos = (params: BuscarParams, activa: boolean) =>
+  useInfiniteQuery({
+    queryKey: [...queryKeys.buscar, params] as const,
+    enabled: activa,
+    initialPageParam: undefined as string | undefined,
+    queryFn: async ({ pageParam }): Promise<SearchResults> =>
+      searchResultsSchema.parse(await apiFetch(buscarPath({ ...params, cursor: pageParam }))),
+    getNextPageParam: (ultimaPagina) => ultimaPagina.siguienteCursor ?? undefined,
+  });
 
 export const useSesion = () =>
   useQuery({
