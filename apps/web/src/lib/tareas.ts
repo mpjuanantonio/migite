@@ -11,7 +11,8 @@ const relleno = (numero: number): string => String(numero).padStart(2, "0");
 export const fechaLocal = (fecha: Date): string =>
   `${fecha.getFullYear()}-${relleno(fecha.getMonth() + 1)}-${relleno(fecha.getDate())}`;
 
-export const finDelDia = (fecha: Date): string => `${fechaLocal(fecha)}T23:59:59.999Z`;
+export const finDelDia = (fecha: Date): string =>
+  new Date(fecha.getFullYear(), fecha.getMonth(), fecha.getDate(), 23, 59, 59, 999).toISOString();
 
 export const esEstadoTarea = (valor: unknown): valor is EstadoTarea =>
   typeof valor === "string" && (ESTADOS_TAREA as readonly string[]).includes(valor);

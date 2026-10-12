@@ -1,10 +1,10 @@
 import type { ObjectPayload } from "@migite/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import { errorResponse, jsonResponse } from "@/test/render-app";
-import { useObjeto, useResolverObjeto } from "./hooks";
+import { useBorrarObjeto, useObjeto, useRenombrarObjeto, useResolverObjeto } from "./hooks";
 import { queryKeys } from "./keys";
 
 const objetoDePrueba: ObjectPayload = {
@@ -67,5 +67,40 @@ describe("useResolverObjeto", () => {
     });
     expect(llamadas).toBe(2);
     expect(cliente.getQueryData(queryKeys.resolver("01JALFA"))).toBeNull();
+  });
+});
+
+describe("invalidación de enlaces entrantes", () => {
+  it("invalida los enlaces entrantes al renombrar un objeto", async () => {
+    fetchMock.mockImplementation(async (input) => {
+      if (String(input) === "/api/objetos/01JALFA/renombrar") {
+        return jsonResponse({
+          objeto: { ...objetoDePrueba, titulo: "Cuaderno nuevo" },
+          informe: { reescritos: [], omitidos: [], enlacesSinResolver: [] },
+        });
+      }
+      return errorResponse("not_found", "Ruta desconocida", 404);
+    });
+    const invalidar = vi.spyOn(cliente, "invalidateQueries");
+
+    const renombrar = renderHook(() => useRenombrarObjeto("01JALFA"), { wrapper: envolver });
+    await act(async () => {
+      await renombrar.result.current.mutateAsync("Cuaderno nuevo");
+    });
+
+    expect(invalidar).toHaveBeenCalledWith({ queryKey: queryKeys.enlacesEntrantes("01JALFA") });
+  });
+
+  it("elimina los enlaces entrantes al borrar un objeto", async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+    const eliminar = vi.spyOn(cliente, "removeQueries");
+
+    const borrar = renderHook(() => useBorrarObjeto(), { wrapper: envolver });
+    await act(async () => {
+      await borrar.result.current.mutateAsync("01JALFA");
+    });
+
+    expect(eliminar).toHaveBeenCalledWith({ queryKey: queryKeys.enlacesEntrantes("01JALFA") });
+    expect(cliente.getQueryData(queryKeys.enlacesEntrantes("01JALFA"))).toBeUndefined();
   });
 });

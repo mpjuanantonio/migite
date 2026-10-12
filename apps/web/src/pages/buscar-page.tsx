@@ -37,7 +37,7 @@ function useRetraso<T>(valor: T, retraso: number): T {
   return retrasado;
 }
 
-const finDeDia = (fecha: string): string => `${fecha}T23:59:59.999Z`;
+const finDeDia = (fecha: string): string => new Date(`${fecha}T23:59:59.999`).toISOString();
 
 export const BuscarPage = () => {
   const { t, locale } = useI18n();

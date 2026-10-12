@@ -64,6 +64,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   vi.unstubAllGlobals();
 });
 
@@ -145,6 +146,7 @@ describe("búsqueda global", () => {
   });
 
   it("serializa los filtros de tipo, tag y fechas en la consulta", async () => {
+    vi.stubEnv("TZ", "America/Bogota");
     mockApi({
       tipos: [tipo("nota", "Nota"), tipo("tarea", "Tarea")],
       respuesta: () => jsonResponse({ resultados: [], siguienteCursor: null }),
@@ -168,7 +170,7 @@ describe("búsqueda global", () => {
     expect(ultima?.searchParams.get("q")).toBe("proyecto");
     expect(ultima?.searchParams.get("tipo")).toBe("tarea");
     expect(ultima?.searchParams.get("desde")).toBe("2026-10-01");
-    expect(ultima?.searchParams.get("hasta")).toBe("2026-10-05T23:59:59.999Z");
+    expect(ultima?.searchParams.get("hasta")).toBe("2026-10-06T04:59:59.999Z");
     expect(ultima?.searchParams.get("limite")).toBe("20");
   });
 

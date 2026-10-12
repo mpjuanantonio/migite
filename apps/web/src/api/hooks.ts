@@ -323,6 +323,7 @@ export const useRenombrarObjeto = (id: string) => {
       ),
     onSuccess: (reporte) => {
       queryClient.setQueryData(queryKeys.objeto(id), reporte.objeto);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.enlacesEntrantes(id) });
       invalidarListasDeObjetos(queryClient);
     },
   });
@@ -336,6 +337,7 @@ export const useBorrarObjeto = () => {
       apiFetch<void>(`${objetoPath(id)}?confirmar=1`, { method: "DELETE" }),
     onSuccess: (_resultado, id) => {
       queryClient.removeQueries({ queryKey: queryKeys.objeto(id) });
+      queryClient.removeQueries({ queryKey: queryKeys.enlacesEntrantes(id) });
       invalidarListasDeObjetos(queryClient);
     },
   });

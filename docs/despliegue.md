@@ -192,6 +192,13 @@ Los datos viven en los volúmenes Docker `migite_vault` (documentos) y
 del proyecto Compose; si despliegas desde otra carpeta con otro nombre, usa
 `docker volume ls` para ver los reales.
 
+> **Aviso:** `index.db` (volumen `migite_indice`) guarda material de
+> credenciales: el hash argon2 de la contraseña y el secreto que firma las
+> cookies de sesión. Trata las copias como tratarías una contraseña. Tras
+> restaurar una copia, o si sospechas una fuga, crea una contraseña nueva desde
+> el navegador (sección 7): al redefinir las credenciales se revocan
+> automáticamente las sesiones emitidas antes.
+
 Detén la aplicación antes de copiar para que SQLite cierre el WAL:
 
 ```bash
