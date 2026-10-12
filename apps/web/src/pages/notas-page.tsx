@@ -1,9 +1,10 @@
 import type { ObjectPayload } from "@migite/contracts";
-import { ChevronRight, FileWarning, Folder, NotebookPen, Plus } from "lucide-react";
+import { ChevronRight, FileWarning, Folder, NotebookPen, Plus, Shapes } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ApiError } from "@/api/api";
-import { useCrearObjeto, useObjetosInfinitos } from "@/api/hooks";
+import { useObjetosInfinitos } from "@/api/hooks";
+import { AltaObjetoDialog } from "@/components/objetos/alta-objeto";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n/context";
 import { formatFecha } from "@/lib/fecha";
@@ -15,7 +16,7 @@ export const NotasPage = () => {
   const navigate = useNavigate();
   const [carpeta, setCarpeta] = useState<string | undefined>(undefined);
   const [carpetas, setCarpetas] = useState<readonly string[]>([]);
-  const crear = useCrearObjeto();
+  const [alta, setAlta] = useState<{ readonly tipo?: string }>();
 
   const lista = useObjetosInfinitos({
     limite: LIMITE,
@@ -57,11 +58,8 @@ export const NotasPage = () => {
     [carpeta, objetos],
   );
 
-  const crearNota = () => {
-    crear.mutate(
-      { titulo: t("page.notas.newNoteTitle"), ...(carpeta === undefined ? {} : { carpeta }) },
-      { onSuccess: (objeto) => navigate(`/objetos/${encodeURIComponent(objeto.id)}`) },
-    );
+  const abrirAlta = (tipo?: string) => {
+    setAlta(tipo === undefined ? {} : { tipo });
   };
 
   return (
@@ -73,20 +71,26 @@ export const NotasPage = () => {
             {t("page.notas.description")}
           </p>
         </div>
-        <Button type="button" onClick={crearNota} disabled={crear.isPending}>
-          <Plus aria-hidden="true" />
-          {crear.isPending ? t("page.notas.creating") : t("page.notas.newNote")}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" onClick={() => abrirAlta()}>
+            <Plus aria-hidden="true" />
+            {t("page.notas.newObject")}
+          </Button>
+          <Button type="button" variant="outline" onClick={() => abrirAlta("nota")}>
+            <NotebookPen aria-hidden="true" />
+            {t("page.notas.newNote")}
+          </Button>
+        </div>
       </header>
 
-      {crear.isError ? (
-        <div
-          role="alert"
-          className="rounded-md border border-destructive/30 bg-destructive/5 px-3.5 py-2.5 text-sm text-destructive"
-        >
-          <span className="font-medium">{t("page.notas.createError")}. </span>
-          {crear.error instanceof ApiError ? crear.error.mensaje : t("error.genericError")}
-        </div>
+      {alta !== undefined ? (
+        <AltaObjetoDialog
+          {...(alta.tipo === undefined ? {} : { tipoInicial: alta.tipo })}
+          {...(carpeta === undefined ? {} : { carpetaInicial: carpeta })}
+          carpetasConocidas={carpetas}
+          onCerrar={() => setAlta(undefined)}
+          onCreado={(id) => navigate(`/objetos/${encodeURIComponent(id)}`)}
+        />
       ) : null}
 
       {!lista.isError ? (
@@ -149,7 +153,7 @@ export const NotasPage = () => {
 
       {lista.isSuccess && visibles.length === 0 ? (
         <section className="rounded-lg border border-border bg-card px-6 py-12 shadow-sheet">
-          <NotebookPen aria-hidden="true" className="size-6 text-primary" strokeWidth={1.5} />
+          <Shapes aria-hidden="true" className="size-6 text-primary" strokeWidth={1.5} />
           <p className="mt-3 max-w-prose text-sm text-muted-foreground">
             {carpeta === undefined ? t("page.notas.empty") : t("page.notas.emptyFolder")}
           </p>

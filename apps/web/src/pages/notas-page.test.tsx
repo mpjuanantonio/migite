@@ -1,4 +1,4 @@
-import type { CreateObjectBody, ObjectPayload } from "@migite/contracts";
+import type { CreateObjectBody, ObjectPayload, TipoPayload } from "@migite/contracts";
 import { QueryClient } from "@tanstack/react-query";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -28,10 +28,36 @@ const nota = (
   ...extras,
 });
 
+const tipoNota: TipoPayload = { id: "nota", nombre: "Nota", atributos: [] };
+
+const tipoLibro: TipoPayload = {
+  id: "libro",
+  nombre: "Libro",
+  atributos: [
+    { id: "autor", nombre: "Autor", tipo: "texto", obligatorio: true },
+    {
+      id: "genero",
+      nombre: "Género",
+      tipo: "seleccion",
+      obligatorio: false,
+      opciones: ["novela", "ensayo"],
+    },
+    {
+      id: "etiquetas",
+      nombre: "Etiquetas",
+      tipo: "multi-seleccion",
+      obligatorio: false,
+      opciones: ["clásico", "moderno"],
+    },
+    { id: "leido", nombre: "Leído", tipo: "booleano", obligatorio: false },
+  ],
+};
+
 type ApiOptions = {
   readonly lista?: (url: URL, intento: number) => Response;
   readonly detalle?: (id: string) => Response;
   readonly crear?: (body: CreateObjectBody, intento: number) => Response;
+  readonly tipos?: readonly TipoPayload[];
 };
 
 const mockApi = (options: ApiOptions = {}): void => {
@@ -45,13 +71,20 @@ const mockApi = (options: ApiOptions = {}): void => {
     );
     const method = init?.method ?? "GET";
 
+    if (url.pathname === "/api/tipos" && method === "GET") {
+      return jsonResponse({ tipos: options.tipos ?? [tipoNota] });
+    }
+
     if (url.pathname === "/api/objetos" && method === "POST") {
       intentosCrear += 1;
       const body = JSON.parse(String(init?.body ?? "{}")) as CreateObjectBody;
       return (
         options.crear?.(body, intentosCrear) ??
         jsonResponse(
-          nota("CREADA", body.titulo, "2026-10-07T09:00:00.000Z", body.carpeta ?? ""),
+          nota("CREADA", body.titulo, "2026-10-07T09:00:00.000Z", body.carpeta ?? "", {
+            tipo: body.tipo ?? "nota",
+            atributos: body.atributos ?? {},
+          }),
           201,
         )
       );
@@ -71,6 +104,18 @@ const mockApi = (options: ApiOptions = {}): void => {
 
     return sesionResponse(true);
   });
+};
+
+const posteos = () => fetchMock.mock.calls.filter(([, init]) => init?.method === "POST");
+
+const dialogo = () => within(screen.getByRole("dialog"));
+
+const rellenar = async (
+  user: ReturnType<typeof userEvent.setup>,
+  etiqueta: string | RegExp,
+  texto: string,
+): Promise<void> => {
+  await user.type(dialogo().getByLabelText(etiqueta), texto);
 };
 
 const renderNotas = () =>
@@ -232,12 +277,13 @@ describe("listado de notas", () => {
     renderNotas();
 
     expect(await screen.findByText(/Todavía no hay notas/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Nuevo objeto" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Nueva nota" })).toBeEnabled();
   });
 
-  it("crea una nota con título localizado y navega a la ficha", async () => {
+  it("crea una nota desde el diálogo con el tipo preseleccionado y navega a la ficha", async () => {
     mockApi({
-      detalle: (id) => jsonResponse(nota(id, "Nota sin título", "2026-10-07T09:00:00.000Z", "")),
+      detalle: (id) => jsonResponse(nota(id, "Mi nota", "2026-10-07T09:00:00.000Z", "")),
       crear: (body) =>
         jsonResponse(nota("NUEVA", body.titulo, "2026-10-07T09:00:00.000Z", ""), 201),
     });
@@ -247,15 +293,18 @@ describe("listado de notas", () => {
     await screen.findByText(/Todavía no hay notas/);
     await user.click(screen.getByRole("button", { name: "Nueva nota" }));
 
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(dialogo().getByRole("combobox", { name: "Tipo" })).toHaveValue("nota");
+    await rellenar(user, "Título", "Mi nota");
+    await user.click(dialogo().getByRole("button", { name: "Crear objeto" }));
+
     await waitFor(() => {
-      const post = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
+      const post = posteos()[0];
       expect(post?.[0]).toBe("/api/objetos");
-      expect(JSON.parse(String(post?.[1]?.body))).toEqual({ titulo: "Nota sin título" });
+      expect(JSON.parse(String(post?.[1]?.body))).toEqual({ tipo: "nota", titulo: "Mi nota" });
     });
     await waitFor(() => expect(router.state.location.pathname).toBe("/objetos/NUEVA"));
-    expect(
-      await screen.findByRole("heading", { level: 1, name: "Nota sin título" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Mi nota" })).toBeInTheDocument();
   });
 
   it("crea la nota dentro de la carpeta filtrada", async () => {
@@ -265,8 +314,6 @@ describe("listado de notas", () => {
           objetos: [nota("B", "Plan anual", "2026-10-03T09:00:00.000Z", "proyectos")],
           siguienteCursor: null,
         }),
-      detalle: (id) =>
-        jsonResponse(nota(id, "Nota sin título", "2026-10-07T09:00:00.000Z", "proyectos")),
       crear: (body) =>
         jsonResponse(
           nota("NUEVA", body.titulo, "2026-10-07T09:00:00.000Z", body.carpeta ?? ""),
@@ -287,10 +334,15 @@ describe("listado de notas", () => {
 
     await user.click(screen.getByRole("button", { name: "Nueva nota" }));
 
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(dialogo().getByLabelText("Carpeta (opcional)")).toHaveValue("proyectos");
+    await rellenar(user, "Título", "Nota de proyecto");
+    await user.click(dialogo().getByRole("button", { name: "Crear objeto" }));
+
     await waitFor(() => {
-      const post = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
-      expect(JSON.parse(String(post?.[1]?.body))).toEqual({
-        titulo: "Nota sin título",
+      expect(JSON.parse(String(posteos()[0]?.[1]?.body))).toEqual({
+        tipo: "nota",
+        titulo: "Nota de proyecto",
         carpeta: "proyectos",
       });
     });
@@ -344,5 +396,113 @@ describe("listado de notas", () => {
     await user.click(screen.getByRole("button", { name: "Reintentar" }));
 
     expect(await screen.findByRole("heading", { name: "Recuperada" })).toBeInTheDocument();
+  });
+
+  it("cambia los campos al elegir otro tipo", async () => {
+    mockApi({ tipos: [tipoNota, tipoLibro] });
+    const user = userEvent.setup();
+    renderNotas();
+
+    await screen.findByText(/Todavía no hay notas/);
+    await user.click(screen.getByRole("button", { name: "Nuevo objeto" }));
+
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(dialogo().getByLabelText("Tipo")).toHaveValue("");
+    expect(dialogo().queryByLabelText(/^Autor/)).toBeNull();
+
+    await user.selectOptions(dialogo().getByLabelText("Tipo"), "libro");
+
+    expect(dialogo().getByLabelText(/^Autor/)).toBeInTheDocument();
+    expect(dialogo().getByLabelText("Género")).toBeInTheDocument();
+    expect(dialogo().getByLabelText("Etiquetas")).toBeInTheDocument();
+    expect(dialogo().getByRole("switch")).toBeInTheDocument();
+
+    await user.selectOptions(dialogo().getByLabelText("Tipo"), "nota");
+
+    expect(dialogo().queryByLabelText(/^Autor/)).toBeNull();
+    expect(dialogo().queryByLabelText("Género")).toBeNull();
+  });
+
+  it("crea un objeto de un tipo personalizado con sus atributos", async () => {
+    mockApi({
+      tipos: [tipoNota, tipoLibro],
+      detalle: (id) =>
+        jsonResponse(nota(id, "El Quijote", "2026-10-07T09:00:00.000Z", "", { tipo: "libro" })),
+      crear: (body) =>
+        jsonResponse(
+          nota("LIBRO", body.titulo, "2026-10-07T09:00:00.000Z", "", {
+            tipo: body.tipo ?? "nota",
+            atributos: body.atributos ?? {},
+          }),
+          201,
+        ),
+    });
+    const user = userEvent.setup();
+    const { router } = renderNotas();
+
+    await screen.findByText(/Todavía no hay notas/);
+    await user.click(screen.getByRole("button", { name: "Nuevo objeto" }));
+    await screen.findByRole("dialog");
+
+    await user.selectOptions(dialogo().getByLabelText("Tipo"), "libro");
+    await rellenar(user, "Título", "El Quijote");
+    await rellenar(user, /^Autor/, "Cervantes");
+    await user.selectOptions(dialogo().getByLabelText("Género"), "novela");
+    await user.click(dialogo().getByRole("button", { name: "clásico" }));
+    await user.click(dialogo().getByRole("switch"));
+    await user.click(dialogo().getByRole("button", { name: "Crear objeto" }));
+
+    await waitFor(() => {
+      const post = posteos()[0];
+      expect(post?.[0]).toBe("/api/objetos");
+      expect(JSON.parse(String(post?.[1]?.body))).toEqual({
+        tipo: "libro",
+        titulo: "El Quijote",
+        atributos: { autor: "Cervantes", genero: "novela", etiquetas: ["clásico"], leido: true },
+      });
+    });
+    await waitFor(() => expect(router.state.location.pathname).toBe("/objetos/LIBRO"));
+  });
+
+  it("no envía el alta si falta un obligatorio y avisa en local", async () => {
+    mockApi({ tipos: [tipoNota, tipoLibro] });
+    const user = userEvent.setup();
+    renderNotas();
+
+    await screen.findByText(/Todavía no hay notas/);
+    await user.click(screen.getByRole("button", { name: "Nuevo objeto" }));
+    await screen.findByRole("dialog");
+
+    await user.selectOptions(dialogo().getByLabelText("Tipo"), "libro");
+    await rellenar(user, "Título", "Sin autor");
+    await user.click(dialogo().getByRole("button", { name: "Crear objeto" }));
+
+    expect(await dialogo().findByRole("alert")).toHaveTextContent(
+      "Completa los campos obligatorios",
+    );
+    expect(posteos()).toHaveLength(0);
+  });
+
+  it("muestra los errores del API al crear", async () => {
+    mockApi({
+      tipos: [tipoNota, tipoLibro],
+      crear: () =>
+        errorResponse("missing_required_attribute", "Falta el atributo obligatorio: autor", 422),
+    });
+    const user = userEvent.setup();
+    renderNotas();
+
+    await screen.findByText(/Todavía no hay notas/);
+    await user.click(screen.getByRole("button", { name: "Nuevo objeto" }));
+    await screen.findByRole("dialog");
+
+    await user.selectOptions(dialogo().getByLabelText("Tipo"), "libro");
+    await rellenar(user, "Título", "El Quijote");
+    await rellenar(user, /^Autor/, "Cervantes");
+    await user.click(dialogo().getByRole("button", { name: "Crear objeto" }));
+
+    expect(await dialogo().findByRole("alert")).toHaveTextContent(
+      "Falta el atributo obligatorio: autor",
+    );
   });
 });
