@@ -14,3 +14,7 @@ data/
 *.db-wal
 *.db-shm
 *.sqlite*
+.e2e/
+playwright-report/
+test-results/
+e2e/.auth/
