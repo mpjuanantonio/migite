@@ -371,6 +371,69 @@ describe("modo setup", () => {
     });
   });
 
+  it("resuelve dos setups concurrentes con exactamente un ganador", async () => {
+    enModoSetup();
+
+    const [primero, segundo] = await Promise.all([
+      setup({ usuario: "uno", contrasena: "contrasena-uno" }),
+      setup({ usuario: "dos", contrasena: "contrasena-dos" }),
+    ]);
+
+    expect([primero.status, segundo.status].sort((a, b) => a - b)).toEqual([204, 403]);
+
+    const ganador =
+      primero.status === 204
+        ? { usuario: "uno", contrasena: "contrasena-uno" }
+        : { usuario: "dos", contrasena: "contrasena-dos" };
+    const perdedor =
+      primero.status === 204
+        ? { usuario: "dos", contrasena: "contrasena-dos" }
+        : { usuario: "uno", contrasena: "contrasena-uno" };
+
+    expect(auth.store.credenciales()?.usuario).toBe(ganador.usuario);
+    expect((await login(ganador.contrasena, ganador.usuario)).status).toBe(204);
+    expect((await login(perdedor.contrasena, perdedor.usuario)).status).toBe(401);
+  });
+
+  it("libera la reserva del setup cuando la petición falla", async () => {
+    enModoSetup();
+
+    expect((await setup({ usuario: NUEVO_USUARIO, contrasena: "corta" })).status).toBe(400);
+    expect((await setup(validos)).status).toBe(204);
+  });
+
+  it("invalida las cookies emitidas antes de redefinir las credenciales", async () => {
+    enModoSetup();
+    const cookie = cookieFrom(await setup(validos));
+    const antes = await app.request("/api/sesion", { headers: withCookie(cookie) });
+    expect(await antes.json()).toEqual({ autenticado: true, setupRequerido: false });
+
+    const nuevoHash = await hash("contrasena-nueva", { memoryCost: 4096, timeCost: 1 });
+    auth.store.definirCredenciales({ usuario: NUEVO_USUARIO, passwordHash: nuevoHash });
+
+    expect((await app.request("/api/objetos", { headers: withCookie(cookie) })).status).toBe(401);
+    const estado = await app.request("/api/sesion", { headers: withCookie(cookie) });
+    expect(await estado.json()).toEqual({ autenticado: false, setupRequerido: false });
+    expect((await login("contrasena-nueva", NUEVO_USUARIO)).status).toBe(204);
+  });
+
+  it("acepta los límites exactos de usuario y contraseña en el setup", async () => {
+    enModoSetup();
+
+    const res = await setup({ usuario: "u".repeat(64), contrasena: "c".repeat(256) });
+    expect(res.status).toBe(204);
+  });
+
+  it("rechaza usuario o contraseña por encima de la cota en el setup", async () => {
+    enModoSetup();
+
+    expect((await setup({ usuario: "u".repeat(65), contrasena: NUEVA_CONTRASENA })).status).toBe(
+      400,
+    );
+    expect((await setup({ usuario: NUEVO_USUARIO, contrasena: "c".repeat(257) })).status).toBe(400);
+    expect((await setup(validos)).status).toBe(204);
+  });
+
   it("permite iniciar sesión con la contraseña definida y falla genérico con otra", async () => {
     enModoSetup();
     await setup(validos);

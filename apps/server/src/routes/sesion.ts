@@ -18,6 +18,8 @@ import { clearSessionCookie, hasValidSession, setSessionCookie } from "../middle
 const MAX_FALLOS_LOGIN = 5;
 const VENTANA_LOGIN_MS = 60_000;
 const MIN_CONTRASENA_LENGTH = 8;
+const MAX_CONTRASENA_LENGTH = 256;
+const MAX_USUARIO_LENGTH = 64;
 
 type FallosIp = {
   intentos: number;
@@ -88,7 +90,14 @@ const readCredentials = async (c: Context<ServerEnv>): Promise<Credentials | und
 
 const readSetupRequest = async (c: Context<ServerEnv>): Promise<Credentials | undefined> => {
   const credentials = await readCredentials(c);
-  if (credentials === undefined || credentials.contrasena.length < MIN_CONTRASENA_LENGTH) {
+  if (credentials === undefined) {
+    return undefined;
+  }
+  if (
+    credentials.contrasena.length < MIN_CONTRASENA_LENGTH ||
+    credentials.contrasena.length > MAX_CONTRASENA_LENGTH ||
+    credentials.usuario.length > MAX_USUARIO_LENGTH
+  ) {
     return undefined;
   }
   return credentials;
@@ -105,6 +114,7 @@ export const createSesionRouter = (
   const router = new Hono<ServerEnv>();
   const limiter = createLoginRateLimiter();
   const fallbackLocale = options.locale ?? defaultLocale;
+  let setupEnCurso = false;
 
   const localeOf = (c: Context<ServerEnv>): Locale =>
     resolveLocale(c.req.header("accept-language"), fallbackLocale);
@@ -127,19 +137,27 @@ export const createSesionRouter = (
     if (limiter.bloqueado(ip)) {
       return rateLimited(c);
     }
-    if (credencialesActuales() !== undefined) {
+    if (setupEnCurso || credencialesActuales() !== undefined) {
       throw new HTTPException(403);
     }
-    const setup = await readSetupRequest(c);
-    if (setup === undefined) {
-      limiter.registrarFallo(ip);
-      throw new HTTPException(400);
+    setupEnCurso = true;
+    try {
+      const setup = await readSetupRequest(c);
+      if (setup === undefined) {
+        limiter.registrarFallo(ip);
+        throw new HTTPException(400);
+      }
+      const passwordHash = await hash(setup.contrasena);
+      if (credencialesActuales() !== undefined) {
+        throw new HTTPException(403);
+      }
+      auth.store.definirCredenciales({ usuario: setup.usuario, passwordHash });
+      limiter.reiniciar(ip);
+      setSessionCookie(c, auth);
+      return c.body(null, 204);
+    } finally {
+      setupEnCurso = false;
     }
-    const passwordHash = await hash(setup.contrasena);
-    auth.store.definirCredenciales({ usuario: setup.usuario, passwordHash });
-    limiter.reiniciar(ip);
-    setSessionCookie(c, auth);
-    return c.body(null, 204);
   });
 
   router.post("/", async (c) => {

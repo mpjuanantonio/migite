@@ -86,6 +86,7 @@ export const createIndexSessionStore = (
     credenciales: () => options.credentials ?? readStoredCredentials(db),
     definirCredenciales: (credentials) => {
       writeCredentials(db, credentials);
+      writeGeneration(db, readGeneration(db) + 1);
     },
   };
 };

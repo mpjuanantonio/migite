@@ -136,6 +136,20 @@ describe("loadAuthConfig", () => {
     expect(error.message).not.toContain("mi-contrasena");
   });
 
+  it("rejects an argon2 hash with a malformed format", () => {
+    for (const passwordHash of [
+      "$argon2id$invalido",
+      "$argon2id$v=19$m=19456,t=2,p=1",
+      "$argon2xx$v=19$m=19456,t=2,p=1$c2FsdA$abcdef",
+    ]) {
+      const error = captureConfigError({ ...validEnv, MIGITE_PASSWORD_HASH: passwordHash });
+
+      expect(error.message).toContain("MIGITE_PASSWORD_HASH");
+      expect(error.message).toContain("argon2");
+      expect(error.message).not.toContain(passwordHash);
+    }
+  });
+
   it("rejects a short session secret without echoing its value", () => {
     const error = captureConfigError({ ...validEnv, MIGITE_SESSION_SECRET: "corto" });
 

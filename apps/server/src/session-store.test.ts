@@ -49,6 +49,18 @@ describe("createIndexSessionStore", () => {
     expect(store.generacion()).toBe(inicial + 2);
   });
 
+  it("incrementa la generación al definir credenciales para revocar sesiones", () => {
+    const store = createIndexSessionStore(handle.db);
+    const inicial = store.generacion();
+
+    store.definirCredenciales({ usuario: "ana", passwordHash: "$argon2id$v=19$test" });
+
+    expect(store.generacion()).toBe(inicial + 1);
+    handle.close();
+    handle = openIndex({ dbPath: join(root, "index.db") });
+    expect(createIndexSessionStore(handle.db).generacion()).toBe(inicial + 1);
+  });
+
   it("persists the generation in the index meta table", () => {
     const inicial = createIndexSessionStore(handle.db).generacion();
     createIndexSessionStore(handle.db).invalidar();

@@ -9,7 +9,7 @@ export const DEFAULT_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const TOKEN_VERSION = "v1";
 const MIN_SECRET_LENGTH = 32;
 const MIN_SECRET_DISTINCT_CHARS = 16;
-const ARGON2_PREFIX = "$argon2";
+const ARGON2_HASH_PATTERN = /^\$argon2(?:id|i|d)\$v=\d+\$m=\d+,t=\d+,p=\d+\$[^$]+\$[^$]+$/;
 
 export type AuthCredentials = {
   readonly usuario: string;
@@ -194,7 +194,7 @@ export const loadAuthConfig = (
     }
     if (passwordHash.length === 0) {
       issues.push("MIGITE_PASSWORD_HASH no está definido");
-    } else if (!passwordHash.startsWith(ARGON2_PREFIX)) {
+    } else if (!ARGON2_HASH_PATTERN.test(passwordHash)) {
       issues.push("MIGITE_PASSWORD_HASH no es un hash argon2 válido");
     }
     if (issues.length === 0) {
