@@ -138,6 +138,16 @@ export const createObjeto = (deps: ObjetosDeps, input: CreateObjectBody): Object
     }),
   );
 
+const mergePatchAttributes = (
+  attributes: Readonly<Record<string, unknown>>,
+): Record<string, unknown> => {
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(attributes)) {
+    result[key] = value === null ? undefined : value;
+  }
+  return result;
+};
+
 export const patchObjeto = (
   deps: ObjetosDeps,
   ref: string,
@@ -168,7 +178,8 @@ export const patchObjeto = (
     repository.updateObject(effectiveRef, {
       title: changes.titulo,
       body: changes.cuerpo,
-      attributes: changes.atributos,
+      attributes:
+        changes.atributos === undefined ? undefined : mergePatchAttributes(changes.atributos),
     }),
   );
 };

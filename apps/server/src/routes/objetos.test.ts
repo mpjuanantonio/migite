@@ -574,6 +574,50 @@ describe("PATCH /api/objetos/:id", () => {
     expect(body.atributos).toEqual({ etiquetas: ["trabajo", "api"] });
   });
 
+  it("removes an attribute when its value is null (JSON merge patch)", async () => {
+    const res = await sendJson("PATCH", `/api/objetos/${ALFA}`, {
+      atributos: { etiquetas: null },
+    });
+
+    expect(res.status).toBe(200);
+    const body = objectPayloadSchema.parse(await res.json());
+    expect(body.atributos).toEqual({});
+
+    const read = await getJson<ObjectPayload>(`/api/objetos/${ALFA}`);
+    expect(read.atributos).toEqual({});
+
+    const text = readFileSync(join(vaultDir, "alfa.md"), "utf8");
+    expect(text).not.toContain("etiquetas");
+    expect(text).not.toContain("null");
+  });
+
+  it("removes only null attributes and keeps merging the rest", async () => {
+    const res = await sendJson("PATCH", `/api/objetos/${BETA}`, {
+      atributos: { etiquetas: null, prioridad: 3 },
+    });
+
+    expect(res.status).toBe(200);
+    const body = objectPayloadSchema.parse(await res.json());
+    expect(body.atributos).toEqual({ estado: "pendiente", prioridad: 3 });
+
+    const read = await getJson<ObjectPayload>(`/api/objetos/${BETA}`);
+    expect(read.atributos).toEqual({ estado: "pendiente", prioridad: 3 });
+  });
+
+  it("rejects clearing a required attribute with missing_required_attribute", async () => {
+    const res = await sendJson("PATCH", `/api/objetos/${BETA}`, {
+      atributos: { estado: null },
+    });
+
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as ErrorBody;
+    expect(body.error.codigo).toBe("missing_required_attribute");
+    expect(body.error.mensaje).toContain("estado");
+
+    const read = await getJson<ObjectPayload>(`/api/objetos/${BETA}`);
+    expect(read.atributos).toEqual({ etiquetas: ["trabajo", "urgente"], estado: "pendiente" });
+  });
+
   it("rejects changing the title and points to the rename endpoint", async () => {
     const res = await sendJson("PATCH", `/api/objetos/${ALFA}`, { titulo: "Otro" });
 
