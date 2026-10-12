@@ -15,6 +15,7 @@ import { CalendarioPage } from "@/pages/calendario-page";
 import { LoginPage, readLoginDestino } from "@/pages/login-page";
 import { NotasPage } from "@/pages/notas-page";
 import { ObjetoPage } from "@/pages/objeto-page";
+import { ProyectoPage } from "@/pages/proyecto-page";
 import { ProyectosPage } from "@/pages/proyectos-page";
 import { RecordatoriosPage } from "@/pages/recordatorios-page";
 import { SetupPage } from "@/pages/setup-page";
@@ -91,6 +92,7 @@ export const routes: RouteObject[] = [
           { path: "recordatorios", element: <RecordatoriosPage /> },
           { path: "calendario", element: <CalendarioPage /> },
           { path: "proyectos", element: <ProyectosPage /> },
+          { path: "proyectos/:id", element: <ProyectoPage /> },
           { path: "tipos", element: <TiposPage /> },
           { path: "buscar", element: <BuscarPage /> },
           { path: "*", element: <Navigate to="/notas" replace /> },

@@ -30,6 +30,7 @@ export type RangoAtributo = {
 export type ObjetosParams = {
   readonly tipo?: string;
   readonly carpeta?: string;
+  readonly enlazadoA?: string;
   readonly limite?: number;
   readonly cursor?: string;
   readonly atributos?: Readonly<Record<string, string | readonly string[]>>;
@@ -43,6 +44,9 @@ const objetosPath = (params?: ObjetosParams): string => {
   }
   if (params?.carpeta !== undefined && params.carpeta !== "") {
     query.set("carpeta", params.carpeta);
+  }
+  if (params?.enlazadoA !== undefined && params.enlazadoA !== "") {
+    query.set("enlazadoA", params.enlazadoA);
   }
   if (params?.atributos !== undefined) {
     for (const [clave, valor] of Object.entries(params.atributos)) {
