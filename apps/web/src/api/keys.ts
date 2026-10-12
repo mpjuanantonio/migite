@@ -3,5 +3,6 @@ export const queryKeys = {
   sesion: ["sesion"] as const,
   objetos: ["objetos"] as const,
   objeto: (id: string) => ["objetos", id] as const,
+  enlacesEntrantes: (id: string) => ["objetos", id, "enlaces-entrantes"] as const,
   tipos: ["tipos"] as const,
 };

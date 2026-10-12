@@ -1,4 +1,4 @@
-import type { ComponentProps } from "react";
+import { type ComponentProps, useMemo } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { remarkWikilinks } from "@/lib/wikilinks";
@@ -14,26 +14,36 @@ const decodificar = (valor: string): string => {
   }
 };
 
-const EnlaceMarkdown = ({ href, children }: ComponentProps<"a">) => {
-  if (href?.startsWith(PREFIJO_OBJETOS)) {
-    return <Wikilink titulo={decodificar(href.slice(PREFIJO_OBJETOS.length))}>{children}</Wikilink>;
-  }
-  return <a href={href}>{children}</a>;
-};
-
-const COMPONENTES: Components = { a: EnlaceMarkdown };
-
 type MarkdownPreviewProps = {
   readonly markdown: string;
   readonly emptyLabel: string;
   readonly enlacesWikilink?: boolean;
+  readonly antesDeCrearEnlace?: () => Promise<void>;
 };
 
 export const MarkdownPreview = ({
   markdown,
   emptyLabel,
   enlacesWikilink = false,
+  antesDeCrearEnlace,
 }: MarkdownPreviewProps) => {
+  const componentes = useMemo<Components>(
+    () => ({
+      a: ({ href, children }: ComponentProps<"a">) =>
+        href?.startsWith(PREFIJO_OBJETOS) ? (
+          <Wikilink
+            titulo={decodificar(href.slice(PREFIJO_OBJETOS.length))}
+            antesDeCrear={antesDeCrearEnlace}
+          >
+            {children}
+          </Wikilink>
+        ) : (
+          <a href={href}>{children}</a>
+        ),
+    }),
+    [antesDeCrearEnlace],
+  );
+
   if (markdown.trim() === "") {
     return <p className="max-w-prose text-sm text-muted-foreground">{emptyLabel}</p>;
   }
@@ -42,7 +52,7 @@ export const MarkdownPreview = ({
     <div className="prose-archivo">
       <ReactMarkdown
         remarkPlugins={enlacesWikilink ? [remarkGfm, remarkWikilinks] : [remarkGfm]}
-        components={enlacesWikilink ? COMPONENTES : undefined}
+        components={enlacesWikilink ? componentes : undefined}
       >
         {markdown}
       </ReactMarkdown>

@@ -13,6 +13,7 @@ import {
 import { BandejaAtributos } from "@/components/atributos/bandeja-atributos";
 import { MarkdownEditor } from "@/components/editor/markdown-editor";
 import { MarkdownPreview } from "@/components/editor/markdown-preview";
+import { PanelEnlacesEntrantes } from "@/components/objetos/panel-enlaces-entrantes";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -168,6 +169,14 @@ export const ObjetoPage = () => {
       return;
     }
     guardar.mutate(cuerpo, { onSuccess: () => setGuardadoEn(id) });
+  }, [puedeGuardar, cuerpo, guardar, id]);
+
+  const guardarAntesDeCrear = useCallback(async (): Promise<void> => {
+    if (!puedeGuardar) {
+      return;
+    }
+    await guardar.mutateAsync(cuerpo);
+    setGuardadoEn(id);
   }, [puedeGuardar, cuerpo, guardar, id]);
 
   useEffect(() => {
@@ -372,11 +381,14 @@ export const ObjetoPage = () => {
                 markdown={cuerpo}
                 emptyLabel={t("page.objeto.previewEmpty")}
                 enlacesWikilink
+                antesDeCrearEnlace={guardarAntesDeCrear}
               />
             </div>
           </section>
         </div>
       </section>
+
+      <PanelEnlacesEntrantes id={objeto.id} />
 
       <Dialog open={renombrarAbierto} onOpenChange={setRenombrarAbierto}>
         <DialogContent>

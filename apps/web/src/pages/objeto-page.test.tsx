@@ -1,4 +1,4 @@
-import type { ObjectPayload, TipoPayload } from "@migite/contracts";
+import type { EnlaceEntrante, ObjectPayload, TipoPayload } from "@migite/contracts";
 import { QueryClient } from "@tanstack/react-query";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -55,6 +55,8 @@ type ObjetoApiOptions = {
   readonly deleteResponse?: Response;
   readonly crear?: CrearHandler;
   readonly resolver?: ResolverHandler;
+  readonly entrantes?: readonly EnlaceEntrante[];
+  readonly entrantesError?: Response;
 };
 
 const TIPOS: readonly TipoPayload[] = [
@@ -140,6 +142,12 @@ const mockObjetoApi = (options: ObjetoApiOptions = {}): void => {
     }
     if (!url.startsWith("/api/objetos/")) {
       return sesionResponse(true);
+    }
+    if (url.endsWith("/enlaces-entrantes")) {
+      if (options.entrantesError !== undefined) {
+        return options.entrantesError;
+      }
+      return jsonResponse({ entrantes: options.entrantes ?? [] });
     }
     if (method === "PATCH") {
       intentos += 1;
@@ -804,5 +812,104 @@ describe("wikilinks", () => {
     const alerta = await screen.findByRole("alert");
     expect(alerta).toHaveTextContent("No se pudo escribir el archivo");
     expect(router.state.location.pathname).toBe("/objetos/01JALFA");
+  });
+
+  it("guarda el borrador antes de crear la nota desde un enlace sin resolver", async () => {
+    mockObjetoApi({ objeto: objetoDePrueba({ cuerpo: "Falta [[Nota nueva]]." }) });
+    const user = userEvent.setup();
+    const { router } = renderObjeto();
+
+    const editor = await screen.findByLabelText("Cuerpo de la ficha en markdown");
+    fireEvent.change(editor, {
+      target: { value: "Falta [[Nota nueva]]. Y una idea más." },
+    });
+
+    await user.click(await screen.findByRole("button", { name: "Crear nota" }));
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/objetos/01JCREADO1");
+    });
+    const llamadas = fetchMock.mock.calls;
+    const indicePatch = llamadas.findIndex(([, init]) => init?.method === "PATCH");
+    const indicePost = llamadas.findIndex(
+      ([input, init]) => String(input) === "/api/objetos" && init?.method === "POST",
+    );
+    expect(indicePatch).toBeGreaterThanOrEqual(0);
+    expect(indicePost).toBeGreaterThan(indicePatch);
+    expect(JSON.parse(String(llamadas[indicePatch]?.[1]?.body))).toEqual({
+      cuerpo: "Falta [[Nota nueva]]. Y una idea más.",
+    });
+    expect(JSON.parse(String(llamadas[indicePost]?.[1]?.body))).toEqual({ titulo: "Nota nueva" });
+  });
+
+  it("no crea la nota si falla el guardado previo del borrador", async () => {
+    mockObjetoApi({
+      objeto: objetoDePrueba({ cuerpo: "Falta [[Nota nueva]]." }),
+      patch: () => errorResponse("write_error", "No se pudo escribir el archivo", 500),
+    });
+    const user = userEvent.setup();
+    const { router } = renderObjeto();
+
+    const editor = await screen.findByLabelText("Cuerpo de la ficha en markdown");
+    fireEvent.change(editor, {
+      target: { value: "Falta [[Nota nueva]]. Y una idea más." },
+    });
+
+    await user.click(await screen.findByRole("button", { name: "Crear nota" }));
+
+    const alerta = await screen.findByRole("alert");
+    expect(alerta).toHaveTextContent("No se pudo escribir el archivo");
+    expect(router.state.location.pathname).toBe("/objetos/01JALFA");
+    expect(
+      fetchMock.mock.calls.some(
+        ([input, init]) => String(input) === "/api/objetos" && init?.method === "POST",
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("enlaces entrantes", () => {
+  const tareasDelMes = (): ObjectPayload =>
+    objetoDePrueba({ id: "01JOTRA", titulo: "Tareas del mes", cuerpo: "" });
+
+  const diarioDeViaje = (): ObjectPayload =>
+    objetoDePrueba({ id: "01JDIARIO", titulo: "Diario de viaje", cuerpo: "" });
+
+  it("muestra quién enlaza aquí y navega al objeto al pulsar", async () => {
+    mockObjetoApi({
+      objetos: [tareasDelMes(), diarioDeViaje()],
+      entrantes: [
+        { id: "01JOTRA", titulo: "Tareas del mes", ruta: "notas/tareas.md", contexto: "body" },
+        {
+          id: "01JDIARIO",
+          titulo: "Diario de viaje",
+          ruta: "notas/diario.md",
+          contexto: "frontmatter",
+        },
+      ],
+    });
+    const user = userEvent.setup();
+    const { router } = renderObjeto();
+
+    const panel = await screen.findByRole("region", { name: "Enlazan aquí" });
+    expect(await within(panel).findByText("cuerpo")).toBeInTheDocument();
+    expect(within(panel).getByText("frontmatter")).toBeInTheDocument();
+
+    await user.click(await within(panel).findByRole("link", { name: "Tareas del mes" }));
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/objetos/01JOTRA");
+    });
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Tareas del mes" }),
+    ).toBeInTheDocument();
+  });
+
+  it("muestra el estado vacío cuando nadie enlaza aquí", async () => {
+    mockObjetoApi();
+    renderObjeto();
+
+    const panel = await screen.findByRole("region", { name: "Enlazan aquí" });
+    expect(await within(panel).findByText("Aún nada enlaza aquí…")).toBeInTheDocument();
   });
 });

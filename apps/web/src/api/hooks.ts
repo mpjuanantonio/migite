@@ -1,6 +1,8 @@
 import {
   type AttributePayload,
   type CreateObjectBody,
+  type EnlacesEntrantes,
+  enlacesEntrantesSchema,
   type ObjectPayload,
   type ObjetosPage,
   objectPayloadSchema,
@@ -220,6 +222,14 @@ export const useObjeto = (id: string | undefined) =>
     enabled: id !== undefined,
     queryFn: async (): Promise<ObjectPayload> =>
       objectPayloadSchema.parse(await apiFetch(objetoPath(id ?? ""))),
+  });
+
+export const useEnlacesEntrantes = (id: string | undefined) =>
+  useQuery({
+    queryKey: queryKeys.enlacesEntrantes(id ?? ""),
+    enabled: id !== undefined,
+    queryFn: async (): Promise<EnlacesEntrantes> =>
+      enlacesEntrantesSchema.parse(await apiFetch(`${objetoPath(id ?? "")}/enlaces-entrantes`)),
   });
 
 export const useResolverObjeto = (titulo: string) =>
