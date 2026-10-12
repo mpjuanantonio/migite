@@ -129,6 +129,15 @@ const filaDe = (titulo: string): HTMLElement => {
   return item;
 };
 
+const ultimaLista = (): URL | undefined => {
+  const llamadas = fetchMock.mock.calls.filter(([input, init]) => {
+    const url = new URL(String(input), "http://localhost");
+    return url.pathname === "/api/objetos" && (init?.method ?? "GET") === "GET";
+  });
+  const ultima = llamadas.at(-1);
+  return ultima === undefined ? undefined : new URL(String(ultima[0]), "http://localhost");
+};
+
 beforeEach(() => {
   localStorage.clear();
   fetchMock = vi.fn<typeof fetch>();
@@ -230,6 +239,130 @@ describe("listado de notas", () => {
     await user.click(screen.getByRole("button", { name: "Todas" }));
 
     expect(await within(main).findByRole("heading", { name: "Plan anual" })).toBeInTheDocument();
+  });
+
+  it("muestra las etiquetas de cada fila y resume con +N las que sobran", async () => {
+    mockApi({
+      lista: () =>
+        jsonResponse({
+          objetos: [
+            nota("A", "Diario de campo", "2026-10-05T18:30:00.000Z", "diario", {
+              atributos: { etiquetas: ["casa", "trabajo", "urgente", "personal"] },
+            }),
+            nota("B", "Plan anual", "2026-10-03T09:00:00.000Z", "proyectos"),
+          ],
+          siguienteCursor: null,
+        }),
+    });
+    renderNotas();
+
+    const main = await screen.findByRole("main");
+    await within(main).findByRole("heading", { name: "Diario de campo" });
+
+    const primera = filaDe("Diario de campo");
+    expect(within(primera).getByRole("button", { name: "casa" })).toBeInTheDocument();
+    expect(within(primera).getByRole("button", { name: "trabajo" })).toBeInTheDocument();
+    expect(within(primera).getByRole("button", { name: "urgente" })).toBeInTheDocument();
+    expect(within(primera).queryByRole("button", { name: "personal" })).toBeNull();
+    expect(within(primera).getByText("+1")).toBeInTheDocument();
+
+    expect(within(filaDe("Plan anual")).queryAllByRole("button")).toHaveLength(0);
+  });
+
+  it("filtra por etiqueta al pulsar un chip de la fila y quita el filtro con la ✕", async () => {
+    mockApi({
+      lista: (url) =>
+        url.searchParams.get("tag") === "casa"
+          ? jsonResponse({
+              objetos: [
+                nota("A", "Diario de campo", "2026-10-05T18:30:00.000Z", "diario", {
+                  atributos: { etiquetas: ["casa"] },
+                }),
+              ],
+              siguienteCursor: null,
+            })
+          : jsonResponse({
+              objetos: [
+                nota("A", "Diario de campo", "2026-10-05T18:30:00.000Z", "diario", {
+                  atributos: { etiquetas: ["casa"] },
+                }),
+                nota("B", "Plan anual", "2026-10-03T09:00:00.000Z", "proyectos"),
+              ],
+              siguienteCursor: null,
+            }),
+    });
+    const user = userEvent.setup();
+    const { router } = renderNotas();
+
+    const main = await screen.findByRole("main");
+    await within(main).findByRole("heading", { name: "Plan anual" });
+
+    await user.click(within(filaDe("Diario de campo")).getByRole("button", { name: "casa" }));
+
+    expect(router.state.location.pathname).toBe("/notas");
+    await waitFor(() => expect(ultimaLista()?.searchParams.get("tag")).toBe("casa"));
+    await waitFor(() =>
+      expect(within(main).queryByRole("heading", { name: "Plan anual" })).toBeNull(),
+    );
+    expect(within(main).getByRole("heading", { name: "Diario de campo" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Quitar el filtro «casa»" }));
+
+    expect(await within(main).findByRole("heading", { name: "Plan anual" })).toBeInTheDocument();
+    await waitFor(() => expect(ultimaLista()?.searchParams.get("tag")).toBeNull());
+  });
+
+  it("filtra por la etiqueta escrita y la combina con la carpeta", async () => {
+    mockApi({
+      lista: (url) => {
+        const tag = url.searchParams.get("tag");
+        const carpeta = url.searchParams.get("carpeta");
+        if (tag === "urgente" && carpeta === "proyectos") {
+          return jsonResponse({ objetos: [], siguienteCursor: null });
+        }
+        if (tag === "urgente") {
+          return jsonResponse({
+            objetos: [
+              nota("A", "Diario de campo", "2026-10-05T18:30:00.000Z", "diario", {
+                atributos: { etiquetas: ["urgente", "casa"] },
+              }),
+            ],
+            siguienteCursor: null,
+          });
+        }
+        return jsonResponse({
+          objetos: [
+            nota("A", "Diario de campo", "2026-10-05T18:30:00.000Z", "diario", {
+              atributos: { etiquetas: ["urgente", "casa"] },
+            }),
+            nota("B", "Plan anual", "2026-10-03T09:00:00.000Z", "proyectos"),
+          ],
+          siguienteCursor: null,
+        });
+      },
+    });
+    const user = userEvent.setup();
+    renderNotas();
+
+    const main = await screen.findByRole("main");
+    await within(main).findByRole("heading", { name: "Plan anual" });
+
+    await user.type(screen.getByLabelText("Etiqueta"), "urgente");
+    await user.click(screen.getByRole("button", { name: "Filtrar" }));
+
+    await waitFor(() => expect(ultimaLista()?.searchParams.get("tag")).toBe("urgente"));
+    await waitFor(() =>
+      expect(within(main).queryByRole("heading", { name: "Plan anual" })).toBeNull(),
+    );
+
+    await user.click(screen.getByRole("button", { name: "proyectos" }));
+
+    await waitFor(() => {
+      const url = ultimaLista();
+      expect(url?.searchParams.get("tag")).toBe("urgente");
+      expect(url?.searchParams.get("carpeta")).toBe("proyectos");
+    });
+    expect(await within(main).findByText("No hay notas con esta etiqueta.")).toBeInTheDocument();
   });
 
   it("pagina con Cargar más sin duplicar filas", async () => {
