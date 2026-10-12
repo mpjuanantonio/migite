@@ -3,6 +3,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
+import { queryKeys } from "@/api/keys";
 import {
   errorResponse,
   jsonResponse,
@@ -248,6 +249,25 @@ describe("ficha de objeto", () => {
       await screen.findByRole("heading", { level: 1, name: "Ficha no encontrada" }),
     ).toBeInTheDocument();
     expect(screen.getByText("No existe la ficha solicitada")).toBeInTheDocument();
+  });
+
+  it("trata un objeto cacheado como null como ficha no encontrada", async () => {
+    mockObjetoApi();
+    const cliente = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
+    });
+    cliente.setQueryData(queryKeys.objeto("01JALFA"), null);
+
+    renderApp("/objetos/01JALFA", cliente);
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Ficha no encontrada" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("El recurso solicitado no existe")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Cuerpo de la ficha en markdown")).toBeNull();
+    expect(fetchMock.mock.calls.some(([input]) => String(input) === "/api/objetos/01JALFA")).toBe(
+      false,
+    );
   });
 
   it("avisa cuando el objeto está en modo degradado", async () => {

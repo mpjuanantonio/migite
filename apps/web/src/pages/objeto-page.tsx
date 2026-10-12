@@ -1,4 +1,4 @@
-import type { RenameReport } from "@migite/contracts";
+import type { ObjectPayload, RenameReport } from "@migite/contracts";
 import { CircleCheck, FileWarning, Pencil, Save, Trash2, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -152,12 +152,13 @@ export const ObjetoPage = () => {
   const [informe, setInforme] = useState<InformeRenombrado>();
   const [borrarAbierto, setBorrarAbierto] = useState(false);
 
-  const objeto = objetoQuery.data;
+  const objeto: ObjectPayload | null | undefined = objetoQuery.data;
   const titulosSugeridos = (objetosSugeridos.data?.objetos ?? []).map((item) => item.titulo);
   const cuerpo =
     borrador !== undefined && borrador.id === id ? borrador.valor : (objeto?.cuerpo ?? "");
   const guardando = guardar.isPending;
   const conCambios =
+    objeto !== null &&
     objeto !== undefined &&
     borrador !== undefined &&
     borrador.id === objeto.id &&
@@ -205,10 +206,15 @@ export const ObjetoPage = () => {
     );
   }
 
-  if (objetoQuery.error !== null || objeto === undefined) {
+  if (objetoQuery.error !== null || objeto === null || objeto === undefined) {
     const error = objetoQuery.error;
-    const noEncontrado = error instanceof ApiError && error.status === 404;
-    const mensaje = error instanceof ApiError ? error.mensaje : t("error.genericError");
+    const noEncontrado = objeto === null || (error instanceof ApiError && error.status === 404);
+    const mensaje =
+      error instanceof ApiError
+        ? error.mensaje
+        : noEncontrado
+          ? t("error.notFound")
+          : t("error.genericError");
 
     return (
       <section className="rounded-lg border border-border bg-card px-6 py-12 shadow-sheet">

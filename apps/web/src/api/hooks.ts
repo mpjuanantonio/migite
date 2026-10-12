@@ -238,7 +238,7 @@ export const useEnlacesEntrantes = (id: string | undefined) =>
 
 export const useResolverObjeto = (titulo: string) =>
   useQuery({
-    queryKey: queryKeys.objeto(titulo),
+    queryKey: queryKeys.resolver(titulo),
     enabled: titulo !== "",
     retry: false,
     queryFn: async (): Promise<ObjectPayload | null> => {
