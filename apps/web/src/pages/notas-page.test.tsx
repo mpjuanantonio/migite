@@ -1,4 +1,9 @@
-import type { CreateObjectBody, ObjectPayload, TipoPayload } from "@migite/contracts";
+import type {
+  ArbolObjetoNode,
+  CreateObjectBody,
+  ObjectPayload,
+  TipoPayload,
+} from "@migite/contracts";
 import { QueryClient } from "@tanstack/react-query";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -27,6 +32,17 @@ const nota = (
   degraded: [],
   ...extras,
 });
+
+const nodo = (id: string, titulo: string, carpeta: string): ArbolObjetoNode => ({
+  id,
+  tipo: "nota",
+  titulo,
+  ruta: carpeta === "" ? `${id}.md` : `${carpeta}/${id}.md`,
+  carpeta,
+  actualizado: "2026-10-01T10:00:00.000Z",
+});
+
+const arbolResponse = (nodos: readonly ArbolObjetoNode[]): Response => jsonResponse({ nodos });
 
 const tipoNota: TipoPayload = { id: "nota", nombre: "Nota", atributos: [] };
 
@@ -81,6 +97,7 @@ type ApiOptions = {
   readonly detalle?: (id: string) => Response;
   readonly crear?: (body: CreateObjectBody, intento: number) => Response;
   readonly tipos?: readonly TipoPayload[];
+  readonly arbol?: () => Response;
 };
 
 const mockApi = (options: ApiOptions = {}): void => {
@@ -111,6 +128,10 @@ const mockApi = (options: ApiOptions = {}): void => {
           201,
         )
       );
+    }
+
+    if (url.pathname === "/api/objetos/arbol" && method === "GET") {
+      return options.arbol?.() ?? jsonResponse({ nodos: [] });
     }
 
     if (url.pathname.startsWith("/api/objetos/")) {
@@ -151,6 +172,8 @@ const filaDe = (titulo: string): HTMLElement => {
   }
   return item;
 };
+
+const listaDeNotas = (): HTMLElement => screen.getByRole("list", { name: "Listado de notas" });
 
 const ultimaLista = (): URL | undefined => {
   const llamadas = fetchMock.mock.calls.filter(([input, init]) => {
@@ -199,7 +222,7 @@ describe("listado de notas", () => {
       await within(main).findByRole("heading", { name: "Diario de campo" }),
     ).toBeInTheDocument();
 
-    const filas = within(main).getAllByRole("listitem");
+    const filas = within(listaDeNotas()).getAllByRole("listitem");
     expect(filas.map((fila) => within(fila).getByRole("heading").textContent)).toEqual([
       "Diario de campo",
       "Plan anual",
@@ -222,8 +245,13 @@ describe("listado de notas", () => {
     ).toBeInTheDocument();
   });
 
-  it("filtra por carpeta y cambia la query dejando las carpetas conocidas", async () => {
+  it("filtra por carpeta al pulsarla en el explorador y deja las carpetas conocidas", async () => {
     mockApi({
+      arbol: () =>
+        arbolResponse([
+          nodo("A", "Diario de campo", "diario"),
+          nodo("B", "Plan anual", "proyectos"),
+        ]),
       lista: (url) => {
         if (url.searchParams.get("carpeta") === "diario") {
           return jsonResponse({
@@ -258,6 +286,7 @@ describe("listado de notas", () => {
     );
     expect(within(main).getByRole("heading", { name: "Diario de campo" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "proyectos" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "diario" })).toHaveAttribute("aria-current", "true");
 
     await user.click(screen.getByRole("button", { name: "Todas" }));
 
@@ -337,6 +366,7 @@ describe("listado de notas", () => {
 
   it("filtra por la etiqueta escrita y la combina con la carpeta", async () => {
     mockApi({
+      arbol: () => arbolResponse([nodo("B", "Plan anual", "proyectos")]),
       lista: (url) => {
         const tag = url.searchParams.get("tag");
         const carpeta = url.searchParams.get("carpeta");
@@ -423,7 +453,7 @@ describe("listado de notas", () => {
         fetchMock.mock.calls.some(([input]) => String(input).includes("cursor=cursor-1")),
       ).toBe(true),
     );
-    expect(within(main).getAllByRole("listitem")).toHaveLength(3);
+    expect(within(listaDeNotas()).getAllByRole("listitem")).toHaveLength(3);
     expect(within(main).getAllByRole("heading", { name: "Segunda" })).toHaveLength(1);
     expect(screen.queryByRole("button", { name: "Cargar más" })).toBeNull();
   });
@@ -433,6 +463,9 @@ describe("listado de notas", () => {
     renderNotas();
 
     expect(await screen.findByText(/Todavía no hay notas/)).toBeInTheDocument();
+    expect(
+      screen.getByText("Selecciona una nota del explorador o crea una nueva."),
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Nuevo objeto" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Nueva nota" })).toBeEnabled();
   });
@@ -465,6 +498,7 @@ describe("listado de notas", () => {
 
   it("crea la nota dentro de la carpeta filtrada", async () => {
     mockApi({
+      arbol: () => arbolResponse([nodo("B", "Plan anual", "proyectos")]),
       lista: () =>
         jsonResponse({
           objetos: [nota("B", "Plan anual", "2026-10-03T09:00:00.000Z", "proyectos")],
@@ -506,6 +540,7 @@ describe("listado de notas", () => {
 
   it("filtra la raíz en el cliente cuando el API no distingue carpeta vacía", async () => {
     mockApi({
+      arbol: () => arbolResponse([nodo("A", "Suelta", ""), nodo("B", "En diario", "diario")]),
       lista: () =>
         jsonResponse({
           objetos: [
@@ -527,7 +562,7 @@ describe("listado de notas", () => {
       expect(within(main).queryByRole("heading", { name: "En diario" })).toBeNull(),
     );
     expect(within(main).getByRole("heading", { name: "Suelta" })).toBeInTheDocument();
-    expect(within(main).getAllByRole("listitem")).toHaveLength(1);
+    expect(within(listaDeNotas()).getAllByRole("listitem")).toHaveLength(1);
   });
 
   it("muestra el error de carga y permite reintentar", async () => {
@@ -721,5 +756,86 @@ describe("listado de notas", () => {
     expect(await dialogo().findByRole("alert")).toHaveTextContent(
       "Falta el atributo obligatorio: autor",
     );
+  });
+
+  it("muestra el árbol del explorador y navega a la ficha al pulsar una nota", async () => {
+    mockApi({
+      arbol: () =>
+        arbolResponse([
+          nodo("A", "Diario de campo", "diario"),
+          nodo("B", "Plan anual", "proyectos"),
+          nodo("C", "Suelta", ""),
+        ]),
+      detalle: (id) =>
+        jsonResponse(nota(id, "Diario de campo", "2026-10-05T18:30:00.000Z", "diario")),
+    });
+    const user = userEvent.setup();
+    const { router } = renderNotas();
+
+    const arbol = await screen.findByRole("list", { name: "Árbol de notas" });
+    const grupo = within(arbol).getAllByRole("list")[0];
+    if (grupo === undefined) {
+      throw new Error("no se encontró el grupo raíz del árbol");
+    }
+    const nombres = within(grupo)
+      .getAllByRole("listitem")
+      .map((item) => item.textContent);
+    expect(nombres).toEqual(["diario1", "proyectos1", "Suelta"]);
+
+    expect(within(arbol).queryByRole("link", { name: "Diario de campo" })).toBeNull();
+
+    await user.click(within(arbol).getByRole("button", { name: "Expandir diario" }));
+    await user.click(await within(arbol).findByRole("link", { name: "Diario de campo" }));
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/objetos/A"));
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Diario de campo" }),
+    ).toBeInTheDocument();
+  });
+
+  it("recuerda entre montajes qué carpetas están desplegadas", async () => {
+    mockApi({ arbol: () => arbolResponse([nodo("A", "Diario de campo", "diario")]) });
+    const user = userEvent.setup();
+    const primera = renderNotas();
+
+    const arbol = await screen.findByRole("list", { name: "Árbol de notas" });
+    expect(within(arbol).queryByRole("link", { name: "Diario de campo" })).toBeNull();
+
+    await user.click(within(arbol).getByRole("button", { name: "Expandir diario" }));
+    expect(await within(arbol).findByRole("link", { name: "Diario de campo" })).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem("migite.explorador.expandidas") ?? "[]")).toEqual([
+      "diario",
+    ]);
+
+    await user.click(within(arbol).getByRole("button", { name: "Plegar diario" }));
+    expect(within(arbol).queryByRole("link", { name: "Diario de campo" })).toBeNull();
+    expect(JSON.parse(localStorage.getItem("migite.explorador.expandidas") ?? "[]")).toEqual([]);
+
+    primera.unmount();
+    renderNotas();
+
+    const arbolNuevo = await screen.findByRole("list", { name: "Árbol de notas" });
+    expect(within(arbolNuevo).queryByRole("link", { name: "Diario de campo" })).toBeNull();
+  });
+
+  it("colapsa el explorador y recuerda la preferencia", async () => {
+    mockApi({ arbol: () => arbolResponse([nodo("A", "Diario de campo", "diario")]) });
+    const user = userEvent.setup();
+    const primera = renderNotas();
+
+    await screen.findByRole("list", { name: "Árbol de notas" });
+    await user.click(screen.getByRole("button", { name: "Ocultar explorador" }));
+
+    expect(screen.queryByRole("list", { name: "Árbol de notas" })).toBeNull();
+    expect(localStorage.getItem("migite.explorador")).toBe("cerrado");
+
+    primera.unmount();
+    renderNotas();
+
+    expect(await screen.findByRole("button", { name: "Mostrar explorador" })).toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Árbol de notas" })).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Mostrar explorador" }));
+    expect(await screen.findByRole("list", { name: "Árbol de notas" })).toBeInTheDocument();
   });
 });

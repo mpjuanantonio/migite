@@ -1,4 +1,9 @@
-import type { EnlaceEntrante, ObjectPayload, TipoPayload } from "@migite/contracts";
+import type {
+  ArbolObjetoNode,
+  EnlaceEntrante,
+  ObjectPayload,
+  TipoPayload,
+} from "@migite/contracts";
 import { QueryClient } from "@tanstack/react-query";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -62,6 +67,7 @@ type ObjetoApiOptions = {
   readonly resolver?: ResolverHandler;
   readonly entrantes?: readonly EnlaceEntrante[];
   readonly entrantesError?: Response;
+  readonly arbol?: readonly ArbolObjetoNode[];
 };
 
 const TIPOS: readonly TipoPayload[] = [
@@ -147,6 +153,9 @@ const mockObjetoApi = (options: ObjetoApiOptions = {}): void => {
     }
     if (!url.startsWith("/api/objetos/")) {
       return sesionResponse(true);
+    }
+    if (url.startsWith("/api/objetos/arbol")) {
+      return jsonResponse({ nodos: options.arbol ?? [] });
     }
     if (url.endsWith("/enlaces-entrantes")) {
       if (options.entrantesError !== undefined) {
@@ -272,6 +281,34 @@ describe("ficha de objeto", () => {
     expect(screen.getByRole("region", { name: "Texto markdown" })).toBeInTheDocument();
     const editor = screen.getByLabelText("Cuerpo de la ficha en markdown");
     expect(editor).toHaveValue("# Diario\n\nUna **nota** serena.");
+  });
+
+  it("muestra el explorador de notas con la ficha actual resaltada", async () => {
+    mockObjetoApi({
+      arbol: [
+        {
+          id: "01JALFA",
+          tipo: "nota",
+          titulo: "Cuaderno de campo",
+          ruta: "notas/cuaderno.md",
+          carpeta: "notas",
+          actualizado: "2026-10-05T18:30:00.000Z",
+        },
+      ],
+    });
+    renderObjeto();
+
+    await screen.findByRole("heading", { level: 1, name: "Cuaderno de campo" });
+
+    const arbol = await screen.findByRole("list", { name: "Árbol de notas" });
+    expect(within(arbol).getByRole("link", { name: "Cuaderno de campo" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(within(arbol).getByRole("button", { name: "notas" })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
   });
 
   it("ordena la ficha con propiedades arriba y escritura a ancho completo", async () => {
