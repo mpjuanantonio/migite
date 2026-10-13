@@ -1,4 +1,6 @@
 import {
+  arbolObjetosParamsSchema,
+  arbolObjetosSchema,
   createObjectBodySchema,
   enlacesEntrantesSchema,
   objectPayloadSchema,
@@ -18,6 +20,7 @@ import {
   deleteObjeto,
   getEnlacesEntrantes,
   getObjeto,
+  listArbolObjetos,
   listObjetos,
   MAX_LIST_OFFSET,
   type ObjetosDeps,
@@ -46,19 +49,28 @@ const readJson = async (c: Context<ServerEnv>): Promise<unknown> => {
   }
 };
 
-export const objetosRouter = new Hono<ServerEnv>();
-
-objetosRouter.get("/", (c) => {
+const queryParams = (c: Context<ServerEnv>): Record<string, string | string[]> => {
   const raw: Record<string, string | string[]> = {};
   for (const [key, values] of Object.entries(c.req.queries())) {
     raw[key] = values.length === 1 ? (values[0] ?? "") : values;
   }
-  const params = searchParamsSchema.parse(raw);
+  return raw;
+};
+
+export const objetosRouter = new Hono<ServerEnv>();
+
+objetosRouter.get("/", (c) => {
+  const params = searchParamsSchema.parse(queryParams(c));
   const offset = params.cursor === undefined ? 0 : decodeCursor(params.cursor);
   if (offset === undefined || offset > MAX_LIST_OFFSET) {
     throw new HTTPException(400);
   }
   return c.json(objetosPageSchema.parse(listObjetos(currentDeps(), params, offset)));
+});
+
+objetosRouter.get("/arbol", (c) => {
+  const params = arbolObjetosParamsSchema.parse(queryParams(c));
+  return c.json(arbolObjetosSchema.parse(listArbolObjetos(currentDeps(), params)));
 });
 
 objetosRouter.get("/:id/enlaces-entrantes", (c) =>

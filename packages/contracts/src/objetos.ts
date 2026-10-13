@@ -47,6 +47,32 @@ export const objectPayloadSchema = z.object({
 
 export type ObjectPayload = z.infer<typeof objectPayloadSchema>;
 
+export const LIMITE_MAX_ARBOL = 2000;
+
+export const arbolObjetosParamsSchema = z.object({
+  tipo: nonEmptyText.optional(),
+  limite: z.coerce.number().int().min(1).max(LIMITE_MAX_ARBOL).optional(),
+});
+
+export type ArbolObjetosParams = z.infer<typeof arbolObjetosParamsSchema>;
+
+export const arbolObjetoNodeSchema = z.object({
+  id: z.string(),
+  tipo: z.string(),
+  titulo: z.string(),
+  ruta: z.string(),
+  carpeta: z.string(),
+  actualizado: z.string(),
+});
+
+export type ArbolObjetoNode = z.infer<typeof arbolObjetoNodeSchema>;
+
+export const arbolObjetosSchema = z.object({
+  nodos: z.array(arbolObjetoNodeSchema),
+});
+
+export type ArbolObjetos = z.infer<typeof arbolObjetosSchema>;
+
 const objectBodyShape = {
   tipo: nonEmptyText.optional(),
   titulo: nonEmptyText,

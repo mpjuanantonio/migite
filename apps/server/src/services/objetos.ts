@@ -1,6 +1,9 @@
 import {
+  type ArbolObjetos,
+  type ArbolObjetosParams,
   type CreateObjectBody,
   type EnlacesEntrantes,
+  LIMITE_MAX_ARBOL,
   type ObjectPayload,
   objectPayloadSchema,
   type PatchObjectBody,
@@ -14,6 +17,7 @@ import {
   type ReadObjectResult,
 } from "@migite/core";
 import {
+  DEFAULT_LIST_LIMIT as INDEX_PAGE_SIZE,
   type IndexDatabase,
   type IndexedObject,
   listObjectsIndexed,
@@ -271,4 +275,43 @@ export const listObjetos = (
     objetos,
     siguienteCursor: hasMore ? encodeCursor(offset + page.length) : null,
   };
+};
+
+const porRuta = (
+  a: { readonly ruta: string; readonly id: string },
+  b: { readonly ruta: string; readonly id: string },
+): number => {
+  if (a.ruta !== b.ruta) {
+    return a.ruta < b.ruta ? -1 : 1;
+  }
+  if (a.id === b.id) {
+    return 0;
+  }
+  return a.id < b.id ? -1 : 1;
+};
+
+export const listArbolObjetos = (deps: ObjetosDeps, params: ArbolObjetosParams): ArbolObjetos => {
+  const filters: ObjectFilters = params.tipo === undefined ? {} : { tipo: params.tipo };
+  const rows: IndexedObject[] = [];
+  while (rows.length < LIMITE_MAX_ARBOL) {
+    const size = Math.min(INDEX_PAGE_SIZE, LIMITE_MAX_ARBOL - rows.length);
+    const page = listObjectsIndexed(deps.db, { filters, limit: size, offset: rows.length });
+    rows.push(...page);
+    if (page.length < size) {
+      break;
+    }
+  }
+  const limite = params.limite ?? LIMITE_MAX_ARBOL;
+  const nodos = rows
+    .map((row) => ({
+      id: row.id,
+      tipo: row.tipo,
+      titulo: row.titulo,
+      ruta: row.ruta,
+      carpeta: folderOf(row.ruta),
+      actualizado: row.actualizado,
+    }))
+    .sort(porRuta)
+    .slice(0, limite);
+  return { nodos };
 };

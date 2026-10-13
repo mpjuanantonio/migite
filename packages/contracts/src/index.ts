@@ -10,6 +10,12 @@ export {
 } from "./envelopes.js";
 export { type ErrorBody, errorBodySchema } from "./error.js";
 export {
+  type ArbolObjetoNode,
+  type ArbolObjetos,
+  type ArbolObjetosParams,
+  arbolObjetoNodeSchema,
+  arbolObjetosParamsSchema,
+  arbolObjetosSchema,
   type CreateObjectBody,
   createObjectBodySchema,
   type DegradationReasonPayload,
@@ -18,6 +24,7 @@ export {
   type EnlacesEntrantes,
   enlaceEntranteSchema,
   enlacesEntrantesSchema,
+  LIMITE_MAX_ARBOL,
   type ObjectPayload,
   objectPayloadSchema,
   type PatchObjectBody,

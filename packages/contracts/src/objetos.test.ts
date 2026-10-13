@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  arbolObjetosParamsSchema,
+  arbolObjetosSchema,
   createObjectBodySchema,
   degradationReasonSchema,
   enlaceEntranteSchema,
   enlacesEntrantesSchema,
+  LIMITE_MAX_ARBOL,
   objectPayloadSchema,
   patchObjectBodySchema,
   renameObjectBodySchema,
@@ -236,5 +239,51 @@ describe("enlacesEntrantesSchema", () => {
     expect(enlaceEntranteSchema.safeParse({ ...entrante, contexto: "otro" }).success).toBe(false);
     expect(enlaceEntranteSchema.safeParse({ ...entrante, titulo: undefined }).success).toBe(false);
     expect(enlacesEntrantesSchema.safeParse({}).success).toBe(false);
+  });
+});
+
+describe("arbolObjetosParamsSchema", () => {
+  it("accepts empty params, a tipo and a coerced limite", () => {
+    expect(arbolObjetosParamsSchema.parse({})).toEqual({});
+    expect(arbolObjetosParamsSchema.parse({ tipo: "nota" })).toEqual({ tipo: "nota" });
+    expect(arbolObjetosParamsSchema.parse({ limite: "25" })).toEqual({ limite: 25 });
+  });
+
+  it("rejects an empty tipo and out-of-range or invalid limits", () => {
+    expect(arbolObjetosParamsSchema.safeParse({ tipo: " " }).success).toBe(false);
+    expect(arbolObjetosParamsSchema.safeParse({ limite: 0 }).success).toBe(false);
+    expect(arbolObjetosParamsSchema.safeParse({ limite: LIMITE_MAX_ARBOL + 1 }).success).toBe(
+      false,
+    );
+    expect(arbolObjetosParamsSchema.safeParse({ limite: "no-numero" }).success).toBe(false);
+  });
+
+  it("rejects repeated params", () => {
+    expect(arbolObjetosParamsSchema.safeParse({ tipo: ["nota", "tarea"] }).success).toBe(false);
+    expect(arbolObjetosParamsSchema.safeParse({ limite: ["1", "2"] }).success).toBe(false);
+  });
+});
+
+describe("arbolObjetosSchema", () => {
+  const nodo = {
+    id: "01JALFA",
+    tipo: "nota",
+    titulo: "Alfa",
+    ruta: "notas/alfa.md",
+    carpeta: "notas",
+    actualizado: "2026-10-05T09:00:00.000+02:00",
+  };
+
+  it("accepts an empty tree and a tree with light nodes", () => {
+    expect(arbolObjetosSchema.parse({ nodos: [] })).toEqual({ nodos: [] });
+    expect(arbolObjetosSchema.parse({ nodos: [nodo] })).toEqual({ nodos: [nodo] });
+  });
+
+  it("rejects a tree without nodos or with incomplete nodes", () => {
+    const { titulo: _titulo, ...sinTitulo } = nodo;
+
+    expect(arbolObjetosSchema.safeParse({}).success).toBe(false);
+    expect(arbolObjetosSchema.safeParse({ nodos: [sinTitulo] }).success).toBe(false);
+    expect(arbolObjetosSchema.safeParse({ nodos: [{ ...nodo, ruta: 7 }] }).success).toBe(false);
   });
 });

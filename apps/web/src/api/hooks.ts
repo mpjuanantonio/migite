@@ -1,5 +1,8 @@
 import {
+  type ArbolObjetos,
+  type ArbolObjetosParams,
   type AttributePayload,
+  arbolObjetosSchema,
   type CreateObjectBody,
   type EnlacesEntrantes,
   enlacesEntrantesSchema,
@@ -199,6 +202,28 @@ export const useObjetosInfinitos = (params?: ObjetosListaParams) =>
     getNextPageParam: (ultimaPagina) => ultimaPagina.siguienteCursor ?? undefined,
   });
 
+const ARBOL_STALE_TIME = 5 * 60 * 1000;
+
+const arbolPath = (params?: ArbolObjetosParams): string => {
+  const query = new URLSearchParams();
+  if (params?.tipo !== undefined && params.tipo !== "") {
+    query.set("tipo", params.tipo);
+  }
+  if (params?.limite !== undefined) {
+    query.set("limite", String(params.limite));
+  }
+  const suffix = query.toString();
+  return suffix === "" ? "/api/objetos/arbol" : `/api/objetos/arbol?${suffix}`;
+};
+
+export const useArbolObjetos = (params?: ArbolObjetosParams) =>
+  useQuery({
+    queryKey: [...queryKeys.arbol, params ?? {}],
+    staleTime: ARBOL_STALE_TIME,
+    queryFn: async (): Promise<ArbolObjetos> =>
+      arbolObjetosSchema.parse(await apiFetch(arbolPath(params))),
+  });
+
 export const useCrearObjeto = () => {
   const queryClient = useQueryClient();
 
@@ -207,6 +232,7 @@ export const useCrearObjeto = () => {
       objectPayloadSchema.parse(await apiFetch("/api/objetos", { method: "POST", body })),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.objetos });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.arbol });
     },
   });
 };
@@ -218,6 +244,10 @@ const invalidarListasDeObjetos = (queryClient: QueryClient): void => {
     predicate: (query) =>
       query.queryKey[0] === queryKeys.objetos[0] && typeof query.queryKey[1] !== "string",
   });
+};
+
+const invalidarArbol = (queryClient: QueryClient): void => {
+  void queryClient.invalidateQueries({ queryKey: queryKeys.arbol });
 };
 
 const invalidarResolucionesDeTitulo = (queryClient: QueryClient): void => {
@@ -330,6 +360,7 @@ export const useRenombrarObjeto = (id: string) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.enlacesEntrantes(id) });
       invalidarListasDeObjetos(queryClient);
       invalidarResolucionesDeTitulo(queryClient);
+      invalidarArbol(queryClient);
     },
   });
 };
@@ -345,6 +376,7 @@ export const useBorrarObjeto = () => {
       queryClient.removeQueries({ queryKey: queryKeys.enlacesEntrantes(id) });
       invalidarListasDeObjetos(queryClient);
       invalidarResolucionesDeTitulo(queryClient);
+      invalidarArbol(queryClient);
     },
   });
 };

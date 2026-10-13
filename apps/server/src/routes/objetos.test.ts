@@ -2,7 +2,10 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  type ArbolObjetos,
+  arbolObjetosSchema,
   enlacesEntrantesSchema,
+  LIMITE_MAX_ARBOL,
   type ObjectPayload,
   objectPayloadSchema,
   objetosPageSchema,
@@ -472,6 +475,88 @@ describe("GET /api/objetos", () => {
 
   it("requires a valid session", async () => {
     const res = await app.request("/api/objetos");
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({
+      error: { codigo: "unauthorized", mensaje: "Se requiere autenticación" },
+    });
+  });
+});
+
+describe("GET /api/objetos/arbol", () => {
+  it("returns a light tree ordered by ruta, without cuerpo or atributos", async () => {
+    const res = await app.request("/api/objetos/arbol", { headers: headers() });
+
+    expect(res.status).toBe(200);
+    const raw = (await res.json()) as { nodos: Record<string, unknown>[] };
+    const body = arbolObjetosSchema.parse(raw);
+    expect(body.nodos.map((nodo) => nodo.id)).toEqual([ALFA, DELTA, EPSILON, BETA, GAMMA]);
+    expect(body.nodos[0]).toEqual({
+      id: ALFA,
+      tipo: "nota",
+      titulo: "Alfa",
+      ruta: "alfa.md",
+      carpeta: "",
+      actualizado: "2026-10-05T09:00:00.000+02:00",
+    });
+    for (const nodo of raw.nodos) {
+      expect(Object.keys(nodo).sort()).toEqual([
+        "actualizado",
+        "carpeta",
+        "id",
+        "ruta",
+        "tipo",
+        "titulo",
+      ]);
+      expect(nodo).not.toHaveProperty("cuerpo");
+      expect(nodo).not.toHaveProperty("atributos");
+    }
+  });
+
+  it("filters by tipo", async () => {
+    const notas = await getJson<ArbolObjetos>("/api/objetos/arbol?tipo=nota");
+    expect(notas.nodos.map((nodo) => nodo.id)).toEqual([ALFA, DELTA, EPSILON, GAMMA]);
+
+    const tareas = await getJson<ArbolObjetos>("/api/objetos/arbol?tipo=tarea");
+    expect(tareas.nodos).toEqual([
+      {
+        id: BETA,
+        tipo: "tarea",
+        titulo: "Beta",
+        ruta: "proyectos/beta.md",
+        carpeta: "proyectos",
+        actualizado: "2026-10-04T09:00:00.000+02:00",
+      },
+    ]);
+  });
+
+  it("derives carpeta from ruta and honours an explicit limit without pagination", async () => {
+    const completo = await getJson<ArbolObjetos>("/api/objetos/arbol");
+    expect(completo.nodos.find((nodo) => nodo.id === BETA)?.carpeta).toBe("proyectos");
+    expect(completo.nodos.find((nodo) => nodo.id === ALFA)?.carpeta).toBe("");
+
+    const limitado = await getJson<ArbolObjetos>("/api/objetos/arbol?limite=2");
+    expect(limitado.nodos.map((nodo) => nodo.id)).toEqual([ALFA, DELTA]);
+  });
+
+  it("rejects invalid params with validation_error", async () => {
+    const paths = [
+      "/api/objetos/arbol?tipo=",
+      "/api/objetos/arbol?limite=0",
+      `/api/objetos/arbol?limite=${LIMITE_MAX_ARBOL + 1}`,
+      "/api/objetos/arbol?limite=no-numero",
+      "/api/objetos/arbol?tipo=nota&tipo=tarea",
+    ];
+
+    for (const path of paths) {
+      const res = await app.request(path, { headers: headers() });
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as ErrorBody).error.codigo).toBe("validation_error");
+    }
+  });
+
+  it("requires a valid session", async () => {
+    const res = await app.request("/api/objetos/arbol");
+
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({
       error: { codigo: "unauthorized", mensaje: "Se requiere autenticación" },

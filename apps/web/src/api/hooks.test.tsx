@@ -4,7 +4,14 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import { errorResponse, jsonResponse } from "@/test/render-app";
-import { useBorrarObjeto, useObjeto, useRenombrarObjeto, useResolverObjeto } from "./hooks";
+import {
+  useArbolObjetos,
+  useBorrarObjeto,
+  useCrearObjeto,
+  useObjeto,
+  useRenombrarObjeto,
+  useResolverObjeto,
+} from "./hooks";
 import { queryKeys } from "./keys";
 
 const objetoDePrueba: ObjectPayload = {
@@ -67,6 +74,46 @@ describe("useResolverObjeto", () => {
     });
     expect(llamadas).toBe(2);
     expect(cliente.getQueryData(queryKeys.resolver("01JALFA"))).toBeNull();
+  });
+});
+
+describe("useArbolObjetos", () => {
+  const arbol = {
+    nodos: [
+      {
+        id: "01JALFA",
+        tipo: "nota",
+        titulo: "Cuaderno de campo",
+        ruta: "notas/cuaderno.md",
+        carpeta: "notas",
+        actualizado: "2026-10-05T18:30:00.000Z",
+      },
+    ],
+  };
+
+  it("pide el árbol ligero con los filtros indicados", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(arbol));
+
+    const resultado = renderHook(() => useArbolObjetos({ tipo: "nota", limite: 25 }), {
+      wrapper: envolver,
+    });
+
+    await waitFor(() => {
+      expect(resultado.result.current.isSuccess).toBe(true);
+    });
+    expect(resultado.result.current.data).toEqual(arbol);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe("/api/objetos/arbol?tipo=nota&limite=25");
+  });
+
+  it("pide el árbol completo cuando no hay filtros", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ nodos: [] }));
+
+    const resultado = renderHook(() => useArbolObjetos(), { wrapper: envolver });
+
+    await waitFor(() => {
+      expect(resultado.result.current.isSuccess).toBe(true);
+    });
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe("/api/objetos/arbol");
   });
 });
 
@@ -171,5 +218,56 @@ describe("invalidación de la resolución por título", () => {
     await waitFor(() => {
       expect(resolucion.result.current.data).toBeNull();
     });
+  });
+});
+
+describe("invalidación del árbol de objetos", () => {
+  it("invalida el árbol al crear un objeto", async () => {
+    fetchMock.mockImplementation(async (input, init) => {
+      if (String(input) === "/api/objetos" && init?.method === "POST") {
+        return jsonResponse(objetoDePrueba, 201);
+      }
+      return errorResponse("not_found", "Ruta desconocida", 404);
+    });
+    const invalidar = vi.spyOn(cliente, "invalidateQueries");
+
+    const crear = renderHook(() => useCrearObjeto(), { wrapper: envolver });
+    await act(async () => {
+      await crear.result.current.mutateAsync({ titulo: "Cuaderno de campo" });
+    });
+
+    expect(invalidar).toHaveBeenCalledWith({ queryKey: queryKeys.arbol });
+  });
+
+  it("invalida el árbol al borrar un objeto", async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+    const invalidar = vi.spyOn(cliente, "invalidateQueries");
+
+    const borrar = renderHook(() => useBorrarObjeto(), { wrapper: envolver });
+    await act(async () => {
+      await borrar.result.current.mutateAsync("01JALFA");
+    });
+
+    expect(invalidar).toHaveBeenCalledWith({ queryKey: queryKeys.arbol });
+  });
+
+  it("invalida el árbol al renombrar un objeto", async () => {
+    fetchMock.mockImplementation(async (input) => {
+      if (String(input) === "/api/objetos/01JALFA/renombrar") {
+        return jsonResponse({
+          objeto: { ...objetoDePrueba, titulo: "Cuaderno nuevo" },
+          informe: { reescritos: [], omitidos: [], enlacesSinResolver: [] },
+        });
+      }
+      return errorResponse("not_found", "Ruta desconocida", 404);
+    });
+    const invalidar = vi.spyOn(cliente, "invalidateQueries");
+
+    const renombrar = renderHook(() => useRenombrarObjeto("01JALFA"), { wrapper: envolver });
+    await act(async () => {
+      await renombrar.result.current.mutateAsync("Cuaderno nuevo");
+    });
+
+    expect(invalidar).toHaveBeenCalledWith({ queryKey: queryKeys.arbol });
   });
 });
