@@ -1,7 +1,7 @@
 import { markdown } from "@codemirror/lang-markdown";
 import CodeMirror, { EditorView, oneDark } from "@uiw/react-codemirror";
 import { cn } from "cn";
-import { type KeyboardEvent, useState } from "react";
+import { type KeyboardEvent, useMemo, useState } from "react";
 import { useI18n } from "@/i18n/context";
 import {
   contextoWikilink,
@@ -10,6 +10,7 @@ import {
   opcionesWikilink,
 } from "@/lib/wikilinks";
 import { useTema } from "@/theme/context";
+import { extensionLivePreview, TEMA_LIVE_PREVIEW } from "./live-preview-cm";
 
 const TEMA_OSCURO = [
   oneDark,
@@ -39,6 +40,7 @@ type MarkdownEditorProps = {
   readonly ariaLabel: string;
   readonly placeholder?: string;
   readonly sugerencias?: readonly string[];
+  readonly onWikilinkClick?: (titulo: string) => void;
 };
 
 export const MarkdownEditor = ({
@@ -47,12 +49,27 @@ export const MarkdownEditor = ({
   ariaLabel,
   placeholder,
   sugerencias = [],
+  onWikilinkClick,
 }: MarkdownEditorProps) => {
   const { modoEfectivo } = useTema();
   const { t } = useI18n();
   const [indice, setIndice] = useState(0);
   const [consultaPrevia, setConsultaPrevia] = useState<string>();
   const [descartadoPara, setDescartadoPara] = useState<string>();
+
+  const extensiones = useMemo(
+    () => [
+      markdown(),
+      EditorView.lineWrapping,
+      EditorView.contentAttributes.of({ "aria-label": ariaLabel, "aria-multiline": "true" }),
+      TEMA_LIVE_PREVIEW,
+      extensionLivePreview({
+        alHacerClicWikilink: onWikilinkClick,
+        etiquetaCasilla: t("page.tareas.title"),
+      }),
+    ],
+    [ariaLabel, onWikilinkClick, t],
+  );
 
   const contexto = contextoWikilink(value);
   const opciones =
@@ -124,11 +141,7 @@ export const MarkdownEditor = ({
           autocompletion: false,
           closeBrackets: false,
         }}
-        extensions={[
-          markdown(),
-          EditorView.lineWrapping,
-          EditorView.contentAttributes.of({ "aria-label": ariaLabel, "aria-multiline": "true" }),
-        ]}
+        extensions={extensiones}
       />
       {opciones.length > 0 ? (
         <div

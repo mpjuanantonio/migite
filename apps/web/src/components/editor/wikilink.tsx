@@ -1,5 +1,4 @@
-import type { ReactNode } from "react";
-import { useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError } from "@/api/api";
 import { useCrearObjeto, useResolverObjeto } from "@/api/hooks";
@@ -9,14 +8,27 @@ type WikilinkProps = {
   readonly titulo: string;
   readonly children: ReactNode;
   readonly antesDeCrear?: () => Promise<void>;
+  readonly autoNavegar?: boolean;
 };
 
-export const Wikilink = ({ titulo, children, antesDeCrear }: WikilinkProps) => {
+export const Wikilink = ({
+  titulo,
+  children,
+  antesDeCrear,
+  autoNavegar = false,
+}: WikilinkProps) => {
   const { t } = useI18n();
   const navigate = useNavigate();
   const resolucion = useResolverObjeto(titulo);
   const crear = useCrearObjeto();
   const [preparando, setPreparando] = useState(false);
+  const objeto = resolucion.data;
+
+  useEffect(() => {
+    if (autoNavegar && objeto !== null && objeto !== undefined) {
+      navigate(`/objetos/${encodeURIComponent(objeto.id)}`);
+    }
+  }, [autoNavegar, navigate, objeto]);
 
   const crearNota = async () => {
     if (crear.isPending || preparando) {
@@ -44,7 +56,6 @@ export const Wikilink = ({ titulo, children, antesDeCrear }: WikilinkProps) => {
     return <span className="text-muted-foreground">{children}</span>;
   }
 
-  const objeto = resolucion.data;
   if (objeto !== null && objeto !== undefined) {
     const destino = `/objetos/${encodeURIComponent(objeto.id)}`;
     return (
