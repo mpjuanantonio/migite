@@ -1154,7 +1154,7 @@ describe("type registry access", () => {
     const repo = createObjectRepository({ vaultDir, timeZone: "Europe/Madrid" });
 
     expect(bootstrap.seed.created).toEqual([...NATIVE_TYPE_IDS]);
-    expect(again.seed).toEqual({ created: [], skipped: [...NATIVE_TYPE_IDS] });
+    expect(again.seed).toEqual({ created: [], skipped: [...NATIVE_TYPE_IDS], upgraded: [] });
     expect(bootstrap.types.map((type) => type.id)).toEqual([...NATIVE_TYPE_IDS].sort());
     expect(bootstrap.warnings).toEqual([]);
     expect(repo.listTypes().map((type) => type.id)).toEqual([...NATIVE_TYPE_IDS].sort());

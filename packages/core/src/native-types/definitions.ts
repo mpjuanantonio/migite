@@ -44,12 +44,6 @@ atributos:
     obligatorio: true
     opciones: []
     referencia_a: []
-  - id: estado
-    nombre: Estado
-    tipo: seleccion
-    obligatorio: true
-    opciones: [pendiente, vencido]
-    referencia_a: []
 `,
   evento: `id: evento
 nombre: Evento
@@ -89,3 +83,22 @@ atributos:
     referencia_a: []
 `,
 };
+
+export const RECORDATORIO_YAML_ANTERIOR = `id: recordatorio
+nombre: Recordatorio
+descripcion: Aviso a una hora concreta
+atributos:
+  - id: hora
+    nombre: Hora
+    tipo: fecha-hora
+    rol: hora
+    obligatorio: true
+    opciones: []
+    referencia_a: []
+  - id: estado
+    nombre: Estado
+    tipo: seleccion
+    obligatorio: true
+    opciones: [pendiente, vencido]
+    referencia_a: []
+`;

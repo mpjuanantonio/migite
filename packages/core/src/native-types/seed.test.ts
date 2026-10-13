@@ -10,7 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { NATIVE_TYPE_IDS, type NativeTypeId } from "./definitions.js";
+import { NATIVE_TYPE_IDS, type NativeTypeId, RECORDATORIO_YAML_ANTERIOR } from "./definitions.js";
 import { seedNativeTypes } from "./seed.js";
 
 const EXPECTED: Readonly<Record<NativeTypeId, string>> = {
@@ -54,12 +54,6 @@ atributos:
     rol: hora
     obligatorio: true
     opciones: []
-    referencia_a: []
-  - id: estado
-    nombre: Estado
-    tipo: seleccion
-    obligatorio: true
-    opciones: [pendiente, vencido]
     referencia_a: []
 `,
   evento: `id: evento
@@ -121,7 +115,7 @@ describe("seedNativeTypes", () => {
 
     const result = seedNativeTypes(tiposDir);
 
-    expect(result).toEqual({ created: [...NATIVE_TYPE_IDS], skipped: [] });
+    expect(result).toEqual({ created: [...NATIVE_TYPE_IDS], skipped: [], upgraded: [] });
     for (const id of NATIVE_TYPE_IDS) {
       expect(readFileSync(join(tiposDir, `${id}.yaml`), "utf8"), id).toBe(EXPECTED[id]);
     }
@@ -143,7 +137,7 @@ describe("seedNativeTypes", () => {
     const second = seedNativeTypes(tiposDir);
 
     expect(first.created).toEqual([...NATIVE_TYPE_IDS]);
-    expect(second).toEqual({ created: [], skipped: [...NATIVE_TYPE_IDS] });
+    expect(second).toEqual({ created: [], skipped: [...NATIVE_TYPE_IDS], upgraded: [] });
     for (const id of NATIVE_TYPE_IDS) {
       expect(readFileSync(join(tiposDir, `${id}.yaml`), "utf8"), id).toBe(EXPECTED[id]);
     }
@@ -159,7 +153,35 @@ describe("seedNativeTypes", () => {
 
     expect(result.created).toEqual(["tarea", "recordatorio", "evento", "proyecto"]);
     expect(result.skipped).toEqual(["nota"]);
+    expect(result.upgraded).toEqual([]);
     expect(readFileSync(join(tiposDir, "nota.yaml"), "utf8")).toBe(edited);
+  });
+
+  it("migrates the recordatorio definition seeded with estado", () => {
+    const tiposDir = join(createRoot(), "tipos");
+    mkdirSync(tiposDir, { recursive: true });
+    writeFileSync(join(tiposDir, "recordatorio.yaml"), RECORDATORIO_YAML_ANTERIOR, "utf8");
+
+    const result = seedNativeTypes(tiposDir);
+
+    expect(result.created).toEqual(["nota", "tarea", "evento", "proyecto"]);
+    expect(result.skipped).toEqual([]);
+    expect(result.upgraded).toEqual(["recordatorio"]);
+    expect(readFileSync(join(tiposDir, "recordatorio.yaml"), "utf8")).toBe(EXPECTED.recordatorio);
+  });
+
+  it("never overwrites an edited recordatorio and reports it as skipped", () => {
+    const tiposDir = join(createRoot(), "tipos");
+    mkdirSync(tiposDir, { recursive: true });
+    const edited = `${RECORDATORIO_YAML_ANTERIOR}# personalizado\n`;
+    writeFileSync(join(tiposDir, "recordatorio.yaml"), edited, "utf8");
+
+    const result = seedNativeTypes(tiposDir);
+
+    expect(result.created).toEqual(["nota", "tarea", "evento", "proyecto"]);
+    expect(result.upgraded).toEqual([]);
+    expect(result.skipped).toEqual(["recordatorio"]);
+    expect(readFileSync(join(tiposDir, "recordatorio.yaml"), "utf8")).toBe(edited);
   });
 
   it("treats a symlinked target as skipped and never writes through it", () => {
@@ -175,6 +197,21 @@ describe("seedNativeTypes", () => {
     expect(result.created).toEqual(["tarea", "recordatorio", "evento", "proyecto"]);
     expect(result.skipped).toEqual(["nota"]);
     expect(readFileSync(outside, "utf8")).toBe("contenido externo\n");
+  });
+
+  it("treats a symlinked recordatorio with the previous content as skipped", () => {
+    const root = createRoot();
+    const tiposDir = join(root, "tipos");
+    mkdirSync(tiposDir, { recursive: true });
+    const outside = join(root, "fuera-recordatorio.yaml");
+    writeFileSync(outside, RECORDATORIO_YAML_ANTERIOR, "utf8");
+    symlinkSync(outside, join(tiposDir, "recordatorio.yaml"));
+
+    const result = seedNativeTypes(tiposDir);
+
+    expect(result.upgraded).toEqual([]);
+    expect(result.skipped).toContain("recordatorio");
+    expect(readFileSync(outside, "utf8")).toBe(RECORDATORIO_YAML_ANTERIOR);
   });
 
   it("reports a filesystem failure with error.typeSeedFailed", () => {
