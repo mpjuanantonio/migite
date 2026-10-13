@@ -337,11 +337,11 @@ export const ObjetoPage = () => {
         ) : null}
       </header>
 
+      <BandejaAtributos key={objeto.id} objeto={objeto} />
+
       {informe !== undefined ? (
         <PanelInforme informe={informe} onCerrar={() => setInforme(undefined)} />
       ) : null}
-
-      <BandejaAtributos key={objeto.id} objeto={objeto} />
 
       {guardar.isError ? (
         <div
@@ -366,12 +366,9 @@ export const ObjetoPage = () => {
 
       <section
         aria-label={t("page.objeto.editor")}
-        className="overflow-hidden rounded-lg border border-border bg-card shadow-sheet"
+        className="editor-lectura overflow-hidden rounded-lg border border-border/70 bg-card shadow-sheet"
       >
-        <header className="flex h-10 items-center border-b border-border/70 px-4">
-          <h2 className="text-xs font-medium text-muted-foreground">{t("page.objeto.editor")}</h2>
-        </header>
-        <div className="h-[28rem] sm:h-[36rem]">
+        <div className="h-[30rem] sm:h-[40rem]">
           <MarkdownEditor
             value={cuerpo}
             onChange={(valor) => setBorrador({ id: objeto.id, valor })}

@@ -164,23 +164,23 @@ export const BandejaAtributos = ({ objeto }: BandejaAtributosProps) => {
         : t("page.objeto.attributes.clean");
 
   return (
-    <section
-      aria-label={t("page.objeto.attributes.title")}
-      className="overflow-hidden rounded-lg border border-border bg-card shadow-sheet"
-    >
-      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border/70 px-4 py-3">
+    <section aria-label={t("page.objeto.attributes.title")} className="flex flex-col">
+      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border/70 pb-2">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <h2 className="font-heading text-lg font-medium">{t("page.objeto.attributes.title")}</h2>
+          <h2 className="text-xs font-medium tracking-wide text-muted-foreground">
+            {t("page.objeto.attributes.title")}
+          </h2>
           {crudo ? (
             <span className="text-xs text-muted-foreground">{t("page.objeto.attributes.raw")}</span>
           ) : null}
         </div>
         <div className="flex items-center gap-2">
-          <p role="status" aria-live="polite" className="text-sm text-muted-foreground">
+          <p role="status" aria-live="polite" className="text-xs text-muted-foreground">
             {estado}
           </p>
           <Button
             type="button"
+            variant="outline"
             size="sm"
             onClick={guardarAtributos}
             disabled={!puedeGuardar}
@@ -195,7 +195,7 @@ export const BandejaAtributos = ({ objeto }: BandejaAtributosProps) => {
       {guardar.isError ? (
         <div
           role="alert"
-          className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/70 bg-destructive/5 px-4 py-2.5 text-sm text-destructive"
+          className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-destructive/30 bg-destructive/5 px-3.5 py-2.5 text-sm text-destructive"
         >
           <p className="max-w-prose">
             <span className="font-medium">{t("page.objeto.attributes.saveError")}. </span>
@@ -214,23 +214,28 @@ export const BandejaAtributos = ({ objeto }: BandejaAtributosProps) => {
       ) : null}
 
       {filas.length === 0 ? (
-        <p className="px-4 py-6 text-sm text-muted-foreground">
+        <p className="border-b border-border/70 py-3 text-sm text-muted-foreground">
           {t("page.objeto.attributes.empty")}
         </p>
       ) : (
-        <div className="grid gap-x-6 gap-y-4 px-4 py-4 sm:grid-cols-2 xl:grid-cols-3">
+        <dl className="flex flex-col border-b border-border/70">
           {filas.map((fila) => {
             const etiquetaId = `atributo-etiqueta-${fila.clave}`;
             return (
-              <div key={fila.clave} className="flex min-w-0 flex-col gap-1.5">
-                <div className="flex min-h-5 items-center justify-between gap-2">
-                  <label
-                    id={etiquetaId}
-                    htmlFor={`atributo-${fila.clave}`}
-                    className="truncate text-xs font-medium text-muted-foreground"
-                  >
-                    {fila.definicion?.nombre ?? fila.clave}
-                  </label>
+              <div
+                key={fila.clave}
+                className="grid min-w-0 grid-cols-1 gap-1.5 border-b border-border/50 py-2.5 last:border-b-0 sm:grid-cols-[minmax(7rem,12rem)_minmax(0,1fr)] sm:items-center sm:gap-4"
+              >
+                <div className="flex min-h-6 items-center justify-between gap-2 sm:justify-start">
+                  <dt className="min-w-0">
+                    <label
+                      id={etiquetaId}
+                      htmlFor={`atributo-${fila.clave}`}
+                      className="block truncate text-sm text-muted-foreground"
+                    >
+                      {fila.definicion?.nombre ?? fila.clave}
+                    </label>
+                  </dt>
                   {esObligatorio(fila.definicion) ? null : (
                     <Button
                       type="button"
@@ -244,23 +249,25 @@ export const BandejaAtributos = ({ objeto }: BandejaAtributosProps) => {
                     </Button>
                   )}
                 </div>
-                <CampoAtributo
-                  editorId={`atributo-${fila.clave}`}
-                  etiquetaId={etiquetaId}
-                  definicion={fila.definicion}
-                  valor={fila.valor}
-                  crudo={crudo}
-                  deshabilitado={guardando}
-                  onCambio={(valor) => actualizar(fila.clave, valor)}
-                />
+                <dd className="min-w-0 sm:max-w-sm">
+                  <CampoAtributo
+                    editorId={`atributo-${fila.clave}`}
+                    etiquetaId={etiquetaId}
+                    definicion={fila.definicion}
+                    valor={fila.valor}
+                    crudo={crudo}
+                    deshabilitado={guardando}
+                    onCambio={(valor) => actualizar(fila.clave, valor)}
+                  />
+                </dd>
               </div>
             );
           })}
-        </div>
+        </dl>
       )}
 
-      <div className="flex flex-wrap items-end gap-2 border-t border-border/70 bg-muted/30 px-4 py-3">
-        <div className="flex flex-col gap-1.5">
+      <div className="flex flex-wrap items-end gap-2 pt-3">
+        <div className="flex flex-col gap-1">
           <label
             htmlFor="atributo-nuevo-clave"
             className="text-xs font-medium text-muted-foreground"
@@ -269,13 +276,13 @@ export const BandejaAtributos = ({ objeto }: BandejaAtributosProps) => {
           </label>
           <Input
             id="atributo-nuevo-clave"
-            className="h-8 w-40"
+            className="h-8 w-36"
             value={nuevaClave}
             placeholder={t("page.objeto.attributes.keyPlaceholder")}
             onChange={(evento) => setNuevaClave(evento.target.value)}
           />
         </div>
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-1">
           <label
             htmlFor="atributo-nuevo-valor"
             className="text-xs font-medium text-muted-foreground"
@@ -284,7 +291,7 @@ export const BandejaAtributos = ({ objeto }: BandejaAtributosProps) => {
           </label>
           <Input
             id="atributo-nuevo-valor"
-            className="h-8 w-56"
+            className="h-8 w-52"
             value={nuevoValor}
             placeholder={t("page.objeto.attributes.valuePlaceholder")}
             onChange={(evento) => setNuevoValor(evento.target.value)}

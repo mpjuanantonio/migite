@@ -200,6 +200,24 @@
     color: var(--foreground);
   }
 
+  .editor-lectura .cm-editor {
+    font-size: 1.0625rem;
+  }
+  .editor-lectura .cm-editor .cm-scroller {
+    font-family: var(--font-display);
+    line-height: 1.75;
+    padding: 1rem 0;
+  }
+  .editor-lectura .cm-editor .cm-content {
+    width: 100%;
+    max-width: 68ch;
+    margin-inline: auto;
+    padding: 0 1.5rem;
+  }
+  .editor-lectura .cm-editor .cm-line {
+    text-wrap: pretty;
+  }
+
   .prose-archivo {
     max-width: 68ch;
     color: var(--foreground);

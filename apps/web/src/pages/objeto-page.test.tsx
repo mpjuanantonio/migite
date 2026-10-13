@@ -240,6 +240,22 @@ describe("ficha de objeto", () => {
     expect(editor).toHaveValue("# Diario\n\nUna **nota** serena.");
   });
 
+  it("ordena la ficha con propiedades arriba y escritura a ancho completo", async () => {
+    mockObjetoApi();
+    renderObjeto();
+
+    const propiedades = await screen.findByRole("region", { name: "Atributos" });
+    const escritura = screen.getByRole("region", { name: "Texto markdown" });
+    const entrantes = screen.getByRole("region", { name: "Enlazan aquí" });
+
+    const sigueA = (origen: HTMLElement, destino: HTMLElement): boolean =>
+      (origen.compareDocumentPosition(destino) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+
+    expect(sigueA(propiedades, escritura)).toBe(true);
+    expect(sigueA(escritura, entrantes)).toBe(true);
+    expect(escritura).toHaveClass("editor-lectura");
+  });
+
   it("muestra el mensaje del API cuando la ficha no existe", async () => {
     mockObjetoApi({
       getError: errorResponse("not_found", "No existe la ficha solicitada", 404),
