@@ -530,6 +530,57 @@ describe("listado de notas", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Mi nota" })).toBeInTheDocument();
   });
 
+  it("refresca el listado y el árbol al crear una nota sin recargar", async () => {
+    let objetos: ObjectPayload[] = [
+      nota("A", "Diario de campo", "2026-10-05T18:30:00.000Z", "diario"),
+    ];
+    let nodos: ArbolObjetoNode[] = [nodo("A", "Diario de campo", "diario")];
+    let llamadasLista = 0;
+    let llamadasArbol = 0;
+
+    mockApi({
+      tipos: [tipoNota],
+      lista: () => {
+        llamadasLista += 1;
+        return jsonResponse({ objetos, siguienteCursor: null });
+      },
+      arbol: () => {
+        llamadasArbol += 1;
+        return arbolResponse(nodos);
+      },
+      detalle: (id) => jsonResponse(nota(id, "Nota nueva", "2026-10-07T09:00:00.000Z", "")),
+      crear: (body) => {
+        const creada = nota("NUEVA", body.titulo, "2026-10-07T09:00:00.000Z", "");
+        objetos = [creada, ...objetos];
+        nodos = [nodo("NUEVA", body.titulo, ""), ...nodos];
+        return jsonResponse(creada, 201);
+      },
+    });
+    const user = userEvent.setup();
+    const { router } = renderNotas();
+
+    await screen.findByRole("heading", { name: "Diario de campo" });
+    await screen.findByRole("list", { name: "Árbol de notas" });
+    const listasAntes = llamadasLista;
+    const arbolesAntes = llamadasArbol;
+
+    await user.click(screen.getByRole("button", { name: "Nueva nota" }));
+    await rellenar(user, "Título", "Nota nueva");
+    await user.click(dialogo().getByRole("button", { name: "Crear objeto" }));
+
+    await waitFor(() => {
+      expect(llamadasLista).toBeGreaterThan(listasAntes);
+      expect(llamadasArbol).toBeGreaterThan(arbolesAntes);
+    });
+    await screen.findByRole("heading", { level: 1, name: "Nota nueva" });
+    expect(router.state.location.pathname).toBe("/objetos/NUEVA");
+
+    await user.click(screen.getByRole("link", { name: "Notas" }));
+    expect(await screen.findByRole("heading", { name: "Nota nueva" })).toBeInTheDocument();
+    const arbol = await screen.findByRole("list", { name: "Árbol de notas" });
+    expect(await within(arbol).findByRole("link", { name: "Nota nueva" })).toBeInTheDocument();
+  });
+
   it("crea la nota dentro de la carpeta filtrada", async () => {
     mockApi({
       arbol: () => arbolResponse([nodo("B", "Plan anual", "proyectos")]),

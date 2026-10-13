@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import { errorResponse, jsonResponse } from "@/test/render-app";
 import {
+  invalidarColeccionesDeObjetos,
   useArbolObjetos,
   useBorrarObjeto,
   useCrearObjeto,
@@ -48,6 +49,27 @@ afterEach(() => {
 const envolver = ({ children }: { readonly children: ReactNode }) => (
   <QueryClientProvider client={cliente}>{children}</QueryClientProvider>
 );
+
+const clavesDePrueba = () =>
+  ({
+    listado: [...queryKeys.objetos, { tipo: "nota", limite: 20 }],
+    infinito: [...queryKeys.objetos, { infinito: true, tipo: "tarea" }],
+    arbol: [...queryKeys.arbol, { tipo: "nota" }],
+    detalle: queryKeys.objeto("01JALFA"),
+    resolver: queryKeys.resolver("Cuaderno de campo"),
+    enlaces: queryKeys.enlacesEntrantes("01JALFA"),
+  }) as const;
+
+const sembrarClaves = (): ReturnType<typeof clavesDePrueba> => {
+  const claves = clavesDePrueba();
+  for (const clave of Object.values(claves)) {
+    cliente.setQueryData(clave, {});
+  }
+  return claves;
+};
+
+const estaInvalidada = (clave: readonly unknown[]): boolean =>
+  cliente.getQueryState(clave)?.isInvalidated === true;
 
 describe("useResolverObjeto", () => {
   it("guarda el 404 bajo su propia key sin contaminar la de useObjeto", async () => {
@@ -116,6 +138,135 @@ describe("useArbolObjetos", () => {
       expect(resultado.result.current.isSuccess).toBe(true);
     });
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe("/api/objetos/arbol");
+  });
+});
+
+describe("invalidarColeccionesDeObjetos", () => {
+  it("invalida listados y árbol sin tocar detalle, resolver ni enlaces entrantes", () => {
+    const claves = sembrarClaves();
+
+    invalidarColeccionesDeObjetos(cliente);
+
+    expect(estaInvalidada(claves.listado)).toBe(true);
+    expect(estaInvalidada(claves.infinito)).toBe(true);
+    expect(estaInvalidada(claves.arbol)).toBe(true);
+    expect(estaInvalidada(claves.detalle)).toBe(false);
+    expect(estaInvalidada(claves.resolver)).toBe(false);
+    expect(estaInvalidada(claves.enlaces)).toBe(false);
+  });
+
+  it("propaga las opciones de invalidación", () => {
+    const invalidar = vi.spyOn(cliente, "invalidateQueries");
+
+    invalidarColeccionesDeObjetos(cliente, { refetchType: "none" });
+
+    expect(invalidar).toHaveBeenCalledWith({
+      predicate: expect.any(Function),
+      refetchType: "none",
+    });
+  });
+});
+
+describe("invalidación de colecciones en las mutaciones", () => {
+  it("al crear invalida listados y árbol sin tocar el detalle ni el resolver", async () => {
+    fetchMock.mockImplementation(async (input, init) => {
+      if (String(input) === "/api/objetos" && init?.method === "POST") {
+        return jsonResponse(objetoDePrueba, 201);
+      }
+      return errorResponse("not_found", "Ruta desconocida", 404);
+    });
+    const claves = sembrarClaves();
+
+    const crear = renderHook(() => useCrearObjeto(), { wrapper: envolver });
+    await act(async () => {
+      await crear.result.current.mutateAsync({ titulo: "Cuaderno de campo" });
+    });
+
+    expect(estaInvalidada(claves.listado)).toBe(true);
+    expect(estaInvalidada(claves.infinito)).toBe(true);
+    expect(estaInvalidada(claves.arbol)).toBe(true);
+    expect(estaInvalidada(claves.detalle)).toBe(false);
+    expect(estaInvalidada(claves.resolver)).toBe(false);
+  });
+
+  it("al guardar atributos invalida listados y árbol sin tocar el detalle ni el resolver", async () => {
+    fetchMock.mockImplementation(async (input, init) => {
+      if (String(input) === "/api/objetos/01JALFA" && init?.method === "PATCH") {
+        return jsonResponse({ ...objetoDePrueba, atributos: { estado: "hecha" } });
+      }
+      return errorResponse("not_found", "Ruta desconocida", 404);
+    });
+    const claves = sembrarClaves();
+
+    const guardar = renderHook(() => useGuardarAtributos("01JALFA"), { wrapper: envolver });
+    await act(async () => {
+      await guardar.result.current.mutateAsync({ estado: "hecha" });
+    });
+
+    expect(estaInvalidada(claves.listado)).toBe(true);
+    expect(estaInvalidada(claves.infinito)).toBe(true);
+    expect(estaInvalidada(claves.arbol)).toBe(true);
+    expect(estaInvalidada(claves.detalle)).toBe(false);
+    expect(estaInvalidada(claves.resolver)).toBe(false);
+  });
+
+  it("al guardar el cuerpo invalida listados y árbol sin tocar el detalle", async () => {
+    fetchMock.mockImplementation(async (input, init) => {
+      if (String(input) === "/api/objetos/01JALFA" && init?.method === "PATCH") {
+        return jsonResponse({ ...objetoDePrueba, cuerpo: "Hola" });
+      }
+      return errorResponse("not_found", "Ruta desconocida", 404);
+    });
+    const claves = sembrarClaves();
+
+    const guardar = renderHook(() => useGuardarObjeto("01JALFA"), { wrapper: envolver });
+    await act(async () => {
+      await guardar.result.current.mutateAsync("Hola");
+    });
+
+    expect(estaInvalidada(claves.listado)).toBe(true);
+    expect(estaInvalidada(claves.infinito)).toBe(true);
+    expect(estaInvalidada(claves.arbol)).toBe(true);
+    expect(estaInvalidada(claves.detalle)).toBe(false);
+    expect(estaInvalidada(claves.resolver)).toBe(false);
+  });
+
+  it("al renombrar invalida listados, árbol y el resolver del título nuevo", async () => {
+    fetchMock.mockImplementation(async (input) => {
+      if (String(input) === "/api/objetos/01JALFA/renombrar") {
+        return jsonResponse({
+          objeto: { ...objetoDePrueba, titulo: "Cuaderno nuevo" },
+          informe: { reescritos: [], omitidos: [], enlacesSinResolver: [] },
+        });
+      }
+      return errorResponse("not_found", "Ruta desconocida", 404);
+    });
+    const claves = sembrarClaves();
+
+    const renombrar = renderHook(() => useRenombrarObjeto("01JALFA"), { wrapper: envolver });
+    await act(async () => {
+      await renombrar.result.current.mutateAsync("Cuaderno nuevo");
+    });
+
+    expect(estaInvalidada(claves.listado)).toBe(true);
+    expect(estaInvalidada(claves.arbol)).toBe(true);
+    expect(estaInvalidada(claves.resolver)).toBe(true);
+    expect(estaInvalidada(claves.detalle)).toBe(false);
+  });
+
+  it("al borrar invalida listados y árbol, y retira el detalle afectado", async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+    const claves = sembrarClaves();
+
+    const borrar = renderHook(() => useBorrarObjeto(), { wrapper: envolver });
+    await act(async () => {
+      await borrar.result.current.mutateAsync("01JALFA");
+    });
+
+    expect(estaInvalidada(claves.listado)).toBe(true);
+    expect(estaInvalidada(claves.arbol)).toBe(true);
+    expect(cliente.getQueryData(claves.detalle)).toBeUndefined();
+    expect(cliente.getQueryData(claves.enlaces)).toBeUndefined();
   });
 });
 
@@ -277,56 +428,5 @@ describe("guardados concurrentes del mismo objeto", () => {
     const guardado = cliente.getQueryData<ObjectPayload>(queryKeys.objeto("01JALFA"));
     expect(guardado?.cuerpo).toBe(cuerpoNuevo);
     expect(guardado?.atributos).toEqual(atributosNuevos);
-  });
-});
-
-describe("invalidación del árbol de objetos", () => {
-  it("invalida el árbol al crear un objeto", async () => {
-    fetchMock.mockImplementation(async (input, init) => {
-      if (String(input) === "/api/objetos" && init?.method === "POST") {
-        return jsonResponse(objetoDePrueba, 201);
-      }
-      return errorResponse("not_found", "Ruta desconocida", 404);
-    });
-    const invalidar = vi.spyOn(cliente, "invalidateQueries");
-
-    const crear = renderHook(() => useCrearObjeto(), { wrapper: envolver });
-    await act(async () => {
-      await crear.result.current.mutateAsync({ titulo: "Cuaderno de campo" });
-    });
-
-    expect(invalidar).toHaveBeenCalledWith({ queryKey: queryKeys.arbol });
-  });
-
-  it("invalida el árbol al borrar un objeto", async () => {
-    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
-    const invalidar = vi.spyOn(cliente, "invalidateQueries");
-
-    const borrar = renderHook(() => useBorrarObjeto(), { wrapper: envolver });
-    await act(async () => {
-      await borrar.result.current.mutateAsync("01JALFA");
-    });
-
-    expect(invalidar).toHaveBeenCalledWith({ queryKey: queryKeys.arbol });
-  });
-
-  it("invalida el árbol al renombrar un objeto", async () => {
-    fetchMock.mockImplementation(async (input) => {
-      if (String(input) === "/api/objetos/01JALFA/renombrar") {
-        return jsonResponse({
-          objeto: { ...objetoDePrueba, titulo: "Cuaderno nuevo" },
-          informe: { reescritos: [], omitidos: [], enlacesSinResolver: [] },
-        });
-      }
-      return errorResponse("not_found", "Ruta desconocida", 404);
-    });
-    const invalidar = vi.spyOn(cliente, "invalidateQueries");
-
-    const renombrar = renderHook(() => useRenombrarObjeto("01JALFA"), { wrapper: envolver });
-    await act(async () => {
-      await renombrar.result.current.mutateAsync("Cuaderno nuevo");
-    });
-
-    expect(invalidar).toHaveBeenCalledWith({ queryKey: queryKeys.arbol });
   });
 });
