@@ -1,6 +1,6 @@
 import type { SearchResultItem, TipoPayload } from "@migite/contracts";
 import { QueryClient } from "@tanstack/react-query";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import { errorResponse, jsonResponse, renderApp, sesionResponse } from "@/test/render-app";
@@ -96,8 +96,11 @@ describe("búsqueda global", () => {
     const campo = await campoDeBusqueda();
     await user.type(campo, "casa");
 
-    expect(await screen.findByRole("heading", { level: 2, name: "Notas (1)" })).toBeInTheDocument();
-    const encabezados = screen
+    const main = screen.getByRole("main");
+    expect(
+      await within(main).findByRole("heading", { level: 2, name: "Notas (1)" }),
+    ).toBeInTheDocument();
+    const encabezados = within(main)
       .getAllByRole("heading", { level: 2 })
       .map((item) => item.textContent);
     expect(encabezados).toEqual(["Notas (1)", "Tareas (1)", "Libro (1)"]);

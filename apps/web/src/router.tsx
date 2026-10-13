@@ -21,6 +21,7 @@ import { RecordatoriosPage } from "@/pages/recordatorios-page";
 import { SetupPage } from "@/pages/setup-page";
 import { TareasPage } from "@/pages/tareas-page";
 import { TipoNuevoPage } from "@/pages/tipo-nuevo-page";
+import { TipoObjetosPage } from "@/pages/tipo-objetos-page";
 import { TipoPage } from "@/pages/tipo-page";
 import { TiposPage } from "@/pages/tipos-page";
 
@@ -95,6 +96,7 @@ export const routes: RouteObject[] = [
           { path: "calendario", element: <CalendarioPage /> },
           { path: "proyectos", element: <ProyectosPage /> },
           { path: "proyectos/:id", element: <ProyectoPage /> },
+          { path: "tipo/:id", element: <TipoObjetosPage /> },
           { path: "tipos", element: <TiposPage /> },
           { path: "tipos/nuevo", element: <TipoNuevoPage /> },
           { path: "tipos/:id", element: <TipoPage /> },

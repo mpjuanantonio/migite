@@ -21,7 +21,13 @@ const objetoDePrueba = (): ObjectPayload => ({
 let fetchMock: Mock<typeof fetch>;
 
 const mockSesion = (autenticado: boolean): void => {
-  fetchMock.mockResolvedValue(sesionResponse(autenticado));
+  fetchMock.mockImplementation(async (input) => {
+    const url = new URL(String(input), "http://localhost");
+    if (url.pathname === "/api/tipos") {
+      return jsonResponse({ tipos: [] });
+    }
+    return sesionResponse(autenticado);
+  });
 };
 
 beforeEach(() => {
@@ -84,11 +90,15 @@ describe("shell de la SPA", () => {
   });
 
   it("muestra la ficha de un objeto de la ruta", async () => {
-    fetchMock.mockImplementation(async (input) =>
-      String(input).startsWith("/api/objetos/")
+    fetchMock.mockImplementation(async (input) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname === "/api/tipos") {
+        return jsonResponse({ tipos: [] });
+      }
+      return String(input).startsWith("/api/objetos/")
         ? jsonResponse(objetoDePrueba())
-        : sesionResponse(true),
-    );
+        : sesionResponse(true);
+    });
     renderApp("/objetos/01JALFA0000000000000000000");
 
     expect(

@@ -130,6 +130,10 @@ const mockApi = (eventos: readonly ObjectPayload[] = [], opciones: OpcionesMock 
         : jsonResponse(encontrado);
     }
 
+    if (url.pathname === "/api/tipos" && method === "GET") {
+      return jsonResponse({ tipos: [] });
+    }
+
     return errorResponse("not_found", "No existe la ruta", 404);
   });
 };

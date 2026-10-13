@@ -78,6 +78,10 @@ const mockApi = (options: MockApiOptions = {}): void => {
       return jsonResponse({ objetos, siguienteCursor: null });
     }
 
+    if (url.pathname === "/api/tipos" && method === "GET") {
+      return jsonResponse({ tipos: [] });
+    }
+
     return errorResponse("not_found", "No existe la ruta", 404);
   });
 };
