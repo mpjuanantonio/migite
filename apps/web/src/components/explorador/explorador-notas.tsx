@@ -3,9 +3,10 @@ import { ChevronRight, FileText, Folder, FolderOpen, PanelLeftClose, RotateCw } 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ApiError } from "@/api/api";
-import { useArbolObjetos } from "@/api/hooks";
+import { useArbolObjetos, useTipos } from "@/api/hooks";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n/context";
+import { esTipoDeSeccionNotas } from "@/lib/tipos";
 import { cn } from "@/lib/utils";
 import { ancestrosDe, type CarpetaArbol, construirArbol } from "./arbol";
 
@@ -169,7 +170,8 @@ export const ExploradorNotas = ({
   onColapsar,
 }: ExploradorNotasProps) => {
   const { t, locale } = useI18n();
-  const consulta = useArbolObjetos({ tipo: "nota" });
+  const tipos = useTipos();
+  const consulta = useArbolObjetos();
   const [expandidas, setExpandidas] = useState<ReadonlySet<string>>(() => {
     const guardadas = leerExpandidas();
     if (guardadas !== null) {
@@ -182,9 +184,24 @@ export const ExploradorNotas = ({
   });
   const seleccionAnterior = useRef(carpetaSeleccionada);
 
+  const idsNotas = useMemo(() => {
+    if (tipos.data === undefined) {
+      return new Set<string>(["nota"]);
+    }
+    const ids = new Set(
+      tipos.data.filter((tipo) => esTipoDeSeccionNotas(tipo)).map((tipo) => tipo.id),
+    );
+    ids.add("nota");
+    return ids;
+  }, [tipos.data]);
+
   const arbol = useMemo(
-    () => construirArbol(consulta.data?.nodos ?? [], locale),
-    [consulta.data, locale],
+    () =>
+      construirArbol(
+        (consulta.data?.nodos ?? []).filter((nodo) => idsNotas.has(nodo.tipo)),
+        locale,
+      ),
+    [consulta.data, idsNotas, locale],
   );
 
   useEffect(() => {

@@ -33,9 +33,9 @@ const nota = (
   ...extras,
 });
 
-const nodo = (id: string, titulo: string, carpeta: string): ArbolObjetoNode => ({
+const nodo = (id: string, titulo: string, carpeta: string, tipo = "nota"): ArbolObjetoNode => ({
   id,
-  tipo: "nota",
+  tipo,
   titulo,
   ruta: carpeta === "" ? `${id}.md` : `${carpeta}/${id}.md`,
   carpeta,
@@ -90,6 +90,40 @@ const tipoRecordatorio: TipoPayload = {
   id: "recordatorio",
   nombre: "Recordatorio",
   atributos: [{ id: "hora", nombre: "Hora", tipo: "fecha-hora", rol: "hora", obligatorio: true }],
+};
+
+const tipoCuaderno: TipoPayload = {
+  id: "cuaderno",
+  nombre: "Cuaderno",
+  atributos: [],
+  presentacion: { seccion: "notas", visible: true },
+};
+
+const tipoAgenda: TipoPayload = {
+  id: "agenda",
+  nombre: "Agenda",
+  atributos: [],
+};
+
+const tipoOculto: TipoPayload = {
+  id: "oculto",
+  nombre: "Oculto",
+  atributos: [],
+  presentacion: { visible: false },
+};
+
+const tipoReceta: TipoPayload = {
+  id: "receta",
+  nombre: "Receta",
+  atributos: [],
+  presentacion: { seccion: "productividad", visible: true },
+};
+
+const tipoApunte: TipoPayload = {
+  id: "apunte",
+  nombre: "Apunte",
+  atributos: [],
+  presentacion: { carpeta: "Libros" },
 };
 
 type ApiOptions = {
@@ -538,6 +572,103 @@ describe("listado de notas", () => {
     });
   });
 
+  it("pre-rellena la carpeta por defecto del tipo elegido y la envía en el alta", async () => {
+    mockApi({
+      tipos: [tipoNota, tipoApunte],
+      crear: (body) =>
+        jsonResponse(
+          nota("NUEVA", body.titulo, "2026-10-07T09:00:00.000Z", body.carpeta ?? ""),
+          201,
+        ),
+    });
+    const user = userEvent.setup();
+    renderNotas();
+
+    await screen.findByText(/Todavía no hay notas/);
+    await user.click(screen.getByRole("button", { name: "Nuevo objeto" }));
+    await screen.findByRole("dialog");
+
+    expect(dialogo().getByLabelText("Carpeta (opcional)")).toHaveValue("");
+
+    await user.selectOptions(dialogo().getByLabelText("Tipo"), "apunte");
+
+    expect(dialogo().getByLabelText("Carpeta (opcional)")).toHaveValue("Libros");
+
+    await rellenar(user, "Título", "Apunte de lectura");
+    await user.click(dialogo().getByRole("button", { name: "Crear objeto" }));
+
+    await waitFor(() => {
+      expect(JSON.parse(String(posteos()[0]?.[1]?.body))).toEqual({
+        tipo: "apunte",
+        titulo: "Apunte de lectura",
+        carpeta: "Libros",
+      });
+    });
+  });
+
+  it("permite editar la carpeta pre-rellenada por el tipo", async () => {
+    mockApi({
+      tipos: [tipoNota, tipoApunte],
+      crear: (body) =>
+        jsonResponse(
+          nota("NUEVA", body.titulo, "2026-10-07T09:00:00.000Z", body.carpeta ?? ""),
+          201,
+        ),
+    });
+    const user = userEvent.setup();
+    renderNotas();
+
+    await screen.findByText(/Todavía no hay notas/);
+    await user.click(screen.getByRole("button", { name: "Nuevo objeto" }));
+    await screen.findByRole("dialog");
+
+    await user.selectOptions(dialogo().getByLabelText("Tipo"), "apunte");
+    const campoCarpeta = dialogo().getByLabelText("Carpeta (opcional)");
+    await user.clear(campoCarpeta);
+    await user.type(campoCarpeta, "Ensayos");
+    await rellenar(user, "Título", "Apunte editado");
+    await user.click(dialogo().getByRole("button", { name: "Crear objeto" }));
+
+    await waitFor(() => {
+      expect(JSON.parse(String(posteos()[0]?.[1]?.body))).toEqual({
+        tipo: "apunte",
+        titulo: "Apunte editado",
+        carpeta: "Ensayos",
+      });
+    });
+  });
+
+  it("no pre-rellena la carpeta si el tipo no la define", async () => {
+    mockApi({
+      tipos: [tipoNota, tipoLibro],
+      crear: (body) =>
+        jsonResponse(
+          nota("NUEVA", body.titulo, "2026-10-07T09:00:00.000Z", body.carpeta ?? ""),
+          201,
+        ),
+    });
+    const user = userEvent.setup();
+    renderNotas();
+
+    await screen.findByText(/Todavía no hay notas/);
+    await user.click(screen.getByRole("button", { name: "Nuevo objeto" }));
+    await screen.findByRole("dialog");
+
+    await user.selectOptions(dialogo().getByLabelText("Tipo"), "libro");
+
+    expect(dialogo().getByLabelText("Carpeta (opcional)")).toHaveValue("");
+
+    await rellenar(user, "Título", "Sin carpeta");
+    await rellenar(user, /^Autor/, "Anónimo");
+    await user.click(dialogo().getByRole("button", { name: "Crear objeto" }));
+
+    await waitFor(() => {
+      const body = JSON.parse(String(posteos()[0]?.[1]?.body)) as Record<string, unknown>;
+      expect(body).not.toHaveProperty("carpeta");
+      expect(body.tipo).toBe("libro");
+    });
+  });
+
   it("filtra la raíz en el cliente cuando el API no distingue carpeta vacía", async () => {
     mockApi({
       arbol: () => arbolResponse([nodo("A", "Suelta", ""), nodo("B", "En diario", "diario")]),
@@ -756,6 +887,28 @@ describe("listado de notas", () => {
     expect(await dialogo().findByRole("alert")).toHaveTextContent(
       "Falta el atributo obligatorio: autor",
     );
+  });
+
+  it("muestra en el explorador los tipos de la sección Notas y oculta los de productividad y visible:false", async () => {
+    mockApi({
+      tipos: [tipoNota, tipoCuaderno, tipoAgenda, tipoOculto, tipoReceta],
+      arbol: () =>
+        arbolResponse([
+          nodo("A", "Nota base", ""),
+          nodo("B", "Cuaderno de campo", "", "cuaderno"),
+          nodo("C", "Agenda personal", "", "agenda"),
+          nodo("D", "Secreto", "", "oculto"),
+          nodo("E", "Receta rápida", "", "receta"),
+        ]),
+    });
+    renderNotas();
+
+    const arbol = await screen.findByRole("list", { name: "Árbol de notas" });
+    expect(await within(arbol).findByRole("link", { name: "Nota base" })).toBeInTheDocument();
+    expect(within(arbol).getByRole("link", { name: "Cuaderno de campo" })).toBeInTheDocument();
+    expect(within(arbol).getByRole("link", { name: "Agenda personal" })).toBeInTheDocument();
+    expect(within(arbol).queryByRole("link", { name: "Secreto" })).toBeNull();
+    expect(within(arbol).queryByRole("link", { name: "Receta rápida" })).toBeNull();
   });
 
   it("muestra el árbol del explorador y navega a la ficha al pulsar una nota", async () => {

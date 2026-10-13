@@ -1,5 +1,5 @@
 import type { AttributePayload } from "@migite/contracts";
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { ApiError } from "@/api/api";
 import { useCrearObjeto, useTipos } from "@/api/hooks";
 import { CampoAtributo } from "@/components/atributos/campo-atributo";
@@ -56,6 +56,15 @@ export const AltaObjetoDialog = ({
   const [aviso, setAviso] = useState("");
 
   const tipo = tipos.data?.find((item) => item.id === tipoId);
+  const carpetaPredeterminada = tipo?.presentacion?.carpeta ?? "";
+
+  useEffect(() => {
+    if (carpetaPredeterminada === "") {
+      return;
+    }
+    setCarpeta((actual) => (actual.trim() === "" ? carpetaPredeterminada : actual));
+  }, [carpetaPredeterminada]);
+
   const definiciones = useMemo(() => tipo?.atributos ?? [], [tipo]);
   const atributos = useMemo(() => atributosDeAlta(tipoId, definiciones), [tipoId, definiciones]);
   const valoresEfectivos = useMemo(

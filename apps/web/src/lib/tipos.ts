@@ -24,6 +24,16 @@ export const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
 export const esTipoSistema = (id: string): boolean => isReservedTypeId(id);
 
+export const esTipoDeSeccionNotas = (tipo: TipoPayload): boolean => {
+  if (tipo.presentacion?.visible === false) {
+    return false;
+  }
+  if (esTipoSistema(tipo.id)) {
+    return tipo.id === "nota";
+  }
+  return tipo.presentacion?.seccion !== "productividad";
+};
+
 export const sugerirId = (nombre: string): string => slugify(nombre);
 
 export const idValido = (id: string): boolean => ID_PATTERN.test(id.trim());
