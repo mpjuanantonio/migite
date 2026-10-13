@@ -317,6 +317,22 @@ describe("editor de tipo", () => {
     expect(await within(dialogo).findByText("No existe el tipo")).toBeInTheDocument();
   });
 
+  it("muestra el error de carga cuando falla la petición de tipos", async () => {
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname === "/api/tipos" && (init?.method ?? "GET") === "GET") {
+        return errorResponse("internal_error", "Fallo al cargar los tipos", 500);
+      }
+      return sesionResponse(true);
+    });
+    renderTipo("/tipos/libro");
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "No se pudo abrir el tipo" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Fallo al cargar los tipos")).toBeInTheDocument();
+  });
+
   it("muestra los tipos del sistema en solo lectura", async () => {
     mockApi();
     renderTipo("/tipos/nota");

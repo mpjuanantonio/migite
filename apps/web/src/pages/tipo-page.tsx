@@ -32,7 +32,9 @@ export const TipoPage = () => {
     const mensaje = tipos.error instanceof ApiError ? tipos.error.mensaje : t("error.genericError");
     return (
       <section className="rounded-lg border border-border bg-card px-6 py-12 shadow-sheet">
-        <h1 className="font-heading text-display font-medium">{t("page.tipo.notFound")}</h1>
+        <h1 className="font-heading text-display font-medium">
+          {tipos.isError ? t("page.tipo.loadError") : t("page.tipo.notFound")}
+        </h1>
         <p className="mt-3 max-w-prose text-sm text-muted-foreground">
           {tipos.isError ? mensaje : t("page.tipos.empty")}
         </p>
