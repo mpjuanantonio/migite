@@ -1,6 +1,6 @@
 import type { AttributePayload, ObjectPayload } from "@migite/contracts";
-import { Plus, Save, Trash2 } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { Plus, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "@/api/api";
 import { useGuardarAtributos, useTipos } from "@/api/hooks";
 import { CampoAtributo } from "@/components/atributos/campo-atributo";
@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useI18n } from "@/i18n/context";
 import { construirAtributos, esObligatorio, filtrarVacios, iguales } from "@/lib/atributos";
+
+const DEBOUNCE_GUARDADO_MS = 600;
 
 type BandejaAtributosProps = {
   readonly objeto: ObjectPayload;
@@ -17,6 +19,13 @@ export const BandejaAtributos = ({ objeto }: BandejaAtributosProps) => {
   const { t } = useI18n();
   const tipos = useTipos();
   const guardar = useGuardarAtributos(objeto.id);
+  const {
+    error: errorAlGuardar,
+    isError: falloAlGuardar,
+    isPending: guardando,
+    mutate: guardarAtributosAhora,
+    reset: descartarFalloAlGuardar,
+  } = guardar;
   const [borrador, setBorrador] = useState<{
     readonly objetoId: string;
     readonly valores: Readonly<Record<string, unknown>>;
@@ -24,7 +33,6 @@ export const BandejaAtributos = ({ objeto }: BandejaAtributosProps) => {
   }>();
   const [nuevaClave, setNuevaClave] = useState("");
   const [nuevoValor, setNuevoValor] = useState("");
-  const [guardadoEn, setGuardadoEn] = useState<string>();
 
   const tipo = tipos.data?.find((item) => item.id === objeto.tipo);
   const crudo =
@@ -91,12 +99,16 @@ export const BandejaAtributos = ({ objeto }: BandejaAtributosProps) => {
     () => construirAtributos(objeto, actual, definiciones),
     [objeto, actual, definiciones],
   );
+  const deseadosRef = useRef(deseados);
+  deseadosRef.current = deseados;
   const conCambios = !iguales(deseados, filtrarVacios(objeto.atributos));
-  const guardando = guardar.isPending;
   const puedeGuardar = conCambios && !guardando;
 
   const actualizar = useCallback(
     (clave: string, valor: unknown) => {
+      if (falloAlGuardar) {
+        descartarFalloAlGuardar();
+      }
       setBorrador((previo) => {
         const vigente =
           previo !== undefined && previo.objetoId === objeto.id
@@ -108,13 +120,15 @@ export const BandejaAtributos = ({ objeto }: BandejaAtributosProps) => {
           eliminados: vigente.eliminados.filter((item) => item !== clave),
         };
       });
-      setGuardadoEn(undefined);
     },
-    [objeto.id],
+    [objeto.id, falloAlGuardar, descartarFalloAlGuardar],
   );
 
   const eliminar = useCallback(
     (clave: string) => {
+      if (falloAlGuardar) {
+        descartarFalloAlGuardar();
+      }
       setBorrador((previo) => {
         const vigente =
           previo !== undefined && previo.objetoId === objeto.id
@@ -128,9 +142,8 @@ export const BandejaAtributos = ({ objeto }: BandejaAtributosProps) => {
           eliminados: [...new Set([...vigente.eliminados, clave])],
         };
       });
-      setGuardadoEn(undefined);
     },
-    [objeto.id],
+    [objeto.id, falloAlGuardar, descartarFalloAlGuardar],
   );
 
   const agregarLibre = useCallback(() => {
@@ -147,21 +160,21 @@ export const BandejaAtributos = ({ objeto }: BandejaAtributosProps) => {
     if (!puedeGuardar) {
       return;
     }
-    guardar.mutate(deseados, {
+    const instantanea = deseados;
+    guardarAtributosAhora(instantanea, {
       onSuccess: () => {
-        setBorrador(undefined);
-        setGuardadoEn(objeto.id);
+        setBorrador((previo) => (iguales(deseadosRef.current, instantanea) ? undefined : previo));
       },
     });
-  }, [deseados, guardar, objeto.id, puedeGuardar]);
+  }, [deseados, guardarAtributosAhora, puedeGuardar]);
 
-  const estado = guardando
-    ? t("page.objeto.attributes.saving")
-    : conCambios
-      ? t("page.objeto.attributes.unsaved")
-      : guardadoEn === objeto.id
-        ? t("page.objeto.attributes.saved")
-        : t("page.objeto.attributes.clean");
+  useEffect(() => {
+    if (!conCambios || guardando || falloAlGuardar) {
+      return;
+    }
+    const temporizador = setTimeout(guardarAtributos, DEBOUNCE_GUARDADO_MS);
+    return () => clearTimeout(temporizador);
+  }, [conCambios, guardando, falloAlGuardar, guardarAtributos]);
 
   return (
     <section aria-label={t("page.objeto.attributes.title")} className="flex flex-col">
@@ -174,32 +187,21 @@ export const BandejaAtributos = ({ objeto }: BandejaAtributosProps) => {
             <span className="text-xs text-muted-foreground">{t("page.objeto.attributes.raw")}</span>
           ) : null}
         </div>
-        <div className="flex items-center gap-2">
+        {guardando ? (
           <p role="status" aria-live="polite" className="text-xs text-muted-foreground">
-            {estado}
+            {t("page.objeto.attributes.saving")}
           </p>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={guardarAtributos}
-            disabled={!puedeGuardar}
-            title={t("page.objeto.attributes.save")}
-          >
-            <Save aria-hidden="true" />
-            {guardando ? t("page.objeto.attributes.saving") : t("page.objeto.attributes.save")}
-          </Button>
-        </div>
+        ) : null}
       </header>
 
-      {guardar.isError ? (
+      {falloAlGuardar ? (
         <div
           role="alert"
           className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-destructive/30 bg-destructive/5 px-3.5 py-2.5 text-sm text-destructive"
         >
           <p className="max-w-prose">
             <span className="font-medium">{t("page.objeto.attributes.saveError")}. </span>
-            {guardar.error instanceof ApiError ? guardar.error.mensaje : t("error.genericError")}
+            {errorAlGuardar instanceof ApiError ? errorAlGuardar.mensaje : t("error.genericError")}
           </p>
           <Button
             type="button"

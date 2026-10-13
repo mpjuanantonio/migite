@@ -1,6 +1,6 @@
 import type { EnlaceEntrante, ObjectPayload, TipoPayload } from "@migite/contracts";
 import { QueryClient } from "@tanstack/react-query";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import { queryKeys } from "@/api/keys";
@@ -213,6 +213,37 @@ const objetoTarea = (overrides: Partial<ObjectPayload> = {}): ObjectPayload =>
 const renderObjeto = () =>
   renderApp("/objetos/01JALFA", new QueryClient({ defaultOptions: { queries: { retry: false } } }));
 
+const avanzarTemporizadores = async (ms = 0): Promise<void> => {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+};
+
+const patchesDe = (clave: "cuerpo" | "atributos"): PatchBody[] => {
+  const resultado: PatchBody[] = [];
+  for (const [, init] of fetchMock.mock.calls) {
+    if (init?.method !== "PATCH") {
+      continue;
+    }
+    const body = JSON.parse(String(init.body ?? "{}")) as PatchBody;
+    if (body[clave] !== undefined) {
+      resultado.push(body);
+    }
+  }
+  return resultado;
+};
+
+const patchCuerpo = (): PatchBody | undefined => patchesDe("cuerpo")[0];
+
+const indicadorGuardando = (): HTMLElement | null =>
+  screen.queryByRole("status", { name: "Guardando…" });
+
+const indicadorGuardado = (): HTMLElement | null =>
+  screen.queryByRole("status", { name: "Guardado" });
+
+const indicadorError = (): HTMLElement | null =>
+  screen.queryByRole("button", { name: /^No se pudo guardar/ });
+
 beforeEach(() => {
   localStorage.clear();
   fetchMock = vi.fn<typeof fetch>();
@@ -220,6 +251,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -232,8 +264,10 @@ describe("ficha de objeto", () => {
       await screen.findByRole("heading", { level: 1, name: "Cuaderno de campo" }),
     ).toBeInTheDocument();
     expect(screen.getByText("nota", { selector: "span" })).toBeInTheDocument();
-    expect(screen.getByText("Sin cambios")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Guardar" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Guardar" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Guardar atributos" })).toBeNull();
+    expect(indicadorGuardando()).toBeNull();
+    expect(indicadorGuardado()).toBeNull();
 
     expect(screen.getByRole("region", { name: "Texto markdown" })).toBeInTheDocument();
     const editor = screen.getByLabelText("Cuerpo de la ficha en markdown");
@@ -299,80 +333,72 @@ describe("ficha de objeto", () => {
     expect(screen.getByLabelText("Cuerpo de la ficha en markdown")).toBeInTheDocument();
   });
 
-  it("edita y guarda el cuerpo con el botón", async () => {
+  it("autoguarda el cuerpo al dejar de teclear", async () => {
     mockObjetoApi();
-    const user = userEvent.setup();
     renderObjeto();
 
     const editor = await screen.findByLabelText("Cuerpo de la ficha en markdown");
-    await user.clear(editor);
-    await user.type(editor, "Cuerpo nuevo");
+    vi.useFakeTimers();
+    fireEvent.change(editor, { target: { value: "Cuerpo autoguardado" } });
 
-    expect(screen.getByText("Cambios sin guardar")).toBeInTheDocument();
+    expect(indicadorGuardando()).toBeInTheDocument();
+    expect(patchCuerpo()).toBeUndefined();
 
-    await user.click(screen.getByRole("button", { name: "Guardar" }));
+    await avanzarTemporizadores(1199);
+    expect(patchCuerpo()).toBeUndefined();
 
-    expect(await screen.findByText("Guardado")).toBeInTheDocument();
+    await avanzarTemporizadores(1);
+
+    expect(patchCuerpo()?.cuerpo).toBe("Cuerpo autoguardado");
     const patchCall = fetchMock.mock.calls.find(([, init]) => init?.method === "PATCH");
     expect(patchCall?.[0]).toBe("/api/objetos/01JALFA");
-    expect(JSON.parse(String(patchCall?.[1]?.body))).toEqual({ cuerpo: "Cuerpo nuevo" });
-    expect(screen.getByRole("button", { name: "Guardar" })).toBeDisabled();
+    expect(indicadorGuardado()).toBeInTheDocument();
+    expect(indicadorGuardando()).toBeNull();
   });
 
-  it("muestra el error de guardado y permite reintentar", async () => {
+  it("muestra el error del API en el indicador y permite reintentar", async () => {
     mockObjetoApi({
       patch: (_body, attempt) =>
         attempt === 1
           ? errorResponse("write_error", "No se pudo escribir el archivo", 500)
           : jsonResponse(objetoDePrueba({ cuerpo: "Cuerpo recuperado" })),
     });
-    const user = userEvent.setup();
     renderObjeto();
 
     const editor = await screen.findByLabelText("Cuerpo de la ficha en markdown");
-    await user.clear(editor);
-    await user.type(editor, "Cuerpo recuperado");
-    await user.click(screen.getByRole("button", { name: "Guardar" }));
+    fireEvent.change(editor, { target: { value: "Cuerpo recuperado" } });
 
-    const alerta = await screen.findByRole("alert");
-    expect(alerta).toHaveTextContent("No se pudo escribir el archivo");
+    const boton = await screen.findByRole("button", { name: /^No se pudo guardar/ });
+    expect(boton).toHaveAttribute("title", "No se pudo guardar: No se pudo escribir el archivo");
+    expect(editor).toHaveValue("Cuerpo recuperado");
 
-    await user.click(within(alerta).getByRole("button", { name: "Reintentar" }));
-
-    expect(await screen.findByText("Guardado")).toBeInTheDocument();
-    expect(screen.queryByRole("alert")).toBeNull();
-  });
-
-  it("guarda con el atajo Ctrl+S", async () => {
-    mockObjetoApi();
-    const user = userEvent.setup();
-    renderObjeto();
-
-    const editor = await screen.findByLabelText("Cuerpo de la ficha en markdown");
-    await user.clear(editor);
-    await user.type(editor, "Cuerpo con atajo");
-    await user.keyboard("{Control>}s{/Control}");
+    fireEvent.click(boton);
 
     await waitFor(() => {
-      const patchCall = fetchMock.mock.calls.find(([, init]) => init?.method === "PATCH");
-      expect(patchCall).toBeDefined();
-      expect(JSON.parse(String(patchCall?.[1]?.body))).toEqual({ cuerpo: "Cuerpo con atajo" });
+      expect(patchesDe("cuerpo")).toHaveLength(2);
     });
-    expect(await screen.findByText("Guardado")).toBeInTheDocument();
+    expect(indicadorGuardado()).toBeInTheDocument();
+    expect(indicadorError()).toBeNull();
+  });
+
+  it("guarda con el atajo Ctrl+S sin esperar al debounce", async () => {
+    mockObjetoApi();
+    renderObjeto();
+
+    const editor = await screen.findByLabelText("Cuerpo de la ficha en markdown");
+    vi.useFakeTimers();
+    fireEvent.change(editor, { target: { value: "Cuerpo con atajo" } });
+    fireEvent.keyDown(window, { key: "s", ctrlKey: true });
+    await avanzarTemporizadores(0);
+
+    expect(patchCuerpo()?.cuerpo).toBe("Cuerpo con atajo");
+    expect(indicadorGuardado()).toBeInTheDocument();
   });
 });
 
 const patchAtributos = (): PatchBody | undefined => {
-  for (const [, init] of fetchMock.mock.calls) {
-    if (init?.method !== "PATCH") {
-      continue;
-    }
-    const body = JSON.parse(String(init.body ?? "{}")) as PatchBody;
-    if (body.atributos !== undefined) {
-      return body;
-    }
-  }
-  return undefined;
+  const patches = patchesDe("atributos");
+  return patches[patches.length - 1];
 };
 
 describe("bandeja de atributos", () => {
@@ -415,10 +441,10 @@ describe("bandeja de atributos", () => {
     expect(screen.getByLabelText("Web")).toHaveAttribute("type", "url");
     expect(screen.getByLabelText("Enlace")).toHaveValue("[[Beta]]");
     expect(screen.getByLabelText("Adjunto")).toHaveValue("docs/a.pdf");
-    expect(screen.getByRole("button", { name: "Guardar atributos" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Guardar atributos" })).toBeNull();
   });
 
-  it("edita y guarda los atributos con el mapa fusionado", async () => {
+  it("autoguarda los atributos con el mapa fusionado", async () => {
     mockObjetoApi({
       objeto: objetoTarea({
         atributos: { estado: "pendiente", vencimiento: "2026-10-10", prioridad: 3, urgente: false },
@@ -433,20 +459,17 @@ describe("bandeja de atributos", () => {
     await user.selectOptions(screen.getByLabelText("Estado"), "hecha");
     await user.click(screen.getByRole("switch", { name: "Urgente" }));
 
-    expect(screen.getByText("Atributos sin guardar")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Guardar atributos" }));
-
-    expect(await screen.findByText("Atributos guardados")).toBeInTheDocument();
-    expect(patchAtributos()?.atributos).toEqual({
-      estado: "hecha",
-      vencimiento: "2026-11-01",
-      prioridad: 3,
-      urgente: true,
+    await waitFor(() => {
+      expect(patchAtributos()?.atributos).toEqual({
+        estado: "hecha",
+        vencimiento: "2026-11-01",
+        prioridad: 3,
+        urgente: true,
+      });
     });
-    expect(screen.getByRole("button", { name: "Guardar atributos" })).toBeDisabled();
   });
 
-  it("añade un atributo libre y lo guarda", async () => {
+  it("añade un atributo libre y lo autoguarda", async () => {
     mockObjetoApi();
     const user = userEvent.setup();
     renderObjeto();
@@ -456,10 +479,9 @@ describe("bandeja de atributos", () => {
     await user.click(screen.getByRole("button", { name: "Añadir atributo" }));
 
     expect(await screen.findByLabelText("proyecto")).toHaveValue("migite");
-    await user.click(screen.getByRole("button", { name: "Guardar atributos" }));
-
-    expect(await screen.findByText("Atributos guardados")).toBeInTheDocument();
-    expect(patchAtributos()?.atributos).toEqual({ proyecto: "migite" });
+    await waitFor(() => {
+      expect(patchAtributos()?.atributos).toEqual({ proyecto: "migite" });
+    });
   });
 
   it("elimina atributos libres y definidos opcionales", async () => {
@@ -480,17 +502,16 @@ describe("bandeja de atributos", () => {
     expect(screen.queryByLabelText("Vencimiento")).toBeNull();
     expect(screen.queryByLabelText("presupuesto")).toBeNull();
 
-    await user.click(screen.getByRole("button", { name: "Guardar atributos" }));
-
-    expect(await screen.findByText("Atributos guardados")).toBeInTheDocument();
-    expect(patchAtributos()?.atributos).toEqual({
-      estado: "pendiente",
-      vencimiento: null,
-      presupuesto: null,
+    await waitFor(() => {
+      expect(patchAtributos()?.atributos).toEqual({
+        estado: "pendiente",
+        vencimiento: null,
+        presupuesto: null,
+      });
     });
   });
 
-  it("muestra los valores en crudo y los guarda en modo degradado", async () => {
+  it("muestra los valores en crudo y los autoguarda en modo degradado", async () => {
     mockObjetoApi({
       objeto: objetoDePrueba({
         tipo: "misterio",
@@ -498,7 +519,6 @@ describe("bandeja de atributos", () => {
         degraded: [{ kind: "unknownType", type: "misterio" }],
       }),
     });
-    const user = userEvent.setup();
     renderObjeto();
 
     expect(await screen.findByText("Valores en crudo")).toBeInTheDocument();
@@ -508,10 +528,10 @@ describe("bandeja de atributos", () => {
     expect(screen.getByLabelText("nota")).toHaveValue("hola");
 
     fireEvent.change(presupuesto, { target: { value: "1500" } });
-    await user.click(screen.getByRole("button", { name: "Guardar atributos" }));
 
-    expect(await screen.findByText("Atributos guardados")).toBeInTheDocument();
-    expect(patchAtributos()?.atributos).toEqual({ presupuesto: 1500, nota: "hola" });
+    await waitFor(() => {
+      expect(patchAtributos()?.atributos).toEqual({ presupuesto: 1500, nota: "hola" });
+    });
   });
 
   it("conserva lo tipeado cuando el PATCH de atributos falla", async () => {
@@ -527,7 +547,6 @@ describe("bandeja de atributos", () => {
 
     const web = await screen.findByLabelText("Web");
     fireEvent.change(web, { target: { value: "no-es-url" } });
-    await user.click(screen.getByRole("button", { name: "Guardar atributos" }));
 
     const alerta = await screen.findByRole("alert");
     expect(alerta).toHaveTextContent('attribute "web": expected an http(s) URL');
@@ -535,8 +554,10 @@ describe("bandeja de atributos", () => {
 
     await user.click(within(alerta).getByRole("button", { name: "Reintentar" }));
 
-    expect(await screen.findByText("Atributos guardados")).toBeInTheDocument();
-    expect(screen.queryByRole("alert")).toBeNull();
+    await waitFor(() => {
+      expect(screen.queryByRole("alert")).toBeNull();
+    });
+    expect(patchesDe("atributos")).toHaveLength(2);
   });
 });
 
@@ -801,8 +822,14 @@ describe("wikilinks del editor", () => {
     await abrirWikilink(user, "Nota nueva");
     await user.click(await screen.findByRole("button", { name: "Crear nota" }));
 
-    const alerta = await screen.findByRole("alert");
-    expect(alerta).toHaveTextContent("No se pudo escribir el archivo");
+    const boton = await screen.findByRole("button", {
+      name: /^No se pudo guardar/,
+      hidden: true,
+    });
+    expect(boton).toHaveAttribute(
+      "title",
+      expect.stringContaining("No se pudo escribir el archivo"),
+    );
     expect(router.state.location.pathname).toBe("/objetos/01JALFA");
     expect(
       fetchMock.mock.calls.some(

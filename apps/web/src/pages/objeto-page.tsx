@@ -1,5 +1,5 @@
 import type { ObjectPayload, RenameReport } from "@migite/contracts";
-import { CircleCheck, FileWarning, Pencil, Save, Trash2, TriangleAlert } from "lucide-react";
+import { CircleCheck, FileWarning, Pencil, Trash2, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "@/api/api";
@@ -13,6 +13,7 @@ import {
 import { BandejaAtributos } from "@/components/atributos/bandeja-atributos";
 import { MarkdownEditor } from "@/components/editor/markdown-editor";
 import { Wikilink } from "@/components/editor/wikilink";
+import { type EstadoGuardado, IndicadorGuardado } from "@/components/objetos/indicador-guardado";
 import { PanelEnlacesEntrantes } from "@/components/objetos/panel-enlaces-entrantes";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,10 +29,7 @@ import { Input } from "@/components/ui/input";
 import { useI18n } from "@/i18n/context";
 import { formatFecha } from "@/lib/fecha";
 
-const etiquetaAtajo = (): string =>
-  typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent)
-    ? "⌘ S"
-    : "Ctrl S";
+const DEBOUNCE_GUARDADO_MS = 1200;
 
 type InformeRenombrado = RenameReport["informe"];
 
@@ -143,6 +141,13 @@ export const ObjetoPage = () => {
   const objetoQuery = useObjeto(id);
   const objetosSugeridos = useObjetos({ limite: 100 });
   const guardar = useGuardarObjeto(id ?? "");
+  const {
+    isError: falloAlGuardar,
+    isPending: guardando,
+    mutate: guardarCuerpoAhora,
+    mutateAsync: guardarCuerpoYEsperar,
+    reset: descartarFalloAlGuardar,
+  } = guardar;
   const renombrar = useRenombrarObjeto(id ?? "");
   const borrar = useBorrarObjeto();
   const [borrador, setBorrador] = useState<{ readonly id: string; readonly valor: string }>();
@@ -157,7 +162,6 @@ export const ObjetoPage = () => {
   const titulosSugeridos = (objetosSugeridos.data?.objetos ?? []).map((item) => item.titulo);
   const cuerpo =
     borrador !== undefined && borrador.id === id ? borrador.valor : (objeto?.cuerpo ?? "");
-  const guardando = guardar.isPending;
   const conCambios =
     objeto !== null &&
     objeto !== undefined &&
@@ -166,20 +170,51 @@ export const ObjetoPage = () => {
     borrador.valor !== objeto.cuerpo;
   const puedeGuardar = conCambios && !guardando;
 
+  const limpiarBorradorGuardado = useCallback(
+    (guardado: string) => {
+      setBorrador((previo) =>
+        previo !== undefined && previo.id === id && previo.valor === guardado ? undefined : previo,
+      );
+    },
+    [id],
+  );
+
   const guardarCuerpo = useCallback(() => {
     if (!puedeGuardar) {
       return;
     }
-    guardar.mutate(cuerpo, { onSuccess: () => setGuardadoEn(id) });
-  }, [puedeGuardar, cuerpo, guardar, id]);
+    guardarCuerpoAhora(cuerpo, {
+      onSuccess: () => {
+        limpiarBorradorGuardado(cuerpo);
+        setGuardadoEn(id);
+      },
+    });
+  }, [puedeGuardar, cuerpo, guardarCuerpoAhora, limpiarBorradorGuardado, id]);
 
   const guardarAntesDeCrear = useCallback(async (): Promise<void> => {
-    if (!puedeGuardar) {
+    if (!conCambios) {
       return;
     }
-    await guardar.mutateAsync(cuerpo);
+    await guardarCuerpoYEsperar(cuerpo);
+    limpiarBorradorGuardado(cuerpo);
     setGuardadoEn(id);
-  }, [puedeGuardar, cuerpo, guardar, id]);
+  }, [conCambios, cuerpo, guardarCuerpoYEsperar, limpiarBorradorGuardado, id]);
+
+  useEffect(() => {
+    if (!conCambios || guardando || falloAlGuardar) {
+      return;
+    }
+    const temporizador = setTimeout(guardarCuerpo, DEBOUNCE_GUARDADO_MS);
+    return () => clearTimeout(temporizador);
+  }, [conCambios, guardando, falloAlGuardar, guardarCuerpo]);
+
+  const estadoGuardado: EstadoGuardado = falloAlGuardar
+    ? "error"
+    : guardando || conCambios
+      ? "guardando"
+      : guardadoEn === id
+        ? "guardado"
+        : "inactivo";
 
   const abrirWikilink = useCallback((titulo: string) => {
     setWikilinkTitulo(titulo);
@@ -274,14 +309,6 @@ export const ObjetoPage = () => {
     });
   };
 
-  const estado = guardando
-    ? t("page.objeto.saving")
-    : conCambios
-      ? t("page.objeto.unsaved")
-      : guardadoEn === id
-        ? t("page.objeto.saved")
-        : t("page.objeto.clean");
-
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-4 border-b border-border pb-5">
@@ -301,21 +328,6 @@ export const ObjetoPage = () => {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <p role="status" aria-live="polite" className="mr-1 text-sm text-muted-foreground">
-              {estado}
-            </p>
-            <Button
-              type="button"
-              onClick={guardarCuerpo}
-              disabled={!puedeGuardar}
-              title={`${t("page.objeto.save")} (${etiquetaAtajo()})`}
-            >
-              <Save aria-hidden="true" />
-              {guardando ? t("page.objeto.saving") : t("page.objeto.save")}
-            </Button>
-            <kbd className="hidden rounded-sm border border-border bg-muted px-1.5 py-0.5 text-[0.7rem] text-muted-foreground sm:inline-block">
-              {etiquetaAtajo()}
-            </kbd>
             <Button type="button" variant="outline" onClick={abrirRenombrar}>
               <Pencil aria-hidden="true" />
               {t("page.objeto.rename")}
@@ -343,35 +355,33 @@ export const ObjetoPage = () => {
         <PanelInforme informe={informe} onCerrar={() => setInforme(undefined)} />
       ) : null}
 
-      {guardar.isError ? (
-        <div
-          role="alert"
-          className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-destructive/30 bg-destructive/5 px-3.5 py-2.5 text-sm text-destructive"
-        >
-          <p className="max-w-prose">
-            <span className="font-medium">{t("page.objeto.saveError")}. </span>
-            {guardar.error instanceof ApiError ? guardar.error.mensaje : t("error.genericError")}
-          </p>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={guardarCuerpo}
-            disabled={guardando}
-          >
-            {t("page.objeto.retry")}
-          </Button>
-        </div>
-      ) : null}
-
       <section
         aria-label={t("page.objeto.editor")}
-        className="editor-lectura overflow-hidden rounded-lg border border-border/70 bg-card shadow-sheet"
+        className="editor-lectura relative overflow-hidden rounded-lg border border-border/70 bg-card shadow-sheet"
+        onBlur={(evento) => {
+          const destino = evento.relatedTarget;
+          if (destino instanceof Node && evento.currentTarget.contains(destino)) {
+            return;
+          }
+          guardarCuerpo();
+        }}
       >
+        <div className="pointer-events-none absolute top-2 right-2 z-10 rounded-md bg-card/80 px-1 py-0.5 shadow-xs backdrop-blur-sm">
+          <IndicadorGuardado
+            estado={estadoGuardado}
+            mensaje={guardar.error instanceof ApiError ? guardar.error.mensaje : undefined}
+            onReintentar={guardarCuerpo}
+          />
+        </div>
         <div className="h-[30rem] sm:h-[40rem]">
           <MarkdownEditor
             value={cuerpo}
-            onChange={(valor) => setBorrador({ id: objeto.id, valor })}
+            onChange={(valor) => {
+              if (falloAlGuardar) {
+                descartarFalloAlGuardar();
+              }
+              setBorrador({ id: objeto.id, valor });
+            }}
             ariaLabel={t("page.objeto.editorLabel")}
             placeholder={t("page.objeto.editorPlaceholder")}
             sugerencias={titulosSugeridos}
