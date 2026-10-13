@@ -50,6 +50,10 @@ export {
   attributeRoleWireSchema,
   type FieldTypeWire,
   fieldTypeWireSchema,
+  type PresentacionPayload,
+  type PresentacionSeccion,
+  presentacionPayloadSchema,
+  presentacionSeccionSchema,
   type TipoPayload,
   tipoPayloadSchema,
 } from "./tipos.js";

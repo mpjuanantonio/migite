@@ -35,11 +35,24 @@ export const attributePayloadSchema = z.strictObject({
 
 export type AttributePayload = z.infer<typeof attributePayloadSchema>;
 
+export const presentacionSeccionSchema = z.enum(["notas", "productividad"]);
+
+export type PresentacionSeccion = z.infer<typeof presentacionSeccionSchema>;
+
+export const presentacionPayloadSchema = z.strictObject({
+  seccion: presentacionSeccionSchema.optional(),
+  carpeta: nonEmptyText.optional(),
+  visible: z.boolean().optional(),
+});
+
+export type PresentacionPayload = z.infer<typeof presentacionPayloadSchema>;
+
 export const tipoPayloadSchema = z.object({
   id: z.string(),
   nombre: z.string(),
   descripcion: z.string().optional(),
   atributos: z.array(attributePayloadSchema),
+  presentacion: presentacionPayloadSchema.optional(),
 });
 
 export type TipoPayload = z.infer<typeof tipoPayloadSchema>;
