@@ -8,8 +8,8 @@ import {
   objetosPageSchema,
   renameReportSchema,
 } from "@migite/contracts";
-import { bootstrapVault, writeObjectFile } from "@migite/core";
-import { buildIndex, type IndexHandle, openIndex } from "@migite/index";
+import { bootstrapVault, parseObjectFile, writeObjectFile } from "@migite/core";
+import { buildIndex, type IndexHandle, openIndex, reconcileIndex } from "@migite/index";
 import type { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../app.js";
@@ -205,6 +205,24 @@ const writeEnlaceFrontmatter = (): void => {
     "Sin enlaces en el cuerpo.",
   );
   writeFileSync(join(vaultDir, "enlaza-fm.md"), text, "utf8");
+};
+
+const PROYECTO = "01JPROYECTO0000000000000000";
+
+const writeProyecto = (): void => {
+  const text = writeObjectFile(
+    {
+      id: PROYECTO,
+      type: "proyecto",
+      title: "Proyecto X",
+      created: "2026-10-01T09:00:00.000+02:00",
+      updated: "2026-10-01T09:00:00.000+02:00",
+      links: [],
+      attributes: { estado: "activo" },
+    },
+    "",
+  );
+  writeFileSync(join(vaultDir, "proyecto-x.md"), text, "utf8");
 };
 
 const EVENTO_A = "01JEVENTOA000000000000000000";
@@ -602,6 +620,44 @@ describe("POST /api/objetos", () => {
     expect(body.atributos).toEqual({ etiquetas: ["api"] });
     expect(body.degraded).toEqual([]);
     expect(existsSync(join(vaultDir, body.ruta))).toBe(true);
+  });
+
+  it("creates an object already linked to a project and indexes the association", async () => {
+    writeProyecto();
+    buildIndex(handle.db, { vaultDir });
+
+    const res = await sendJson("POST", "/api/objetos", {
+      titulo: "Tarea del proyecto",
+      tipo: "tarea",
+      atributos: { estado: "pendiente" },
+      enlaces: ["[[Proyecto X]]"],
+    });
+
+    expect(res.status).toBe(201);
+    const body = objectPayloadSchema.parse(await res.json());
+    expect(body.enlaces).toEqual(["[[Proyecto X]]"]);
+    const parsed = parseObjectFile(readFileSync(join(vaultDir, body.ruta), "utf8"));
+    expect(parsed.ok && parsed.frontmatter.links).toEqual(["[[Proyecto X]]"]);
+
+    reconcileIndex(handle.db, { vaultDir });
+    expect(idsOf(await getJson<ListBody>(`/api/objetos?enlazadoA=${PROYECTO}`))).toContain(body.id);
+    const entrantes = await getJson<{ entrantes: { id: string; contexto: string }[] }>(
+      `/api/objetos/${PROYECTO}/enlaces-entrantes`,
+    );
+    expect(entrantes.entrantes).toContainEqual(
+      expect.objectContaining({ id: body.id, contexto: "frontmatter" }),
+    );
+  });
+
+  it("rejects enlaces that are not wikilinks with validation_error", async () => {
+    const res = await sendJson("POST", "/api/objetos", {
+      titulo: "Sin corchetes",
+      enlaces: ["Proyecto X"],
+    });
+
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as ErrorBody).error.codigo).toBe("validation_error");
+    expect(existsSync(join(vaultDir, "sin-corchetes.md"))).toBe(false);
   });
 
   it("rejects a missing required attribute with its domain code", async () => {

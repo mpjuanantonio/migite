@@ -88,9 +88,44 @@ describe("createObjectBodySchema", () => {
       atributos: { etiquetas: ["prueba"] },
       cuerpo: "Contenido",
       carpeta: "notas",
+      enlaces: ["[[Proyecto X]]", "[[Otra nota#seccion|alias]]"],
     };
 
     expect(createObjectBodySchema.parse(body)).toEqual(body);
+  });
+
+  it("accepts links wrapped in spaces and an empty list", () => {
+    expect(
+      createObjectBodySchema.parse({ titulo: "Nota", enlaces: ["  [[Proyecto X]]  "] }),
+    ).toEqual({ titulo: "Nota", enlaces: ["[[Proyecto X]]"] });
+    expect(createObjectBodySchema.parse({ titulo: "Nota", enlaces: [] })).toEqual({
+      titulo: "Nota",
+      enlaces: [],
+    });
+  });
+
+  it("rejects links that are not wikilinks", () => {
+    expect(
+      createObjectBodySchema.safeParse({ titulo: "Nota", enlaces: ["Proyecto X"] }).success,
+    ).toBe(false);
+    expect(createObjectBodySchema.safeParse({ titulo: "Nota", enlaces: ["[[]]"] }).success).toBe(
+      false,
+    );
+    expect(createObjectBodySchema.safeParse({ titulo: "Nota", enlaces: [""] }).success).toBe(false);
+    expect(createObjectBodySchema.safeParse({ titulo: "Nota", enlaces: "[[X]]" }).success).toBe(
+      false,
+    );
+  });
+
+  it("rejects more links than the limit", () => {
+    const tooMany = Array.from({ length: 101 }, (_, index) => `[[Nota ${index}]]`);
+
+    expect(createObjectBodySchema.safeParse({ titulo: "Nota", enlaces: tooMany }).success).toBe(
+      false,
+    );
+    expect(
+      createObjectBodySchema.safeParse({ titulo: "Nota", enlaces: tooMany.slice(0, 100) }).success,
+    ).toBe(true);
   });
 
   it("rejects an empty or missing titulo", () => {
@@ -119,6 +154,10 @@ describe("patchObjectBodySchema", () => {
   it("rejects an empty titulo and unknown keys", () => {
     expect(patchObjectBodySchema.safeParse({ titulo: "" }).success).toBe(false);
     expect(patchObjectBodySchema.safeParse({ extra: true }).success).toBe(false);
+  });
+
+  it("keeps enlaces out of the patch body", () => {
+    expect(patchObjectBodySchema.safeParse({ enlaces: ["[[Proyecto X]]"] }).success).toBe(false);
   });
 });
 

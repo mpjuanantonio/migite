@@ -156,6 +156,7 @@ export const createObjeto = (deps: ObjetosDeps, input: CreateObjectBody): Object
       type: input.tipo,
       body: input.cuerpo,
       attributes: input.atributos,
+      links: input.enlaces,
       folder: input.carpeta,
     }),
   );

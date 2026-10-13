@@ -361,6 +361,9 @@ export const createObjectRepository = (
     const slug = slugify(title);
     const body = input.body ?? "";
     const links = input.links ?? [];
+    if (links.some((link) => typeof link !== "string" || link.trim() === "")) {
+      throw invalidWrite(["each link must be a non-empty string"]);
+    }
     const frontmatter: ObjectFrontmatter = {
       id,
       type: typeId,

@@ -2,6 +2,12 @@ import { z } from "zod";
 
 const nonEmptyText = z.string().trim().min(1);
 
+const WIKILINK_PATTERN = /^\[\[[^[\]]+\]\]$/;
+
+const MAX_OBJECT_LINKS = 100;
+
+const wikilinkText = z.string().trim().regex(WIKILINK_PATTERN);
+
 export const degradationReasonSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("unknownType"),
@@ -49,7 +55,10 @@ const objectBodyShape = {
   carpeta: z.string().optional(),
 };
 
-export const createObjectBodySchema = z.strictObject(objectBodyShape);
+export const createObjectBodySchema = z.strictObject({
+  ...objectBodyShape,
+  enlaces: z.array(wikilinkText).max(MAX_OBJECT_LINKS).optional(),
+});
 
 export type CreateObjectBody = z.infer<typeof createObjectBodySchema>;
 

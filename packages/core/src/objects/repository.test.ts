@@ -249,6 +249,29 @@ describe("createObject", () => {
     });
   });
 
+  it("writes frontmatter enlaces and round-trips them", () => {
+    const { vaultDir, repo } = setupVault();
+    const links = ["[[Proyecto X]]", "[[Otra nota#seccion|alias]]"];
+
+    const record = repo.createObject({ title: "Tarea enlazada", links });
+
+    expect(record.links).toEqual(links);
+    expect(parseVaultFile(vaultDir, record.path).frontmatter.links).toEqual(links);
+    expect(readOk(repo.readObject(record.id)).links).toEqual(links);
+  });
+
+  it("rejects links that are not non-empty strings", () => {
+    const { vaultDir, repo } = setupVault();
+
+    const blank = captureError(() => repo.createObject({ title: "X", links: ["   "] }));
+    const mixed = captureError(() => repo.createObject({ title: "X", links: ["[[A]]", ""] }));
+
+    expect(blank.key).toBe("error.invalidObjectWrite");
+    expect(blank.problems.join(" ")).toContain("each link must be a non-empty string");
+    expect(mixed.key).toBe("error.invalidObjectWrite");
+    expect(existsSync(join(vaultDir, "x.md"))).toBe(false);
+  });
+
   it("suffixes the slug with a short ulid when the file name collides", () => {
     const { repo } = setupVault();
 
