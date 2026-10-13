@@ -27,7 +27,6 @@ import {
 
 export type OpcionesLivePreview = {
   readonly alHacerClicWikilink?: (titulo: string) => void;
-  readonly etiquetaCasilla?: string;
 };
 
 const alternarTarea = (view: EditorView, entrada: HTMLElement): void => {
@@ -81,16 +80,16 @@ class WidgetWikilink extends WidgetType {
 
 class WidgetCheckbox extends WidgetType {
   private readonly marcado: boolean;
-  private readonly etiqueta: string | undefined;
+  private readonly etiqueta: string;
 
-  constructor(marcado: boolean, etiqueta: string | undefined) {
+  constructor(marcado: boolean, etiqueta: string) {
     super();
     this.marcado = marcado;
     this.etiqueta = etiqueta;
   }
 
   override eq(other: WidgetCheckbox): boolean {
-    return this.marcado === other.marcado;
+    return this.marcado === other.marcado && this.etiqueta === other.etiqueta;
   }
 
   override toDOM(view: EditorView): HTMLElement {
@@ -98,7 +97,7 @@ class WidgetCheckbox extends WidgetType {
     entrada.type = "checkbox";
     entrada.checked = this.marcado;
     entrada.className = "cm-lp-checkbox";
-    if (this.etiqueta !== undefined) {
+    if (this.etiqueta !== "") {
       entrada.setAttribute("aria-label", this.etiqueta);
     }
     entrada.addEventListener("mousedown", (evento) => evento.preventDefault());
@@ -162,7 +161,7 @@ export const crearWidget = (
     case "wikilink":
       return new WidgetWikilink(widget.titulo, widget.etiqueta, opciones.alHacerClicWikilink);
     case "checkbox":
-      return new WidgetCheckbox(widget.marcado, opciones.etiquetaCasilla);
+      return new WidgetCheckbox(widget.marcado, widget.etiqueta);
     case "enlace":
       return new WidgetEnlace(widget.texto, widget.url);
     case "marcador":

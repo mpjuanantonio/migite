@@ -182,9 +182,20 @@ describe("live preview en bloque", () => {
       tipo: "widget",
       desde: 16,
       hasta: 22,
-      widget: { tipo: "checkbox", marcado: true },
+      widget: { tipo: "checkbox", marcado: true, etiqueta: "hecha" },
     });
     expect(decoraciones).toContainEqual({ tipo: "linea", desde: 16, clase: CLASE_TAREA_HECHA });
+  });
+
+  it("usa el texto de la línea como etiqueta del checkbox", () => {
+    const decoraciones = calcularDecoraciones("- [ ] comprar pan", -1);
+
+    expect(decoraciones).toContainEqual({
+      tipo: "widget",
+      desde: 0,
+      hasta: 6,
+      widget: { tipo: "checkbox", marcado: false, etiqueta: "comprar pan" },
+    });
   });
 
   it("estiliza las citas y oculta el prefijo fuera de la línea", () => {

@@ -37,21 +37,36 @@ describe("widgets del live preview", () => {
 
   it("alterna la tarea al cambiar el checkbox", () => {
     const { vista, cambios } = crearVistaFalsa("- [ ] comprar pan", 5);
-    const widget = crearWidget({ tipo: "checkbox", marcado: false }, {});
+    const widget = crearWidget({ tipo: "checkbox", marcado: false, etiqueta: "comprar pan" }, {});
     const dom = widget.toDOM(vista) as HTMLInputElement;
 
     expect(dom.checked).toBe(false);
+    expect(dom.getAttribute("aria-label")).toBe("comprar pan");
     dom.dispatchEvent(new Event("change"));
     expect(cambios).toEqual([{ from: 2, to: 5, insert: "[x]" }]);
   });
 
   it("desmarca una tarea ya marcada", () => {
     const { vista, cambios } = crearVistaFalsa("- [x] comprar pan", 5);
-    const widget = crearWidget({ tipo: "checkbox", marcado: true }, {});
+    const widget = crearWidget({ tipo: "checkbox", marcado: true, etiqueta: "comprar pan" }, {});
     const dom = widget.toDOM(vista) as HTMLInputElement;
 
     dom.dispatchEvent(new Event("change"));
     expect(cambios).toEqual([{ from: 2, to: 5, insert: "[ ]" }]);
+  });
+
+  it("omite la etiqueta cuando la línea no tiene texto", () => {
+    const widget = crearWidget({ tipo: "checkbox", marcado: false, etiqueta: "" }, {});
+    const dom = widget.toDOM(crearVistaFalsa("- [ ]", 5).vista) as HTMLInputElement;
+
+    expect(dom.hasAttribute("aria-label")).toBe(false);
+  });
+
+  it("compara los checkboxes también por su etiqueta", () => {
+    const primero = crearWidget({ tipo: "checkbox", marcado: false, etiqueta: "una" }, {});
+    const segundo = crearWidget({ tipo: "checkbox", marcado: false, etiqueta: "otra" }, {});
+
+    expect(primero.eq(segundo)).toBe(false);
   });
 
   it("renderiza enlaces externos como anclas seguras", () => {

@@ -311,6 +311,34 @@ describe("ficha de objeto", () => {
     );
   });
 
+  it("expande los ancestros de la carpeta de la ficha aunque haya expansión guardada", async () => {
+    localStorage.setItem("migite.explorador.expandidas", JSON.stringify(["otra"]));
+    mockObjetoApi({
+      objeto: objetoDePrueba({
+        carpeta: "Libros/clasicos",
+        ruta: "Libros/clasicos/cuaderno.md",
+      }),
+      arbol: [
+        {
+          id: "01JALFA",
+          tipo: "nota",
+          titulo: "Cuaderno de campo",
+          ruta: "Libros/clasicos/cuaderno.md",
+          carpeta: "Libros/clasicos",
+          actualizado: "2026-10-05T18:30:00.000Z",
+        },
+      ],
+    });
+    renderObjeto();
+
+    await screen.findByRole("heading", { level: 1, name: "Cuaderno de campo" });
+
+    const arbol = await screen.findByRole("list", { name: "Árbol de notas" });
+    expect(within(arbol).getByRole("button", { name: "Plegar Libros" })).toBeInTheDocument();
+    expect(within(arbol).getByRole("button", { name: "Plegar clasicos" })).toBeInTheDocument();
+    expect(within(arbol).getByRole("link", { name: "Cuaderno de campo" })).toBeInTheDocument();
+  });
+
   it("ordena la ficha con propiedades arriba y escritura a ancho completo", async () => {
     mockObjetoApi();
     renderObjeto();

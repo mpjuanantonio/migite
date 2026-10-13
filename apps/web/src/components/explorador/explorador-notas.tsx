@@ -173,14 +173,13 @@ export const ExploradorNotas = ({
   const tipos = useTipos();
   const consulta = useArbolObjetos();
   const [expandidas, setExpandidas] = useState<ReadonlySet<string>>(() => {
-    const guardadas = leerExpandidas();
-    if (guardadas !== null) {
-      return new Set(guardadas);
+    const iniciales = new Set(leerExpandidas() ?? []);
+    if (carpetaSeleccionada !== undefined && carpetaSeleccionada !== "") {
+      for (const ruta of ancestrosDe(carpetaSeleccionada)) {
+        iniciales.add(ruta);
+      }
     }
-    if (carpetaSeleccionada === undefined || carpetaSeleccionada === "") {
-      return new Set();
-    }
-    return new Set(ancestrosDe(carpetaSeleccionada));
+    return iniciales;
   });
   const seleccionAnterior = useRef(carpetaSeleccionada);
 

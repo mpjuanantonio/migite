@@ -1,7 +1,7 @@
 import { markdown } from "@codemirror/lang-markdown";
 import CodeMirror, { EditorView, oneDark } from "@uiw/react-codemirror";
 import { cn } from "cn";
-import { type KeyboardEvent, useMemo, useState } from "react";
+import { type KeyboardEvent, useId, useMemo, useState } from "react";
 import { useI18n } from "@/i18n/context";
 import {
   contextoWikilink,
@@ -53,23 +53,10 @@ export const MarkdownEditor = ({
 }: MarkdownEditorProps) => {
   const { modoEfectivo } = useTema();
   const { t } = useI18n();
+  const idBase = useId();
   const [indice, setIndice] = useState(0);
   const [consultaPrevia, setConsultaPrevia] = useState<string>();
   const [descartadoPara, setDescartadoPara] = useState<string>();
-
-  const extensiones = useMemo(
-    () => [
-      markdown(),
-      EditorView.lineWrapping,
-      EditorView.contentAttributes.of({ "aria-label": ariaLabel, "aria-multiline": "true" }),
-      TEMA_LIVE_PREVIEW,
-      extensionLivePreview({
-        alHacerClicWikilink: onWikilinkClick,
-        etiquetaCasilla: t("page.tareas.title"),
-      }),
-    ],
-    [ariaLabel, onWikilinkClick, t],
-  );
 
   const contexto = contextoWikilink(value);
   const opciones =
@@ -82,6 +69,24 @@ export const MarkdownEditor = ({
     setConsultaPrevia(contexto?.consulta);
     setIndice(0);
   }
+
+  const idOpcion = (posicion: number): string => `${idBase}-opcion-${posicion}`;
+  const idActivo = opciones.length === 0 ? undefined : idOpcion(indiceActivo);
+
+  const extensiones = useMemo(
+    () => [
+      markdown(),
+      EditorView.lineWrapping,
+      EditorView.contentAttributes.of({
+        "aria-label": ariaLabel,
+        "aria-multiline": "true",
+        ...(idActivo === undefined ? {} : { "aria-activedescendant": idActivo }),
+      }),
+      TEMA_LIVE_PREVIEW,
+      extensionLivePreview({ alHacerClicWikilink: onWikilinkClick }),
+    ],
+    [ariaLabel, idActivo, onWikilinkClick],
+  );
 
   const insertar = (opcion: OpcionWikilink) => {
     if (contexto === undefined) {
@@ -141,6 +146,7 @@ export const MarkdownEditor = ({
           autocompletion: false,
           closeBrackets: false,
         }}
+        indentWithTab={false}
         extensions={extensiones}
       />
       {opciones.length > 0 ? (
@@ -154,6 +160,7 @@ export const MarkdownEditor = ({
               key={
                 opcion.tipo === "objeto" ? `objeto:${opcion.titulo}` : `crear:${opcion.consulta}`
               }
+              id={idOpcion(posicion)}
               type="button"
               role="option"
               aria-selected={posicion === indiceActivo}

@@ -16,7 +16,7 @@ export const claseEncabezado = (nivel: number): string => `cm-lp-h${nivel}`;
 
 export type WidgetLivePreview =
   | { readonly tipo: "wikilink"; readonly titulo: string; readonly etiqueta: string }
-  | { readonly tipo: "checkbox"; readonly marcado: boolean }
+  | { readonly tipo: "checkbox"; readonly marcado: boolean; readonly etiqueta: string }
   | { readonly tipo: "enlace"; readonly texto: string; readonly url: string }
   | { readonly tipo: "marcador"; readonly texto: string };
 
@@ -266,7 +266,11 @@ const decoracionesBloque = (
         tipo: "widget",
         desde: linea.inicio,
         hasta: linea.inicio + tarea[0].length,
-        widget: { tipo: "checkbox", marcado },
+        widget: {
+          tipo: "checkbox",
+          marcado,
+          etiqueta: texto.slice(tarea[0].length).trim(),
+        },
       });
     }
     return resultado;
