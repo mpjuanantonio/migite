@@ -433,6 +433,49 @@ describe("ficha de objeto", () => {
   });
 });
 
+describe("borrador sin guardar al salir", () => {
+  it("avisa antes de cerrar la pestaña cuando hay cambios pendientes", async () => {
+    mockObjetoApi();
+    renderObjeto();
+
+    const editor = await screen.findByLabelText("Cuerpo de la ficha en markdown");
+    vi.useFakeTimers();
+    fireEvent.change(editor, { target: { value: "Cambio sin guardar" } });
+
+    const aviso = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(aviso);
+
+    expect(aviso.defaultPrevented).toBe(true);
+
+    await avanzarTemporizadores(1200);
+    expect(patchCuerpo()?.cuerpo).toBe("Cambio sin guardar");
+  });
+
+  it("no avisa si no hay cambios pendientes", async () => {
+    mockObjetoApi();
+    renderObjeto();
+    await screen.findByLabelText("Cuerpo de la ficha en markdown");
+
+    const aviso = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(aviso);
+
+    expect(aviso.defaultPrevented).toBe(false);
+  });
+
+  it("flushea el borrador al desmontar la ficha", async () => {
+    mockObjetoApi();
+    const { unmount } = renderObjeto();
+
+    const editor = await screen.findByLabelText("Cuerpo de la ficha en markdown");
+    fireEvent.change(editor, { target: { value: "Cambio al salir" } });
+    unmount();
+
+    await waitFor(() => {
+      expect(patchCuerpo()?.cuerpo).toBe("Cambio al salir");
+    });
+  });
+});
+
 const patchAtributos = (): PatchBody | undefined => {
   const patches = patchesDe("atributos");
   return patches[patches.length - 1];

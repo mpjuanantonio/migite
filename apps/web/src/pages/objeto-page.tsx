@@ -1,6 +1,6 @@
 import type { ObjectPayload, RenameReport } from "@migite/contracts";
 import { CircleCheck, FileWarning, Pencil, Trash2, TriangleAlert } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "@/api/api";
 import {
@@ -158,6 +158,7 @@ export const ObjetoPage = () => {
   const [informe, setInforme] = useState<InformeRenombrado>();
   const [borrarAbierto, setBorrarAbierto] = useState(false);
   const [wikilinkTitulo, setWikilinkTitulo] = useState<string>();
+  const borradorPendiente = useRef<string | undefined>(undefined);
 
   const objeto: ObjectPayload | null | undefined = objetoQuery.data;
   const titulosSugeridos = (objetosSugeridos.data?.objetos ?? []).map((item) => item.titulo);
@@ -209,6 +210,10 @@ export const ObjetoPage = () => {
     return () => clearTimeout(temporizador);
   }, [conCambios, guardando, falloAlGuardar, guardarCuerpo]);
 
+  useEffect(() => {
+    borradorPendiente.current = conCambios ? cuerpo : undefined;
+  }, [conCambios, cuerpo]);
+
   const estadoGuardado: EstadoGuardado = falloAlGuardar
     ? "error"
     : guardando || conCambios
@@ -236,6 +241,24 @@ export const ObjetoPage = () => {
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [guardarCuerpo]);
+
+  useEffect(() => {
+    const avisarAntesDeDescargar = (evento: BeforeUnloadEvent) => {
+      if (borradorPendiente.current === undefined) {
+        return;
+      }
+      evento.preventDefault();
+      evento.returnValue = "";
+    };
+    window.addEventListener("beforeunload", avisarAntesDeDescargar);
+    return () => {
+      window.removeEventListener("beforeunload", avisarAntesDeDescargar);
+      const pendiente = borradorPendiente.current;
+      if (pendiente !== undefined) {
+        guardarCuerpoAhora(pendiente);
+      }
+    };
+  }, [guardarCuerpoAhora]);
 
   if (objetoQuery.isPending) {
     return (

@@ -288,13 +288,35 @@ export const useResolverObjeto = (titulo: string) =>
     },
   });
 
+const COLAS_DE_GUARDADO = new Map<string, Promise<unknown>>();
+
+const limpiarColaDeGuardado = (id: string, cola: Promise<unknown>): void => {
+  if (COLAS_DE_GUARDADO.get(id) === cola) {
+    COLAS_DE_GUARDADO.delete(id);
+  }
+};
+
+const enColaDeGuardado = <T>(id: string, tarea: () => Promise<T>): Promise<T> => {
+  const anterior = COLAS_DE_GUARDADO.get(id) ?? Promise.resolve();
+  const actual = anterior.then(tarea, tarea);
+  const cola = actual.then(
+    () => undefined,
+    () => undefined,
+  );
+  COLAS_DE_GUARDADO.set(id, cola);
+  void cola.then(() => limpiarColaDeGuardado(id, cola));
+  return actual;
+};
+
 export const useGuardarObjeto = (id: string) => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (cuerpo: string): Promise<ObjectPayload> =>
-      objectPayloadSchema.parse(
-        await apiFetch(objetoPath(id), { method: "PATCH", body: { cuerpo } }),
+    mutationFn: (cuerpo: string): Promise<ObjectPayload> =>
+      enColaDeGuardado(id, async () =>
+        objectPayloadSchema.parse(
+          await apiFetch(objetoPath(id), { method: "PATCH", body: { cuerpo } }),
+        ),
       ),
     onSuccess: (objeto) => {
       queryClient.setQueryData(queryKeys.objeto(id), objeto);
@@ -302,12 +324,14 @@ export const useGuardarObjeto = (id: string) => {
   });
 };
 
-const guardarAtributosDe = async (
+const guardarAtributosDe = (
   id: string,
   atributos: Record<string, unknown>,
 ): Promise<ObjectPayload> =>
-  objectPayloadSchema.parse(
-    await apiFetch(objetoPath(id), { method: "PATCH", body: { atributos } }),
+  enColaDeGuardado(id, async () =>
+    objectPayloadSchema.parse(
+      await apiFetch(objetoPath(id), { method: "PATCH", body: { atributos } }),
+    ),
   );
 
 const aplicarAtributosGuardados = (queryClient: QueryClient, objeto: ObjectPayload): void => {

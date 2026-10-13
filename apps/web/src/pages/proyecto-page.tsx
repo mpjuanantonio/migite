@@ -12,6 +12,7 @@ import { useI18n } from "@/i18n/context";
 import type { AppTranslationKey } from "@/i18n/translate";
 import { formatFecha } from "@/lib/fecha";
 import { ESTADOS_PROYECTO, esEstadoProyecto } from "@/lib/proyectos";
+import { tituloSeguroParaWikilink } from "@/lib/wikilinks";
 
 const LIMITE_GRUPO = 50;
 
@@ -25,8 +26,11 @@ const GRUPOS = [
   { tipo: "nota", labelKey: "page.proyecto.groupNotas", conEstado: false },
   { tipo: "tarea", labelKey: "page.proyecto.groupTareas", conEstado: true },
   { tipo: "evento", labelKey: "page.proyecto.groupEventos", conEstado: false },
-  { tipo: "recordatorio", labelKey: "page.proyecto.groupRecordatorios", conEstado: true },
+  { tipo: "recordatorio", labelKey: "page.proyecto.groupRecordatorios", conEstado: false },
 ] as const satisfies readonly Grupo[];
+
+const enlacesInicialesDe = (titulo: string): readonly string[] =>
+  tituloSeguroParaWikilink(titulo) ? [`[[${titulo}]]`] : [];
 
 const estiloEstado = (estado: string): string => {
   switch (estado) {
@@ -251,7 +255,7 @@ const ProyectoDetalle = ({ proyecto }: { readonly proyecto: ObjectPayload }) => 
         <AltaObjetoDialog
           tipoInicial={altaTipo}
           tipoFijo
-          enlacesIniciales={[`[[${proyecto.titulo}]]`]}
+          enlacesIniciales={enlacesInicialesDe(proyecto.titulo)}
           onCerrar={() => setAltaTipo(undefined)}
           onCreado={() => setAltaTipo(undefined)}
         />

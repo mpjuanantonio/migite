@@ -7,6 +7,7 @@ import {
   opcionesWikilink,
   parseWikilink,
   remarkWikilinks,
+  tituloSeguroParaWikilink,
 } from "./wikilinks";
 
 describe("parseWikilink", () => {
@@ -36,6 +37,23 @@ describe("parseWikilink", () => {
       titulo: "Cuaderno",
       etiqueta: "hoy",
     });
+  });
+});
+
+describe("tituloSeguroParaWikilink", () => {
+  it("acepta títulos que no rompen el patrón", () => {
+    expect(tituloSeguroParaWikilink("Cuaderno de campo")).toBe(true);
+    expect(tituloSeguroParaWikilink("Proyecto (beta)")).toBe(true);
+  });
+
+  it("rechaza corchetes, alias, anclas, saltos y espacios extremos", () => {
+    expect(tituloSeguroParaWikilink("Proyecto [beta]")).toBe(false);
+    expect(tituloSeguroParaWikilink("A|B")).toBe(false);
+    expect(tituloSeguroParaWikilink("A#B")).toBe(false);
+    expect(tituloSeguroParaWikilink("A\nB")).toBe(false);
+    expect(tituloSeguroParaWikilink(" A")).toBe(false);
+    expect(tituloSeguroParaWikilink("A ")).toBe(false);
+    expect(tituloSeguroParaWikilink("")).toBe(false);
   });
 });
 

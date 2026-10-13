@@ -8,6 +8,8 @@ import {
   useArbolObjetos,
   useBorrarObjeto,
   useCrearObjeto,
+  useGuardarAtributos,
+  useGuardarObjeto,
   useObjeto,
   useRenombrarObjeto,
   useResolverObjeto,
@@ -218,6 +220,63 @@ describe("invalidación de la resolución por título", () => {
     await waitFor(() => {
       expect(resolucion.result.current.data).toBeNull();
     });
+  });
+});
+
+describe("guardados concurrentes del mismo objeto", () => {
+  it("serializa los PATCH y conserva en caché ambos campos actualizados", async () => {
+    const cuerpoNuevo = "Cuerpo nuevo";
+    const atributosNuevos = { estado: "archivado" };
+    let liberarCuerpo: (() => void) | undefined;
+    const cuerpoEnVuelo = new Promise<void>((resolve) => {
+      liberarCuerpo = resolve;
+    });
+
+    fetchMock.mockImplementation(async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as {
+        readonly cuerpo?: string;
+        readonly atributos?: Readonly<Record<string, unknown>>;
+      };
+      if (body.cuerpo !== undefined) {
+        await cuerpoEnVuelo;
+        return jsonResponse({ ...objetoDePrueba, cuerpo: body.cuerpo });
+      }
+      return jsonResponse({
+        ...objetoDePrueba,
+        cuerpo: cuerpoNuevo,
+        atributos: { ...(body.atributos ?? {}) },
+      });
+    });
+
+    const guardadoCuerpo = renderHook(() => useGuardarObjeto("01JALFA"), { wrapper: envolver });
+    const guardadoAtributos = renderHook(() => useGuardarAtributos("01JALFA"), {
+      wrapper: envolver,
+    });
+
+    const pendientes: Promise<ObjectPayload>[] = [];
+    act(() => {
+      pendientes.push(guardadoCuerpo.result.current.mutateAsync(cuerpoNuevo));
+      pendientes.push(guardadoAtributos.result.current.mutateAsync(atributosNuevos));
+    });
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ cuerpo: cuerpoNuevo });
+
+    await act(async () => {
+      liberarCuerpo?.();
+      await Promise.all(pendientes);
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
+      atributos: atributosNuevos,
+    });
+
+    const guardado = cliente.getQueryData<ObjectPayload>(queryKeys.objeto("01JALFA"));
+    expect(guardado?.cuerpo).toBe(cuerpoNuevo);
+    expect(guardado?.atributos).toEqual(atributosNuevos);
   });
 });
 

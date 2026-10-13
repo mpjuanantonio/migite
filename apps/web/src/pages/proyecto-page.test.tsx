@@ -193,9 +193,11 @@ describe("vista de proyecto", () => {
     const tareas = screen.getByRole("region", { name: "Tareas" });
     expect(within(tareas).getByText("1")).toBeInTheDocument();
     expect(within(tareas).getByText("pendiente")).toBeInTheDocument();
+    const recordatorios = screen.getByRole("region", { name: "Recordatorios" });
     expect(
-      within(screen.getByRole("region", { name: "Recordatorios" })).getByText("vencido"),
+      within(recordatorios).getByRole("link", { name: "Avisar al equipo" }),
     ).toBeInTheDocument();
+    expect(within(recordatorios).queryByText("vencido")).toBeNull();
     const eventos = screen.getByRole("region", { name: "Eventos" });
     expect(within(eventos).getByRole("link", { name: "Reunión semanal" })).toBeInTheDocument();
     expect(within(eventos).queryByText("pendiente")).toBeNull();
@@ -293,5 +295,23 @@ describe("vista de proyecto", () => {
         name: "Ideas sueltas",
       }),
     ).toBeInTheDocument();
+  });
+
+  it("omite el enlace inicial cuando el título del proyecto no es seguro para un wikilink", async () => {
+    mockApi({ proyecto: objeto("proyecto", "P1", "Proyecto [beta]", { estado: "activo" }) });
+    const user = userEvent.setup();
+    renderProyecto();
+
+    const notas = await screen.findByRole("region", { name: "Notas" });
+    await user.click(within(notas).getByRole("button", { name: "Añadir a Notas" }));
+
+    const dialogo = within(await screen.findByRole("dialog"));
+    await user.type(dialogo.getByLabelText("Título"), "Ideas sueltas");
+    await user.click(dialogo.getByRole("button", { name: "Crear objeto" }));
+
+    await waitFor(() => {
+      expect(creaciones).toHaveLength(1);
+      expect(creaciones[0]?.enlaces).toBeUndefined();
+    });
   });
 });

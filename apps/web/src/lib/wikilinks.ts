@@ -11,6 +11,11 @@ export const parseWikilink = (interno: string): Wikilink => {
   return { titulo, etiqueta: alias === "" ? destino : alias };
 };
 
+const TITULO_INSEGURO = /[[\]|#\r\n]/;
+
+export const tituloSeguroParaWikilink = (titulo: string): boolean =>
+  titulo !== "" && titulo.trim() === titulo && !TITULO_INSEGURO.test(titulo);
+
 export type ContextoWikilink = {
   readonly desde: number;
   readonly consulta: string;
