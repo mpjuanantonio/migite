@@ -2,6 +2,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -9,9 +10,24 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { NATIVE_TYPE_IDS, type NativeTypeId, RECORDATORIO_YAML_ANTERIOR } from "./definitions.js";
 import { seedNativeTypes } from "./seed.js";
+
+const fsGate = vi.hoisted(() => ({ failRename: false }));
+
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return {
+    ...actual,
+    renameSync: (from: string, to: string) => {
+      if (fsGate.failRename) {
+        throw new Error("injected rename failure");
+      }
+      return actual.renameSync(from, to);
+    },
+  };
+});
 
 const EXPECTED: Readonly<Record<NativeTypeId, string>> = {
   nota: `id: nota
@@ -104,6 +120,7 @@ const createRoot = (): string => {
 };
 
 afterEach(() => {
+  fsGate.failRename = false;
   for (const root of roots.splice(0)) {
     rmSync(root, { recursive: true, force: true });
   }
@@ -182,6 +199,19 @@ describe("seedNativeTypes", () => {
     expect(result.upgraded).toEqual([]);
     expect(result.skipped).toEqual(["recordatorio"]);
     expect(readFileSync(join(tiposDir, "recordatorio.yaml"), "utf8")).toBe(edited);
+  });
+
+  it("keeps the previous recordatorio intact when the atomic migration fails", () => {
+    const tiposDir = join(createRoot(), "tipos");
+    mkdirSync(tiposDir, { recursive: true });
+    const path = join(tiposDir, "recordatorio.yaml");
+    writeFileSync(path, RECORDATORIO_YAML_ANTERIOR, "utf8");
+    fsGate.failRename = true;
+
+    expect(() => seedNativeTypes(tiposDir)).toThrow(/recordatorio/);
+
+    expect(readFileSync(path, "utf8")).toBe(RECORDATORIO_YAML_ANTERIOR);
+    expect(readdirSync(tiposDir).filter((name) => name.endsWith(".tmp"))).toEqual([]);
   });
 
   it("treats a symlinked target as skipped and never writes through it", () => {

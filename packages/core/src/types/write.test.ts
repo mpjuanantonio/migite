@@ -1,10 +1,12 @@
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -21,7 +23,11 @@ import {
   updateTypeFile,
 } from "./index.js";
 
-const fsGate = vi.hoisted(() => ({ failRename: false }));
+const fsGate = vi.hoisted(() => ({
+  failRename: false,
+  readGate: undefined as { suffix: string; onRead: number; text: string } | undefined,
+  reads: new Map<string, number>(),
+}));
 
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
@@ -32,6 +38,20 @@ vi.mock("node:fs", async (importOriginal) => {
         throw new Error("injected rename failure");
       }
       return actual.renameSync(from, to);
+    },
+    readFileSync: (
+      path: Parameters<typeof actual.readFileSync>[0],
+      options?: Parameters<typeof actual.readFileSync>[1],
+    ) => {
+      const key = String(path);
+      const count = (fsGate.reads.get(key) ?? 0) + 1;
+      fsGate.reads.set(key, count);
+      const gate = fsGate.readGate;
+      if (gate !== undefined && key.endsWith(gate.suffix) && count === gate.onRead) {
+        fsGate.readGate = undefined;
+        return gate.text;
+      }
+      return actual.readFileSync(path, options);
     },
   };
 });
@@ -76,6 +96,8 @@ const captureError = (action: () => unknown): TypeOperationError => {
 
 afterEach(() => {
   fsGate.failRename = false;
+  fsGate.readGate = undefined;
+  fsGate.reads.clear();
   for (const root of roots.splice(0)) {
     rmSync(root, { recursive: true, force: true });
   }
@@ -393,6 +415,34 @@ Cuerpo que menciona genero: novela.
       "injected rename failure",
     );
 
+    expect(readFileSync(path, "utf8")).toBe(before);
+    expect(readdirSync(tiposDir).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+  });
+
+  it("preserves the mode of the type file", () => {
+    const tiposDir = createTiposDir();
+    createTypeFile(tiposDir, LIBRO);
+    const path = join(tiposDir, "libro.yaml");
+    chmodSync(path, 0o600);
+
+    updateTypeFile(tiposDir, "libro", { name: "Cambiado" });
+
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+  });
+
+  it("refuses to overwrite a type file changed on disk since it was read", () => {
+    const tiposDir = createTiposDir();
+    createTypeFile(tiposDir, LIBRO);
+    const path = join(tiposDir, "libro.yaml");
+    const before = readFileSync(path, "utf8");
+    fsGate.reads.clear();
+    const external = before.replace("nombre: Libro", "nombre: Editado fuera de la app");
+    fsGate.readGate = { suffix: "libro.yaml", onRead: 2, text: external };
+
+    const error = captureError(() => updateTypeFile(tiposDir, "libro", { name: "Cambiado" }));
+
+    expect(error.key).toBe("error.validationError");
+    expect(error.problems.join(" ")).toContain("changed on disk since it was read");
     expect(readFileSync(path, "utf8")).toBe(before);
     expect(readdirSync(tiposDir).filter((name) => name.endsWith(".tmp"))).toEqual([]);
   });

@@ -58,6 +58,29 @@ const errorCode = (error: unknown): string | undefined =>
     ? error.code
     : undefined;
 
+const WIKILINK_PATTERN = /^\[\[[^[\]\r\n\p{Cc}]+\]\]$/u;
+
+const MAX_WIKILINK_LENGTH = 300;
+
+const isWikilink = (link: string): boolean => {
+  const trimmed = link.trim();
+  return trimmed.length <= MAX_WIKILINK_LENGTH && WIKILINK_PATTERN.test(trimmed);
+};
+
+const linkProblems = (links: readonly unknown[]): string[] => {
+  const problems: string[] = [];
+  for (const link of links) {
+    if (typeof link !== "string" || link.trim() === "") {
+      problems.push("each link must be a non-empty string");
+      continue;
+    }
+    if (!isWikilink(link)) {
+      problems.push(`each link must be a wikilink like "[[Page]]", got ${JSON.stringify(link)}`);
+    }
+  }
+  return problems;
+};
+
 const writeNewFile = (
   dir: string,
   candidates: readonly string[],
@@ -360,10 +383,12 @@ export const createObjectRepository = (
     const now = formatTimestamp(new Date(), timeZone);
     const slug = slugify(title);
     const body = input.body ?? "";
-    const links = input.links ?? [];
-    if (links.some((link) => typeof link !== "string" || link.trim() === "")) {
-      throw invalidWrite(["each link must be a non-empty string"]);
+    const requestedLinks = input.links ?? [];
+    const problems = linkProblems(requestedLinks);
+    if (problems.length > 0) {
+      throw invalidWrite(problems);
     }
+    const links = requestedLinks.map((link) => link.trim());
     const frontmatter: ObjectFrontmatter = {
       id,
       type: typeId,
@@ -438,7 +463,14 @@ export const createObjectRepository = (
         throw invalidWrite(check.problems);
       }
     }
-    const links = changes.links ?? object.links;
+    let links = object.links;
+    if (changes.links !== undefined) {
+      const problems = linkProblems(changes.links);
+      if (problems.length > 0) {
+        throw invalidWrite(problems);
+      }
+      links = changes.links.map((link) => link.trim());
+    }
     const body = changes.body ?? object.body;
     const updated = formatTimestamp(new Date(), timeZone);
     const frontmatter: ObjectFrontmatter = {

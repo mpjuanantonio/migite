@@ -120,6 +120,35 @@ describe("createObjectBodySchema", () => {
     );
   });
 
+  it("rejects links with line breaks or control characters", () => {
+    const invalid = [
+      "[[Nota\nrota]]",
+      "[[Nota\rrota]]",
+      "[[Nota\u0000rota]]",
+      "[[Nota\u009frota]]",
+    ];
+
+    for (const link of invalid) {
+      expect(
+        createObjectBodySchema.safeParse({ titulo: "Nota", enlaces: [link] }).success,
+        JSON.stringify(link),
+      ).toBe(false);
+    }
+  });
+
+  it("rejects links longer than the per-link limit", () => {
+    const longest = `[[${"a".repeat(296)}]]`;
+    const tooLong = `[[${"a".repeat(297)}]]`;
+
+    expect(longest).toHaveLength(300);
+    expect(createObjectBodySchema.safeParse({ titulo: "Nota", enlaces: [longest] }).success).toBe(
+      true,
+    );
+    expect(createObjectBodySchema.safeParse({ titulo: "Nota", enlaces: [tooLong] }).success).toBe(
+      false,
+    );
+  });
+
   it("rejects more links than the limit", () => {
     const tooMany = Array.from({ length: 101 }, (_, index) => `[[Nota ${index}]]`);
 

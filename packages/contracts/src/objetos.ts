@@ -2,11 +2,13 @@ import { z } from "zod";
 
 const nonEmptyText = z.string().trim().min(1);
 
-const WIKILINK_PATTERN = /^\[\[[^[\]]+\]\]$/;
+const WIKILINK_PATTERN = /^\[\[[^[\]\r\n\p{Cc}]+\]\]$/u;
 
 const MAX_OBJECT_LINKS = 100;
 
-const wikilinkText = z.string().trim().regex(WIKILINK_PATTERN);
+const MAX_WIKILINK_LENGTH = 300;
+
+const wikilinkText = z.string().trim().max(MAX_WIKILINK_LENGTH).regex(WIKILINK_PATTERN);
 
 export const degradationReasonSchema = z.discriminatedUnion("kind", [
   z.object({

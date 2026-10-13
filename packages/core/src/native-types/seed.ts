@@ -1,6 +1,15 @@
-import { lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { t } from "../i18n/index.js";
+import { writeFileAtomic } from "../objects/atomic.js";
 import { NATIVE_TYPE_IDS, NATIVE_TYPE_YAML, RECORDATORIO_YAML_ANTERIOR } from "./definitions.js";
 
 export interface SeedNativeTypesResult {
@@ -27,11 +36,32 @@ const run = (problems: string[], path: string, action: () => void): boolean => {
   }
 };
 
+const readRegularFile = (path: string): string | undefined => {
+  let fd: number;
+  try {
+    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  } catch (error) {
+    const code = errorCode(error);
+    if (code === "ELOOP" || code === "ENOENT") {
+      return undefined;
+    }
+    throw error;
+  }
+  try {
+    if (!fstatSync(fd).isFile()) {
+      return undefined;
+    }
+    return readFileSync(fd, "utf8");
+  } finally {
+    closeSync(fd);
+  }
+};
+
 const migrateRecordatorio = (path: string): "skipped" | "upgraded" => {
-  if (!lstatSync(path).isFile() || readFileSync(path, "utf8") !== RECORDATORIO_YAML_ANTERIOR) {
+  if (readRegularFile(path) !== RECORDATORIO_YAML_ANTERIOR) {
     return "skipped";
   }
-  writeFileSync(path, NATIVE_TYPE_YAML.recordatorio, "utf8");
+  writeFileAtomic(path, NATIVE_TYPE_YAML.recordatorio);
   return "upgraded";
 };
 

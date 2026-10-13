@@ -272,6 +272,30 @@ describe("createObject", () => {
     expect(existsSync(join(vaultDir, "x.md"))).toBe(false);
   });
 
+  it("rejects links that are not valid wikilinks", () => {
+    const { vaultDir, repo } = setupVault();
+    const multiline = "[[Nota\nrota]]";
+    const tooLong = `[[${"a".repeat(297)}]]`;
+    const invalid = ["Proyecto X", "[[]]", "[[A]]]", multiline, tooLong];
+
+    for (const link of invalid) {
+      const error = captureError(() => repo.createObject({ title: "X", links: [link] }));
+
+      expect(error.key, link).toBe("error.invalidObjectWrite");
+      expect(error.problems.join(" "), link).toContain("wikilink");
+    }
+    expect(existsSync(join(vaultDir, "x.md"))).toBe(false);
+  });
+
+  it("normalizes surrounding spaces in wikilinks", () => {
+    const { vaultDir, repo } = setupVault();
+
+    const record = repo.createObject({ title: "Normalizada", links: ["  [[Proyecto X]]  "] });
+
+    expect(record.links).toEqual(["[[Proyecto X]]"]);
+    expect(parseVaultFile(vaultDir, record.path).frontmatter.links).toEqual(["[[Proyecto X]]"]);
+  });
+
   it("suffixes the slug with a short ulid when the file name collides", () => {
     const { repo } = setupVault();
 
@@ -723,6 +747,18 @@ cuerpo viejo
     expect(file.frontmatter.attributes).toEqual({ prioridad: "alta", estado: "lo-que-sea" });
     expect(file.body).toBe("cuerpo nuevo\n");
     expect(file.frontmatter.updated).not.toBe(file.frontmatter.created);
+  });
+
+  it("rejects invalid links when updating an object", () => {
+    const { vaultDir, repo } = setupVault();
+    const note = repo.createObject({ title: "Original", body: "cuerpo\n" });
+    const before = readFileSync(join(vaultDir, note.path), "utf8");
+
+    const error = captureError(() => repo.updateObject(note.id, { links: ["no-wikilink"] }));
+
+    expect(error.key).toBe("error.invalidObjectWrite");
+    expect(error.problems.join(" ")).toContain("wikilink");
+    expect(readFileSync(join(vaultDir, note.path), "utf8")).toBe(before);
   });
 
   it("updates an object whose type file is broken", () => {

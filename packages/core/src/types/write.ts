@@ -223,10 +223,22 @@ export const updateTypeFile = (
     attributes,
     ...(presentacion === undefined ? {} : { presentacion }),
   });
-  writeFileAtomic(
-    typeFilePath(tiposDir, definition.id),
-    renderMergedTypeYaml(current.text, definition),
-  );
+  const path = typeFilePath(tiposDir, definition.id);
+  let currentOnDisk: string;
+  try {
+    currentOnDisk = readFileSync(path, "utf8");
+  } catch (error) {
+    if (errorCode(error) === "ENOENT") {
+      throw notFound(id);
+    }
+    throw error;
+  }
+  if (currentOnDisk !== current.text) {
+    throw new TypeOperationError("error.validationError", {}, [
+      `type file "${id}.yaml" changed on disk since it was read`,
+    ]);
+  }
+  writeFileAtomic(path, renderMergedTypeYaml(current.text, definition));
   return definition;
 };
 
