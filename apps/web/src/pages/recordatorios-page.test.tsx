@@ -165,7 +165,9 @@ describe("vista de recordatorios", () => {
 
     await screen.findByText("No hay recordatorios próximos.");
     await user.click(screen.getByRole("button", { name: "Nuevo recordatorio" }));
-    await user.type(await screen.findByLabelText("Título"), "Sacar la basura");
+    const dialogo = within(await screen.findByRole("dialog"));
+    expect(dialogo.queryByLabelText("Estado")).toBeNull();
+    await user.type(dialogo.getByLabelText("Título"), "Sacar la basura");
     await user.type(screen.getByLabelText("Fecha y hora"), "2026-10-20T14:30");
     await user.click(screen.getByRole("button", { name: "Crear recordatorio" }));
 

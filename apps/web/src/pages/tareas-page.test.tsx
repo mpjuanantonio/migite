@@ -233,7 +233,10 @@ describe("vista de tareas", () => {
 
     await screen.findByText("No hay tareas para hoy.");
     await user.click(screen.getByRole("button", { name: "Nueva tarea" }));
-    await user.type(await screen.findByLabelText("Título"), "Preparar informe");
+    const dialogo = within(await screen.findByRole("dialog"));
+    expect(dialogo.queryByLabelText("Estado")).toBeNull();
+    expect(dialogo.queryByRole("option", { name: "hecha" })).toBeNull();
+    await user.type(dialogo.getByLabelText("Título"), "Preparar informe");
     await user.type(screen.getByLabelText("Fecha límite"), "2026-10-20");
     await user.click(screen.getByRole("button", { name: "Crear tarea" }));
 

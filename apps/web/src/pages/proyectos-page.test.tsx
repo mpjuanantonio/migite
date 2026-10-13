@@ -147,7 +147,11 @@ describe("listado de proyectos", () => {
 
     await screen.findByText("Aún no hay proyectos.");
     await user.click(screen.getByRole("button", { name: "Nuevo proyecto" }));
-    await user.type(await screen.findByLabelText("Nombre"), "Huerto urbano");
+    const dialogo = within(await screen.findByRole("dialog"));
+    expect(dialogo.queryByLabelText("Estado")).toBeNull();
+    expect(dialogo.queryByRole("option", { name: "hecho" })).toBeNull();
+    expect(dialogo.queryByRole("option", { name: "archivado" })).toBeNull();
+    await user.type(dialogo.getByLabelText("Nombre"), "Huerto urbano");
     await user.type(screen.getByLabelText("Descripción (opcional)"), "Preparar macetas y plantar");
     await user.click(screen.getByRole("button", { name: "Crear proyecto" }));
 

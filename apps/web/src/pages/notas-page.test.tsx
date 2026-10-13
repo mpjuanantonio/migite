@@ -53,6 +53,38 @@ const tipoLibro: TipoPayload = {
   ],
 };
 
+const tipoTarea: TipoPayload = {
+  id: "tarea",
+  nombre: "Tarea",
+  atributos: [
+    {
+      id: "estado",
+      nombre: "Estado",
+      tipo: "seleccion",
+      rol: "estado",
+      obligatorio: true,
+      opciones: ["pendiente", "en curso", "hecha"],
+    },
+    { id: "vencimiento", nombre: "Vencimiento", tipo: "fecha", obligatorio: false },
+    { id: "completada", nombre: "Completada", tipo: "fecha-hora", obligatorio: false },
+  ],
+};
+
+const tipoRecordatorio: TipoPayload = {
+  id: "recordatorio",
+  nombre: "Recordatorio",
+  atributos: [
+    { id: "hora", nombre: "Hora", tipo: "fecha-hora", rol: "hora", obligatorio: true },
+    {
+      id: "estado",
+      nombre: "Estado",
+      tipo: "seleccion",
+      obligatorio: true,
+      opciones: ["pendiente", "vencido"],
+    },
+  ],
+};
+
 type ApiOptions = {
   readonly lista?: (url: URL, intento: number) => Response;
   readonly detalle?: (id: string) => Response;
@@ -554,6 +586,65 @@ describe("listado de notas", () => {
 
     expect(dialogo().queryByLabelText(/^Autor/)).toBeNull();
     expect(dialogo().queryByLabelText("Género")).toBeNull();
+  });
+
+  it("en el alta genérica de tarea oculta hecha y completada y fija pendiente", async () => {
+    mockApi({ tipos: [tipoNota, tipoTarea] });
+    const user = userEvent.setup();
+    renderNotas();
+
+    await screen.findByText(/Todavía no hay notas/);
+    await user.click(screen.getByRole("button", { name: "Nuevo objeto" }));
+    await screen.findByRole("dialog");
+
+    await user.selectOptions(dialogo().getByLabelText("Tipo"), "tarea");
+
+    const estado = dialogo().getByLabelText(/^Estado/);
+    expect(estado).toHaveValue("pendiente");
+    expect(within(estado).queryByRole("option", { name: "hecha" })).toBeNull();
+    expect(within(estado).getByRole("option", { name: "en curso" })).toBeInTheDocument();
+    expect(dialogo().queryByLabelText(/^Completada/)).toBeNull();
+
+    await rellenar(user, "Título", "Preparar informe");
+    await user.click(dialogo().getByRole("button", { name: "Crear objeto" }));
+
+    await waitFor(() => {
+      const post = posteos()[0];
+      expect(post?.[0]).toBe("/api/objetos");
+      expect(JSON.parse(String(post?.[1]?.body))).toEqual({
+        tipo: "tarea",
+        titulo: "Preparar informe",
+        atributos: { estado: "pendiente" },
+      });
+    });
+  });
+
+  it("en el alta genérica de recordatorio no ofrece estado y lo fija pendiente", async () => {
+    mockApi({ tipos: [tipoNota, tipoRecordatorio] });
+    const user = userEvent.setup();
+    renderNotas();
+
+    await screen.findByText(/Todavía no hay notas/);
+    await user.click(screen.getByRole("button", { name: "Nuevo objeto" }));
+    await screen.findByRole("dialog");
+
+    await user.selectOptions(dialogo().getByLabelText("Tipo"), "recordatorio");
+
+    expect(dialogo().queryByLabelText(/^Estado/)).toBeNull();
+
+    await rellenar(user, "Título", "Sacar la basura");
+    await user.type(dialogo().getByLabelText(/^Hora/), "2026-10-20T14:30");
+    await user.click(dialogo().getByRole("button", { name: "Crear objeto" }));
+
+    await waitFor(() => {
+      const post = posteos()[0];
+      expect(post?.[0]).toBe("/api/objetos");
+      expect(JSON.parse(String(post?.[1]?.body))).toEqual({
+        tipo: "recordatorio",
+        titulo: "Sacar la basura",
+        atributos: { hora: new Date("2026-10-20T14:30").toISOString(), estado: "pendiente" },
+      });
+    });
   });
 
   it("crea un objeto de un tipo personalizado con sus atributos", async () => {
