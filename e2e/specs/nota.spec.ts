@@ -24,13 +24,12 @@ test("crear, editar, renombrar y borrar una nota", async ({ page }) => {
     await expect(page.getByRole("link", { name: titulo })).toBeVisible();
   });
 
-  await test.step("edita el cuerpo, guarda y el cambio persiste", async () => {
+  await test.step("edita el cuerpo, autoguarda y el cambio persiste", async () => {
     await page.getByRole("link", { name: titulo }).click();
 
     const editor = page.getByRole("textbox", { name: "Cuerpo de la ficha en markdown" });
     await editor.fill(cuerpo);
-    await page.getByRole("button", { name: "Guardar", exact: true }).click();
-    await expect(page.getByRole("status").filter({ hasText: "Guardado" })).toBeVisible();
+    await expect(page.getByRole("status", { name: "Guardado" })).toBeVisible();
 
     await page.reload();
     await expect(
