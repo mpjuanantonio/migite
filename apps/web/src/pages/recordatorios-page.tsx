@@ -20,7 +20,6 @@ import type { AppTranslationKey } from "@/i18n/translate";
 import { formatFecha } from "@/lib/fecha";
 import {
   compararPorHora,
-  ESTADO_PENDIENTE,
   ESTADO_VENCIDO,
   type EstadoRecordatorio,
   estadoDeRecordatorio,
@@ -165,7 +164,7 @@ export const RecordatoriosPage = () => {
       {
         tipo: "recordatorio",
         titulo: limpio,
-        atributos: { hora: new Date(horaMs).toISOString(), estado: ESTADO_PENDIENTE },
+        atributos: { hora: new Date(horaMs).toISOString() },
       },
       {
         onSuccess: () => {

@@ -57,9 +57,9 @@ describe("atributosDeAlta", () => {
     expect(resultado[0]?.opciones).toEqual(["activo", "pausado"]);
   });
 
-  it("no ofrece el estado derivado de recordatorio", () => {
+  it("no trata los atributos de recordatorio de forma especial", () => {
     const resultado = atributosDeAlta("recordatorio", [hora, estadoRecordatorio]);
-    expect(resultado.map((item) => item.id)).toEqual(["hora"]);
+    expect(resultado).toEqual([hora, estadoRecordatorio]);
   });
 
   it("deja intactos los tipos personalizados", () => {
@@ -78,7 +78,7 @@ describe("valoresInicialesDeAlta", () => {
   it("fija el estado inicial de los tipos nativos con estado", () => {
     expect(valoresInicialesDeAlta("tarea")).toEqual({ estado: "pendiente" });
     expect(valoresInicialesDeAlta("proyecto")).toEqual({ estado: "activo" });
-    expect(valoresInicialesDeAlta("recordatorio")).toEqual({ estado: "pendiente" });
+    expect(valoresInicialesDeAlta("recordatorio")).toEqual({});
   });
 
   it("no inventa valores para el resto de tipos", () => {

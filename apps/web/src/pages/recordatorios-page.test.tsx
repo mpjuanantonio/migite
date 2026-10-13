@@ -158,7 +158,7 @@ describe("vista de recordatorios", () => {
     ).toBeInTheDocument();
   });
 
-  it("crea un recordatorio con hora y estado pendiente", async () => {
+  it("crea un recordatorio solo con hora", async () => {
     mockApi();
     const user = userEvent.setup();
     renderRecordatorios();
@@ -180,7 +180,6 @@ describe("vista de recordatorios", () => {
         titulo: "Sacar la basura",
         atributos: {
           hora: new Date("2026-10-20T14:30").toISOString(),
-          estado: "pendiente",
         },
       });
     });

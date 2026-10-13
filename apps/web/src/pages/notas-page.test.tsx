@@ -73,16 +73,7 @@ const tipoTarea: TipoPayload = {
 const tipoRecordatorio: TipoPayload = {
   id: "recordatorio",
   nombre: "Recordatorio",
-  atributos: [
-    { id: "hora", nombre: "Hora", tipo: "fecha-hora", rol: "hora", obligatorio: true },
-    {
-      id: "estado",
-      nombre: "Estado",
-      tipo: "seleccion",
-      obligatorio: true,
-      opciones: ["pendiente", "vencido"],
-    },
-  ],
+  atributos: [{ id: "hora", nombre: "Hora", tipo: "fecha-hora", rol: "hora", obligatorio: true }],
 };
 
 type ApiOptions = {
@@ -619,7 +610,7 @@ describe("listado de notas", () => {
     });
   });
 
-  it("en el alta genérica de recordatorio no ofrece estado y lo fija pendiente", async () => {
+  it("en el alta genérica de recordatorio solo ofrece hora", async () => {
     mockApi({ tipos: [tipoNota, tipoRecordatorio] });
     const user = userEvent.setup();
     renderNotas();
@@ -642,7 +633,7 @@ describe("listado de notas", () => {
       expect(JSON.parse(String(post?.[1]?.body))).toEqual({
         tipo: "recordatorio",
         titulo: "Sacar la basura",
-        atributos: { hora: new Date("2026-10-20T14:30").toISOString(), estado: "pendiente" },
+        atributos: { hora: new Date("2026-10-20T14:30").toISOString() },
       });
     });
   });
