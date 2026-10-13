@@ -377,11 +377,13 @@ export const useRenombrarObjeto = (id: string) => {
 
   return useMutation({
     mutationFn: async (nuevoTitulo: string): Promise<RenameReport> =>
-      renameReportSchema.parse(
-        await apiFetch(`${objetoPath(id)}/renombrar`, {
-          method: "POST",
-          body: { nuevoTitulo },
-        }),
+      enColaDeGuardado(id, async () =>
+        renameReportSchema.parse(
+          await apiFetch(`${objetoPath(id)}/renombrar`, {
+            method: "POST",
+            body: { nuevoTitulo },
+          }),
+        ),
       ),
     onSuccess: (reporte) => {
       queryClient.setQueryData(queryKeys.objeto(id), reporte.objeto);
@@ -456,6 +458,7 @@ export const useActualizarTipo = (id: string) => {
       queryClient.setQueryData<TipoPayload[]>(queryKeys.tipos, (previos) =>
         reemplazarTipo(previos, tipo),
       );
+      invalidarColeccionesDeObjetos(queryClient);
     },
   });
 };
@@ -470,6 +473,7 @@ export const useBorrarTipo = () => {
       queryClient.setQueryData<TipoPayload[]>(queryKeys.tipos, (previos) =>
         (previos ?? []).filter((item) => item.id !== id),
       );
+      invalidarColeccionesDeObjetos(queryClient);
     },
   });
 };

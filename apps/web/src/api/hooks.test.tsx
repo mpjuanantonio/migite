@@ -6,8 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vite
 import { errorResponse, jsonResponse } from "@/test/render-app";
 import {
   invalidarColeccionesDeObjetos,
+  useActualizarTipo,
   useArbolObjetos,
   useBorrarObjeto,
+  useBorrarTipo,
   useCrearObjeto,
   useGuardarAtributos,
   useGuardarObjeto,
@@ -55,6 +57,7 @@ const clavesDePrueba = () =>
     listado: [...queryKeys.objetos, { tipo: "nota", limite: 20 }],
     infinito: [...queryKeys.objetos, { infinito: true, tipo: "tarea" }],
     arbol: [...queryKeys.arbol, { tipo: "nota" }],
+    buscar: [...queryKeys.buscar, { q: "cuaderno" }],
     detalle: queryKeys.objeto("01JALFA"),
     resolver: queryKeys.resolver("Cuaderno de campo"),
     enlaces: queryKeys.enlacesEntrantes("01JALFA"),
@@ -142,7 +145,7 @@ describe("useArbolObjetos", () => {
 });
 
 describe("invalidarColeccionesDeObjetos", () => {
-  it("invalida listados y árbol sin tocar detalle, resolver ni enlaces entrantes", () => {
+  it("invalida listados, árbol y búsqueda sin tocar detalle, resolver ni enlaces entrantes", () => {
     const claves = sembrarClaves();
 
     invalidarColeccionesDeObjetos(cliente);
@@ -150,6 +153,7 @@ describe("invalidarColeccionesDeObjetos", () => {
     expect(estaInvalidada(claves.listado)).toBe(true);
     expect(estaInvalidada(claves.infinito)).toBe(true);
     expect(estaInvalidada(claves.arbol)).toBe(true);
+    expect(estaInvalidada(claves.buscar)).toBe(true);
     expect(estaInvalidada(claves.detalle)).toBe(false);
     expect(estaInvalidada(claves.resolver)).toBe(false);
     expect(estaInvalidada(claves.enlaces)).toBe(false);
@@ -168,7 +172,7 @@ describe("invalidarColeccionesDeObjetos", () => {
 });
 
 describe("invalidación de colecciones en las mutaciones", () => {
-  it("al crear invalida listados y árbol sin tocar el detalle ni el resolver", async () => {
+  it("al crear invalida listados, árbol y búsqueda sin tocar el detalle ni el resolver", async () => {
     fetchMock.mockImplementation(async (input, init) => {
       if (String(input) === "/api/objetos" && init?.method === "POST") {
         return jsonResponse(objetoDePrueba, 201);
@@ -185,11 +189,12 @@ describe("invalidación de colecciones en las mutaciones", () => {
     expect(estaInvalidada(claves.listado)).toBe(true);
     expect(estaInvalidada(claves.infinito)).toBe(true);
     expect(estaInvalidada(claves.arbol)).toBe(true);
+    expect(estaInvalidada(claves.buscar)).toBe(true);
     expect(estaInvalidada(claves.detalle)).toBe(false);
     expect(estaInvalidada(claves.resolver)).toBe(false);
   });
 
-  it("al guardar atributos invalida listados y árbol sin tocar el detalle ni el resolver", async () => {
+  it("al guardar atributos invalida listados, árbol y búsqueda sin tocar el detalle ni el resolver", async () => {
     fetchMock.mockImplementation(async (input, init) => {
       if (String(input) === "/api/objetos/01JALFA" && init?.method === "PATCH") {
         return jsonResponse({ ...objetoDePrueba, atributos: { estado: "hecha" } });
@@ -206,11 +211,12 @@ describe("invalidación de colecciones en las mutaciones", () => {
     expect(estaInvalidada(claves.listado)).toBe(true);
     expect(estaInvalidada(claves.infinito)).toBe(true);
     expect(estaInvalidada(claves.arbol)).toBe(true);
+    expect(estaInvalidada(claves.buscar)).toBe(true);
     expect(estaInvalidada(claves.detalle)).toBe(false);
     expect(estaInvalidada(claves.resolver)).toBe(false);
   });
 
-  it("al guardar el cuerpo invalida listados y árbol sin tocar el detalle", async () => {
+  it("al guardar el cuerpo invalida listados, árbol y búsqueda sin tocar el detalle", async () => {
     fetchMock.mockImplementation(async (input, init) => {
       if (String(input) === "/api/objetos/01JALFA" && init?.method === "PATCH") {
         return jsonResponse({ ...objetoDePrueba, cuerpo: "Hola" });
@@ -227,11 +233,12 @@ describe("invalidación de colecciones en las mutaciones", () => {
     expect(estaInvalidada(claves.listado)).toBe(true);
     expect(estaInvalidada(claves.infinito)).toBe(true);
     expect(estaInvalidada(claves.arbol)).toBe(true);
+    expect(estaInvalidada(claves.buscar)).toBe(true);
     expect(estaInvalidada(claves.detalle)).toBe(false);
     expect(estaInvalidada(claves.resolver)).toBe(false);
   });
 
-  it("al renombrar invalida listados, árbol y el resolver del título nuevo", async () => {
+  it("al renombrar invalida listados, árbol, búsqueda y el resolver del título nuevo", async () => {
     fetchMock.mockImplementation(async (input) => {
       if (String(input) === "/api/objetos/01JALFA/renombrar") {
         return jsonResponse({
@@ -250,11 +257,12 @@ describe("invalidación de colecciones en las mutaciones", () => {
 
     expect(estaInvalidada(claves.listado)).toBe(true);
     expect(estaInvalidada(claves.arbol)).toBe(true);
+    expect(estaInvalidada(claves.buscar)).toBe(true);
     expect(estaInvalidada(claves.resolver)).toBe(true);
     expect(estaInvalidada(claves.detalle)).toBe(false);
   });
 
-  it("al borrar invalida listados y árbol, y retira el detalle afectado", async () => {
+  it("al borrar invalida listados, árbol y búsqueda, y retira el detalle afectado", async () => {
     fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
     const claves = sembrarClaves();
 
@@ -265,8 +273,50 @@ describe("invalidación de colecciones en las mutaciones", () => {
 
     expect(estaInvalidada(claves.listado)).toBe(true);
     expect(estaInvalidada(claves.arbol)).toBe(true);
+    expect(estaInvalidada(claves.buscar)).toBe(true);
     expect(cliente.getQueryData(claves.detalle)).toBeUndefined();
     expect(cliente.getQueryData(claves.enlaces)).toBeUndefined();
+  });
+});
+
+describe("invalidación de colecciones al tocar tipos", () => {
+  const tipoDePrueba = { id: "nota", nombre: "Nota", atributos: [] };
+
+  it("al actualizar un tipo invalida listados, árbol y búsqueda", async () => {
+    fetchMock.mockImplementation(async (input, init) => {
+      if (String(input) === "/api/tipos/nota" && init?.method === "PATCH") {
+        return jsonResponse(tipoDePrueba);
+      }
+      return errorResponse("not_found", "Ruta desconocida", 404);
+    });
+    const claves = sembrarClaves();
+
+    const actualizar = renderHook(() => useActualizarTipo("nota"), { wrapper: envolver });
+    await act(async () => {
+      await actualizar.result.current.mutateAsync({ nombre: "Nota" });
+    });
+
+    expect(estaInvalidada(claves.listado)).toBe(true);
+    expect(estaInvalidada(claves.arbol)).toBe(true);
+    expect(estaInvalidada(claves.buscar)).toBe(true);
+    expect(estaInvalidada(claves.detalle)).toBe(false);
+    expect(estaInvalidada(claves.resolver)).toBe(false);
+  });
+
+  it("al borrar un tipo invalida listados, árbol y búsqueda", async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+    const claves = sembrarClaves();
+
+    const borrar = renderHook(() => useBorrarTipo(), { wrapper: envolver });
+    await act(async () => {
+      await borrar.result.current.mutateAsync("nota");
+    });
+
+    expect(estaInvalidada(claves.listado)).toBe(true);
+    expect(estaInvalidada(claves.arbol)).toBe(true);
+    expect(estaInvalidada(claves.buscar)).toBe(true);
+    expect(estaInvalidada(claves.detalle)).toBe(false);
+    expect(estaInvalidada(claves.resolver)).toBe(false);
   });
 });
 
@@ -428,5 +478,51 @@ describe("guardados concurrentes del mismo objeto", () => {
     const guardado = cliente.getQueryData<ObjectPayload>(queryKeys.objeto("01JALFA"));
     expect(guardado?.cuerpo).toBe(cuerpoNuevo);
     expect(guardado?.atributos).toEqual(atributosNuevos);
+  });
+
+  it("serializa el renombrado detrás de un PATCH de cuerpo en vuelo", async () => {
+    let liberarCuerpo: (() => void) | undefined;
+    const cuerpoEnVuelo = new Promise<void>((resolve) => {
+      liberarCuerpo = resolve;
+    });
+
+    fetchMock.mockImplementation(async (input, init) => {
+      if (String(input) === "/api/objetos/01JALFA" && init?.method === "PATCH") {
+        await cuerpoEnVuelo;
+        return jsonResponse({ ...objetoDePrueba, cuerpo: "Cuerpo nuevo" });
+      }
+      if (String(input) === "/api/objetos/01JALFA/renombrar") {
+        return jsonResponse({
+          objeto: { ...objetoDePrueba, titulo: "Título nuevo" },
+          informe: { reescritos: [], omitidos: [], enlacesSinResolver: [] },
+        });
+      }
+      return errorResponse("not_found", "Ruta desconocida", 404);
+    });
+
+    const guardadoCuerpo = renderHook(() => useGuardarObjeto("01JALFA"), { wrapper: envolver });
+    const renombrado = renderHook(() => useRenombrarObjeto("01JALFA"), { wrapper: envolver });
+
+    const pendientes: Promise<unknown>[] = [];
+    act(() => {
+      pendientes.push(guardadoCuerpo.result.current.mutateAsync("Cuerpo nuevo"));
+      pendientes.push(renombrado.result.current.mutateAsync("Título nuevo"));
+    });
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe("/api/objetos/01JALFA");
+
+    await act(async () => {
+      liberarCuerpo?.();
+      await Promise.all(pendientes);
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[1]?.[0])).toBe("/api/objetos/01JALFA/renombrar");
+    expect(cliente.getQueryData<ObjectPayload>(queryKeys.objeto("01JALFA"))?.titulo).toBe(
+      "Título nuevo",
+    );
   });
 });

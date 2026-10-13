@@ -10,6 +10,9 @@ export const queryKeys = {
 };
 
 export const esColeccionDeObjetos = (queryKey: readonly unknown[]): boolean => {
+  if (queryKey[0] === queryKeys.buscar[0]) {
+    return true;
+  }
   if (queryKey[0] !== queryKeys.objetos[0]) {
     return false;
   }
