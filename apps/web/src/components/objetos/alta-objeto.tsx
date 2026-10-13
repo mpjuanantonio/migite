@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useI18n } from "@/i18n/context";
+import { atributosDeAlta, valoresInicialesDeAlta } from "@/lib/altas";
 import { aWire, esVacio, filtrarVacios } from "@/lib/atributos";
 import { esTipoSistema } from "@/lib/tipos";
 
@@ -51,16 +52,24 @@ export const AltaObjetoDialog = ({
   const [aviso, setAviso] = useState("");
 
   const tipo = tipos.data?.find((item) => item.id === tipoId);
-  const atributos = tipo?.atributos ?? [];
+  const definiciones = useMemo(() => tipo?.atributos ?? [], [tipo]);
+  const atributos = useMemo(() => atributosDeAlta(tipoId, definiciones), [tipoId, definiciones]);
+  const valoresEfectivos = useMemo(
+    () => ({ ...valoresInicialesDeAlta(tipoId), ...valores }),
+    [tipoId, valores],
+  );
 
   const atributosWire = useMemo(
     () =>
       filtrarVacios(
         Object.fromEntries(
-          atributos.map((atributo) => [atributo.id, aWire(atributo.tipo, valores[atributo.id])]),
+          definiciones.map((atributo) => [
+            atributo.id,
+            aWire(atributo.tipo, valoresEfectivos[atributo.id]),
+          ]),
         ),
       ),
-    [atributos, valores],
+    [definiciones, valoresEfectivos],
   );
 
   const obligatoriosVacios = atributos.some((atributo) =>
@@ -225,7 +234,7 @@ export const AltaObjetoDialog = ({
                       editorId={`${campoId}-${atributo.id}`}
                       etiquetaId={etiquetaId}
                       definicion={atributo}
-                      valor={valores[atributo.id]}
+                      valor={valoresEfectivos[atributo.id]}
                       crudo={false}
                       deshabilitado={crear.isPending}
                       onCambio={(valor) => {
