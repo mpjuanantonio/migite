@@ -12,25 +12,29 @@ import {
   sesionResponse,
 } from "@/test/render-app";
 
-vi.mock("@uiw/react-codemirror", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@uiw/react-codemirror")>();
-  return {
-    ...actual,
-    default: (props: {
-      readonly value?: string;
-      readonly onChange?: (value: string) => void;
-      readonly "aria-label"?: string;
-      readonly placeholder?: string;
-    }) => (
+const estadoWikilink = vi.hoisted(() => ({ titulo: "Diario de viaje" }));
+
+vi.mock("@/components/editor/markdown-editor", () => ({
+  MarkdownEditor: (props: {
+    readonly value: string;
+    readonly onChange: (valor: string) => void;
+    readonly ariaLabel: string;
+    readonly placeholder?: string;
+    readonly onWikilinkClick?: (titulo: string) => void;
+  }) => (
+    <div>
       <textarea
-        aria-label={props["aria-label"]}
+        aria-label={props.ariaLabel}
         placeholder={props.placeholder}
-        value={props.value ?? ""}
-        onChange={(event) => props.onChange?.(event.target.value)}
+        value={props.value}
+        onChange={(event) => props.onChange(event.target.value)}
       />
-    ),
-  };
-});
+      <button type="button" onClick={() => props.onWikilinkClick?.(estadoWikilink.titulo)}>
+        Wikilink del editor
+      </button>
+    </div>
+  ),
+}));
 
 let fetchMock: Mock<typeof fetch>;
 
@@ -220,7 +224,7 @@ afterEach(() => {
 });
 
 describe("ficha de objeto", () => {
-  it("carga el objeto y muestra el cuerpo en el editor y en la vista previa", async () => {
+  it("carga el objeto y muestra el cuerpo en el editor", async () => {
     mockObjetoApi();
     renderObjeto();
 
@@ -231,12 +235,9 @@ describe("ficha de objeto", () => {
     expect(screen.getByText("Sin cambios")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Guardar" })).toBeDisabled();
 
+    expect(screen.getByRole("region", { name: "Texto markdown" })).toBeInTheDocument();
     const editor = screen.getByLabelText("Cuerpo de la ficha en markdown");
     expect(editor).toHaveValue("# Diario\n\nUna **nota** serena.");
-
-    const preview = screen.getByRole("region", { name: "Vista previa" });
-    expect(within(preview).getByRole("heading", { level: 1, name: "Diario" })).toBeInTheDocument();
-    expect(within(preview).getByText("nota", { selector: "strong" })).toBeInTheDocument();
   });
 
   it("muestra el mensaje del API cuando la ficha no existe", async () => {
@@ -292,8 +293,6 @@ describe("ficha de objeto", () => {
     await user.type(editor, "Cuerpo nuevo");
 
     expect(screen.getByText("Cambios sin guardar")).toBeInTheDocument();
-    const preview = screen.getByRole("region", { name: "Vista previa" });
-    expect(within(preview).getByText("Cuerpo nuevo")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Guardar" }));
 
@@ -670,96 +669,21 @@ describe("renombrar y borrar la ficha", () => {
   });
 });
 
-describe("wikilinks", () => {
+describe("wikilinks del editor", () => {
   const diarioDeViaje = (): ObjectPayload =>
     objetoDePrueba({ id: "01JDIARIO", titulo: "Diario de viaje", cuerpo: "" });
 
-  const tareasDelMes = (): ObjectPayload =>
-    objetoDePrueba({ id: "01JOTRA", titulo: "Tareas del mes", cuerpo: "" });
-
-  const enfocarEditor = async (user: ReturnType<typeof userEvent.setup>, valor: string) => {
-    const editor = await screen.findByLabelText("Cuerpo de la ficha en markdown");
-    await user.click(editor);
-    fireEvent.change(editor, { target: { value: valor } });
-    return editor;
+  const clicWikilink = async (user: ReturnType<typeof userEvent.setup>, titulo: string) => {
+    estadoWikilink.titulo = titulo;
+    await user.click(await screen.findByRole("button", { name: "Wikilink del editor" }));
   };
 
-  it("sugiere objetos al escribir «[[» y filtra por lo tecleado", async () => {
-    mockObjetoApi({
-      objeto: objetoDePrueba({ cuerpo: "" }),
-      objetos: [diarioDeViaje(), tareasDelMes()],
-    });
-    const user = userEvent.setup();
-    renderObjeto();
+  const abrirWikilink = async (user: ReturnType<typeof userEvent.setup>, titulo: string) => {
+    await clicWikilink(user, titulo);
+    return screen.findByRole("dialog");
+  };
 
-    const editor = await enfocarEditor(user, "[[Dia");
-
-    const opcion = await screen.findByRole("option", { name: "Diario de viaje" });
-    expect(screen.queryByRole("option", { name: "Tareas del mes" })).toBeNull();
-
-    await user.click(opcion);
-
-    expect(editor).toHaveValue("[[Diario de viaje]]");
-    expect(screen.queryByRole("listbox")).toBeNull();
-  });
-
-  it("recorre las sugerencias con las flechas e inserta con Enter", async () => {
-    mockObjetoApi({
-      objeto: objetoDePrueba({ cuerpo: "" }),
-      objetos: [diarioDeViaje(), tareasDelMes()],
-    });
-    const user = userEvent.setup();
-    renderObjeto();
-
-    const editor = await enfocarEditor(user, "[[");
-    await screen.findByRole("listbox");
-    await user.keyboard("{ArrowDown}");
-
-    expect(screen.getByRole("option", { name: "Tareas del mes" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
-
-    await user.keyboard("{Enter}");
-
-    expect(editor).toHaveValue("[[Tareas del mes]]");
-  });
-
-  it("cierra las sugerencias con Escape", async () => {
-    mockObjetoApi({
-      objeto: objetoDePrueba({ cuerpo: "" }),
-      objetos: [diarioDeViaje()],
-    });
-    const user = userEvent.setup();
-    renderObjeto();
-
-    await enfocarEditor(user, "[[");
-    await screen.findByRole("listbox");
-
-    await user.keyboard("{Escape}");
-
-    await waitFor(() => {
-      expect(screen.queryByRole("listbox")).toBeNull();
-    });
-  });
-
-  it("ofrece crear la nota cuando no hay coincidencias e inserta «[[texto]]»", async () => {
-    mockObjetoApi({
-      objeto: objetoDePrueba({ cuerpo: "" }),
-      objetos: [diarioDeViaje()],
-    });
-    const user = userEvent.setup();
-    renderObjeto();
-
-    const editor = await enfocarEditor(user, "[[Zeta");
-
-    const opcion = await screen.findByRole("option", { name: "Crear nota «Zeta»" });
-    await user.click(opcion);
-
-    expect(editor).toHaveValue("[[Zeta]]");
-  });
-
-  it("resuelve el wikilink del preview y navega al objeto existente", async () => {
+  it("navega al objeto existente cuando el wikilink resuelve", async () => {
     mockObjetoApi({
       objeto: objetoDePrueba({ cuerpo: "Enlaza [[Diario de viaje]] aquí." }),
       objetos: [diarioDeViaje()],
@@ -767,9 +691,7 @@ describe("wikilinks", () => {
     const user = userEvent.setup();
     const { router } = renderObjeto();
 
-    const preview = await screen.findByRole("region", { name: "Vista previa" });
-    const enlace = await within(preview).findByRole("link", { name: "Diario de viaje" });
-    await user.click(enlace);
+    await clicWikilink(user, "Diario de viaje");
 
     await waitFor(() => {
       expect(router.state.location.pathname).toBe("/objetos/01JDIARIO");
@@ -782,30 +704,13 @@ describe("wikilinks", () => {
     ).toBeInTheDocument();
   });
 
-  it("respeta el alias de «[[Título|alias]]» al navegar", async () => {
-    mockObjetoApi({
-      objeto: objetoDePrueba({ cuerpo: "Lee [[Diario de viaje|el diario]]." }),
-      objetos: [diarioDeViaje()],
-    });
-    const user = userEvent.setup();
-    const { router } = renderObjeto();
-
-    const preview = await screen.findByRole("region", { name: "Vista previa" });
-    const enlace = await within(preview).findByRole("link", { name: "el diario" });
-    await user.click(enlace);
-
-    await waitFor(() => {
-      expect(router.state.location.pathname).toBe("/objetos/01JDIARIO");
-    });
-  });
-
-  it("crea la nota desde un enlace sin resolver y navega a ella", async () => {
+  it("ofrece crear la nota cuando el wikilink no resuelve y la crea", async () => {
     mockObjetoApi({ objeto: objetoDePrueba({ cuerpo: "Falta [[Nota nueva]]." }) });
     const user = userEvent.setup();
     const { router } = renderObjeto();
 
-    const crear = await screen.findByRole("button", { name: "Crear nota" });
-    await user.click(crear);
+    await abrirWikilink(user, "Nota nueva");
+    await user.click(await screen.findByRole("button", { name: "Crear nota" }));
 
     await waitFor(() => {
       expect(router.state.location.pathname).toBe("/objetos/01JCREADO1");
@@ -827,6 +732,7 @@ describe("wikilinks", () => {
     const user = userEvent.setup();
     const { router } = renderObjeto();
 
+    await abrirWikilink(user, "Nota nueva");
     await user.click(await screen.findByRole("button", { name: "Crear nota" }));
 
     const alerta = await screen.findByRole("alert");
@@ -834,7 +740,7 @@ describe("wikilinks", () => {
     expect(router.state.location.pathname).toBe("/objetos/01JALFA");
   });
 
-  it("guarda el borrador antes de crear la nota desde un enlace sin resolver", async () => {
+  it("guarda el borrador antes de crear la nota", async () => {
     mockObjetoApi({ objeto: objetoDePrueba({ cuerpo: "Falta [[Nota nueva]]." }) });
     const user = userEvent.setup();
     const { router } = renderObjeto();
@@ -844,6 +750,7 @@ describe("wikilinks", () => {
       target: { value: "Falta [[Nota nueva]]. Y una idea más." },
     });
 
+    await abrirWikilink(user, "Nota nueva");
     await user.click(await screen.findByRole("button", { name: "Crear nota" }));
 
     await waitFor(() => {
@@ -875,6 +782,7 @@ describe("wikilinks", () => {
       target: { value: "Falta [[Nota nueva]]. Y una idea más." },
     });
 
+    await abrirWikilink(user, "Nota nueva");
     await user.click(await screen.findByRole("button", { name: "Crear nota" }));
 
     const alerta = await screen.findByRole("alert");

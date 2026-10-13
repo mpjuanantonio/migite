@@ -9,6 +9,7 @@ type WikilinkProps = {
   readonly children: ReactNode;
   readonly antesDeCrear?: () => Promise<void>;
   readonly autoNavegar?: boolean;
+  readonly onNavegar?: () => void;
 };
 
 export const Wikilink = ({
@@ -16,6 +17,7 @@ export const Wikilink = ({
   children,
   antesDeCrear,
   autoNavegar = false,
+  onNavegar,
 }: WikilinkProps) => {
   const { t } = useI18n();
   const navigate = useNavigate();
@@ -26,9 +28,10 @@ export const Wikilink = ({
 
   useEffect(() => {
     if (autoNavegar && objeto !== null && objeto !== undefined) {
+      onNavegar?.();
       navigate(`/objetos/${encodeURIComponent(objeto.id)}`);
     }
-  }, [autoNavegar, navigate, objeto]);
+  }, [autoNavegar, navigate, objeto, onNavegar]);
 
   const crearNota = async () => {
     if (crear.isPending || preparando) {

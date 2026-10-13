@@ -12,7 +12,7 @@ import {
 } from "@/api/hooks";
 import { BandejaAtributos } from "@/components/atributos/bandeja-atributos";
 import { MarkdownEditor } from "@/components/editor/markdown-editor";
-import { MarkdownPreview } from "@/components/editor/markdown-preview";
+import { Wikilink } from "@/components/editor/wikilink";
 import { PanelEnlacesEntrantes } from "@/components/objetos/panel-enlaces-entrantes";
 import { Button } from "@/components/ui/button";
 import {
@@ -151,6 +151,7 @@ export const ObjetoPage = () => {
   const [nuevoTitulo, setNuevoTitulo] = useState("");
   const [informe, setInforme] = useState<InformeRenombrado>();
   const [borrarAbierto, setBorrarAbierto] = useState(false);
+  const [wikilinkTitulo, setWikilinkTitulo] = useState<string>();
 
   const objeto: ObjectPayload | null | undefined = objetoQuery.data;
   const titulosSugeridos = (objetosSugeridos.data?.objetos ?? []).map((item) => item.titulo);
@@ -179,6 +180,14 @@ export const ObjetoPage = () => {
     await guardar.mutateAsync(cuerpo);
     setGuardadoEn(id);
   }, [puedeGuardar, cuerpo, guardar, id]);
+
+  const abrirWikilink = useCallback((titulo: string) => {
+    setWikilinkTitulo(titulo);
+  }, []);
+
+  const cerrarWikilink = useCallback(() => {
+    setWikilinkTitulo(undefined);
+  }, []);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -355,42 +364,22 @@ export const ObjetoPage = () => {
         </div>
       ) : null}
 
-      <section className="overflow-hidden rounded-lg border border-border bg-card shadow-sheet">
-        <div className="grid lg:grid-cols-2">
-          <section
-            aria-label={t("page.objeto.editor")}
-            className="flex flex-col border-b border-border lg:border-r lg:border-b-0"
-          >
-            <header className="flex h-10 items-center border-b border-border/70 px-4">
-              <h2 className="text-xs font-medium text-muted-foreground">
-                {t("page.objeto.editor")}
-              </h2>
-            </header>
-            <div className="h-[22rem] sm:h-[30rem]">
-              <MarkdownEditor
-                value={cuerpo}
-                onChange={(valor) => setBorrador({ id: objeto.id, valor })}
-                ariaLabel={t("page.objeto.editorLabel")}
-                placeholder={t("page.objeto.editorPlaceholder")}
-                sugerencias={titulosSugeridos}
-              />
-            </div>
-          </section>
-          <section aria-label={t("page.objeto.preview")} className="flex flex-col">
-            <header className="flex h-10 items-center border-b border-border/70 px-4">
-              <h2 className="text-xs font-medium text-muted-foreground">
-                {t("page.objeto.preview")}
-              </h2>
-            </header>
-            <div className="h-[22rem] overflow-y-auto px-5 py-4 sm:h-[30rem] lg:px-6">
-              <MarkdownPreview
-                markdown={cuerpo}
-                emptyLabel={t("page.objeto.previewEmpty")}
-                enlacesWikilink
-                antesDeCrearEnlace={guardarAntesDeCrear}
-              />
-            </div>
-          </section>
+      <section
+        aria-label={t("page.objeto.editor")}
+        className="overflow-hidden rounded-lg border border-border bg-card shadow-sheet"
+      >
+        <header className="flex h-10 items-center border-b border-border/70 px-4">
+          <h2 className="text-xs font-medium text-muted-foreground">{t("page.objeto.editor")}</h2>
+        </header>
+        <div className="h-[28rem] sm:h-[36rem]">
+          <MarkdownEditor
+            value={cuerpo}
+            onChange={(valor) => setBorrador({ id: objeto.id, valor })}
+            ariaLabel={t("page.objeto.editorLabel")}
+            placeholder={t("page.objeto.editorPlaceholder")}
+            sugerencias={titulosSugeridos}
+            onWikilinkClick={abrirWikilink}
+          />
         </div>
       </section>
 
@@ -480,6 +469,34 @@ export const ObjetoPage = () => {
                 : t("page.objeto.deleteConfirm")}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={wikilinkTitulo !== undefined}
+        onOpenChange={(abierto) => {
+          if (!abierto) {
+            setWikilinkTitulo(undefined);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{wikilinkTitulo}</DialogTitle>
+            <DialogDescription>
+              {t("page.objeto.wikilink.unresolved", { titulo: wikilinkTitulo ?? "" })}
+            </DialogDescription>
+          </DialogHeader>
+          {wikilinkTitulo === undefined ? null : (
+            <Wikilink
+              titulo={wikilinkTitulo}
+              antesDeCrear={guardarAntesDeCrear}
+              autoNavegar
+              onNavegar={cerrarWikilink}
+            >
+              {wikilinkTitulo}
+            </Wikilink>
+          )}
         </DialogContent>
       </Dialog>
     </div>
