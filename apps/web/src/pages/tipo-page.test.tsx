@@ -1,4 +1,4 @@
-import type { AttributePayload, TipoPayload } from "@migite/contracts";
+import type { AttributePayload, PresentacionPayload, TipoPayload } from "@migite/contracts";
 import { QueryClient } from "@tanstack/react-query";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -15,11 +15,13 @@ type PatchTipoBody = {
   readonly nombre?: string;
   readonly descripcion?: string;
   readonly atributos?: AttributePayload[];
+  readonly presentacion?: PresentacionPayload;
 };
 
 let fetchMock: Mock<typeof fetch>;
 let tipos: TipoPayload[];
 let patchados: { readonly id: string; readonly body: PatchTipoBody }[];
+let creados: TipoPayload[];
 let borrados: string[];
 let respuestaBorrado: Response | undefined;
 
@@ -37,6 +39,7 @@ const tipoLibro = (): TipoPayload => ({
       opciones: ["novela", "ensayo"],
     },
   ],
+  presentacion: { seccion: "notas", carpeta: "Libros", visible: true },
 });
 
 const tipoNota = (): TipoPayload => ({ id: "nota", nombre: "Nota", atributos: [] });
@@ -55,6 +58,13 @@ const mockApi = (): void => {
 
     if (url.pathname === "/api/tipos" && method === "GET") {
       return jsonResponse({ tipos });
+    }
+
+    if (url.pathname === "/api/tipos" && method === "POST") {
+      const body = JSON.parse(String(init?.body ?? "{}")) as TipoPayload;
+      creados.push(body);
+      tipos = [...tipos, body];
+      return jsonResponse(body, 201);
     }
 
     if (url.pathname.startsWith("/api/tipos/") && method === "PATCH") {
@@ -91,6 +101,7 @@ beforeEach(() => {
   localStorage.clear();
   tipos = [tipoLibro(), tipoNota()];
   patchados = [];
+  creados = [];
   borrados = [];
   respuestaBorrado = undefined;
   fetchMock = vi.fn<typeof fetch>();
@@ -162,8 +173,90 @@ describe("editor de tipo", () => {
         },
         { id: "paginas", nombre: "Páginas", tipo: "numero", obligatorio: false },
       ],
+      presentacion: { seccion: "notas", carpeta: "Libros", visible: true },
     });
     expect(await screen.findByText("Cambios guardados")).toBeInTheDocument();
+  });
+
+  it("carga la presentación existente del tipo", async () => {
+    mockApi();
+    renderTipo("/tipos/libro");
+
+    await screen.findByDisplayValue("Autor");
+    expect(screen.getByLabelText("Sección")).toHaveValue("notas");
+    expect(screen.getByLabelText("Carpeta por defecto")).toHaveValue("Libros");
+    expect(screen.getByRole("switch", { name: "Mostrar en la barra lateral" })).toBeChecked();
+  });
+
+  it("guarda el bloque de presentación completo", async () => {
+    mockApi();
+    renderTipo("/tipos/libro");
+    const user = userEvent.setup();
+
+    await screen.findByDisplayValue("Autor");
+    await user.selectOptions(screen.getByLabelText("Sección"), "productividad");
+    await user.clear(screen.getByLabelText("Carpeta por defecto"));
+    await user.type(screen.getByLabelText("Carpeta por defecto"), "Productos");
+    await user.click(screen.getByRole("button", { name: "Guardar cambios" }));
+
+    await waitFor(() => expect(patchados).toHaveLength(1));
+    expect(patchados[0]?.body.presentacion).toEqual({
+      seccion: "productividad",
+      carpeta: "Productos",
+      visible: true,
+    });
+  });
+
+  it("omite la sección al elegir no mostrarla en la barra lateral", async () => {
+    mockApi();
+    renderTipo("/tipos/libro");
+    const user = userEvent.setup();
+
+    await screen.findByDisplayValue("Autor");
+    await user.selectOptions(screen.getByLabelText("Sección"), "");
+    await user.click(screen.getByRole("button", { name: "Guardar cambios" }));
+
+    await waitFor(() => expect(patchados).toHaveLength(1));
+    expect(patchados[0]?.body.presentacion).toEqual({ carpeta: "Libros", visible: true });
+    expect(patchados[0]?.body.presentacion).not.toHaveProperty("seccion");
+  });
+
+  it("envía visible: false al desactivar el switch", async () => {
+    mockApi();
+    renderTipo("/tipos/libro");
+    const user = userEvent.setup();
+
+    await screen.findByDisplayValue("Autor");
+    await user.click(screen.getByRole("switch", { name: "Mostrar en la barra lateral" }));
+    await user.click(screen.getByRole("button", { name: "Guardar cambios" }));
+
+    await waitFor(() => expect(patchados).toHaveLength(1));
+    expect(patchados[0]?.body.presentacion).toEqual({
+      seccion: "notas",
+      carpeta: "Libros",
+      visible: false,
+    });
+  });
+
+  it("crea un tipo con presentación", async () => {
+    mockApi();
+    const { router } = renderTipo("/tipos/nuevo");
+    const user = userEvent.setup();
+
+    const nombre = await screen.findByLabelText("Nombre");
+    await user.type(nombre, "Recetario");
+    await user.selectOptions(screen.getByLabelText("Sección"), "productividad");
+    await user.type(screen.getByLabelText("Carpeta por defecto"), "Recetas");
+    await user.click(screen.getByRole("button", { name: "Crear tipo" }));
+
+    await waitFor(() => expect(creados).toHaveLength(1));
+    expect(creados[0]).toEqual({
+      id: "recetario",
+      nombre: "Recetario",
+      atributos: [],
+      presentacion: { seccion: "productividad", carpeta: "Recetas", visible: true },
+    });
+    await waitFor(() => expect(router.state.location.pathname).toBe("/tipos/recetario"));
   });
 
   it("no borra el tipo sin confirmar y lo borra con confirmación", async () => {
@@ -237,5 +330,7 @@ describe("editor de tipo", () => {
     expect(screen.getByLabelText("Nombre")).toBeDisabled();
     expect(screen.getByLabelText("Identificador")).toBeDisabled();
     expect(screen.getByLabelText("Descripción (opcional)")).toBeDisabled();
+    expect(screen.queryByLabelText("Sección")).toBeNull();
+    expect(screen.queryByLabelText("Carpeta por defecto")).toBeNull();
   });
 });

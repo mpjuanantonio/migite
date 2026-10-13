@@ -27,7 +27,10 @@ import {
   hayIdsDuplicados,
   idValido,
   nuevoAtributo,
+  type PresentacionBorrador,
   payloadDeAtributo,
+  payloadDePresentacion,
+  presentacionInicial,
   sugerirId,
 } from "@/lib/tipos";
 
@@ -182,6 +185,9 @@ export const EditorTipo = ({ tipo, soloLectura = false }: EditorTipoProps) => {
   const [idEscrito, setIdEscrito] = useState("");
   const [idManual, setIdManual] = useState(false);
   const [atributos, setAtributos] = useState<readonly AtributoBorrador[]>(() => borradoresDe(tipo));
+  const [presentacion, setPresentacion] = useState<PresentacionBorrador>(() =>
+    presentacionInicial(tipo),
+  );
   const [aQuitar, setAQuitar] = useState<AtributoBorrador>();
   const [borrarAbierto, setBorrarAbierto] = useState(false);
   const [guardado, setGuardado] = useState(false);
@@ -220,6 +226,7 @@ export const EditorTipo = ({ tipo, soloLectura = false }: EditorTipoProps) => {
       return;
     }
     const atributosPayload = atributos.map(payloadDeAtributo);
+    const presentacionPayload = payloadDePresentacion(presentacion);
     const limpia = descripcion.trim();
     if (esNuevo) {
       crear.mutate(
@@ -228,6 +235,7 @@ export const EditorTipo = ({ tipo, soloLectura = false }: EditorTipoProps) => {
           nombre: nombre.trim(),
           ...(limpia === "" ? {} : { descripcion: limpia }),
           atributos: atributosPayload,
+          presentacion: presentacionPayload,
         },
         {
           onSuccess: (creado) => {
@@ -242,6 +250,7 @@ export const EditorTipo = ({ tipo, soloLectura = false }: EditorTipoProps) => {
         nombre: nombre.trim(),
         ...(limpia === "" && tipo.descripcion === undefined ? {} : { descripcion: limpia }),
         atributos: atributosPayload,
+        presentacion: presentacionPayload,
       },
       { onSuccess: () => setGuardado(true) },
     );
@@ -350,6 +359,69 @@ export const EditorTipo = ({ tipo, soloLectura = false }: EditorTipoProps) => {
           </div>
         </div>
       </section>
+
+      {soloLectura ? null : (
+        <section
+          aria-label={t("page.tipo.presentation")}
+          className="rounded-lg border border-border bg-card shadow-sheet"
+        >
+          <header className="border-b border-border/70 px-4 py-3">
+            <h2 className="font-heading text-lg font-medium">{t("page.tipo.presentation")}</h2>
+          </header>
+          <div className="grid gap-4 px-4 py-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="tipo-presentacion-seccion" className={ESTILO_ETIQUETA}>
+                {t("page.tipo.presentationSection")}
+              </label>
+              <select
+                id="tipo-presentacion-seccion"
+                className={ESTILO_CAMPO}
+                value={presentacion.seccion}
+                onChange={(evento) => {
+                  setPresentacion({
+                    ...presentacion,
+                    seccion: evento.target.value as PresentacionBorrador["seccion"],
+                  });
+                  setGuardado(false);
+                }}
+              >
+                <option value="">{t("page.tipo.presentationSectionNone")}</option>
+                <option value="notas">{t("page.tipo.presentationSectionNotas")}</option>
+                <option value="productividad">
+                  {t("page.tipo.presentationSectionProductividad")}
+                </option>
+              </select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="tipo-presentacion-carpeta" className={ESTILO_ETIQUETA}>
+                {t("page.tipo.presentationFolder")}
+              </label>
+              <Input
+                id="tipo-presentacion-carpeta"
+                value={presentacion.carpeta}
+                placeholder={t("page.tipo.presentationFolderPlaceholder")}
+                onChange={(evento) => {
+                  setPresentacion({ ...presentacion, carpeta: evento.target.value });
+                  setGuardado(false);
+                }}
+              />
+            </div>
+            <div className="flex items-center gap-2 sm:col-span-2">
+              <Switch
+                id="tipo-presentacion-visible"
+                checked={presentacion.visible}
+                onCheckedChange={(marcado) => {
+                  setPresentacion({ ...presentacion, visible: marcado });
+                  setGuardado(false);
+                }}
+              />
+              <label htmlFor="tipo-presentacion-visible" className={ESTILO_ETIQUETA}>
+                {t("page.tipo.presentationVisible")}
+              </label>
+            </div>
+          </div>
+        </section>
+      )}
 
       <section
         aria-label={t("page.tipo.attributes")}

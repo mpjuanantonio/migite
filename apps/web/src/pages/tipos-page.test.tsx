@@ -109,6 +109,7 @@ describe("listado de tipos", () => {
       id: "recetario",
       nombre: "Libro de recetas ilustrado",
       atributos: [],
+      presentacion: { visible: true },
     });
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/tipos/recetario"));

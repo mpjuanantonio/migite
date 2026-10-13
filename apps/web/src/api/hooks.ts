@@ -10,6 +10,7 @@ import {
   type ObjetosPage,
   objectPayloadSchema,
   objetosPageSchema,
+  type PresentacionPayload,
   type RenameReport,
   renameReportSchema,
   type SearchResults,
@@ -392,6 +393,7 @@ export type TipoCambios = {
   readonly nombre?: string;
   readonly descripcion?: string;
   readonly atributos?: readonly AttributePayload[];
+  readonly presentacion?: PresentacionPayload;
 };
 
 const TIPOS_PATH = "/api/tipos";

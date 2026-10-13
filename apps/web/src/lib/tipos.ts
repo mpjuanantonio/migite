@@ -1,4 +1,10 @@
-import type { AttributePayload, FieldTypeWire, TipoPayload } from "@migite/contracts";
+import type {
+  AttributePayload,
+  FieldTypeWire,
+  PresentacionPayload,
+  PresentacionSeccion,
+  TipoPayload,
+} from "@migite/contracts";
 import { isReservedTypeId, slugify } from "@migite/core";
 
 export const FIELD_TYPES: readonly FieldTypeWire[] = [
@@ -74,6 +80,27 @@ export const atributoValido = (borrador: AtributoBorrador): boolean =>
 export const hayIdsDuplicados = (borradores: readonly AtributoBorrador[]): boolean => {
   const ids = borradores.map((borrador) => borrador.id.trim());
   return new Set(ids).size !== ids.length;
+};
+
+export type PresentacionBorrador = {
+  readonly seccion: "" | PresentacionSeccion;
+  readonly carpeta: string;
+  readonly visible: boolean;
+};
+
+export const presentacionInicial = (tipo: TipoPayload | undefined): PresentacionBorrador => ({
+  seccion: tipo?.presentacion?.seccion ?? "",
+  carpeta: tipo?.presentacion?.carpeta ?? "",
+  visible: tipo?.presentacion?.visible ?? true,
+});
+
+export const payloadDePresentacion = (borrador: PresentacionBorrador): PresentacionPayload => {
+  const carpeta = borrador.carpeta.trim();
+  return {
+    ...(borrador.seccion === "" ? {} : { seccion: borrador.seccion }),
+    ...(carpeta === "" ? {} : { carpeta }),
+    visible: borrador.visible,
+  };
 };
 
 export const payloadDeAtributo = (borrador: AtributoBorrador): AttributePayload => {
