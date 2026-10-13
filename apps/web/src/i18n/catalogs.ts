@@ -189,6 +189,7 @@ const webEs = {
   "page.objeto.wikilink.suggestionCreate": "Crear nota «{titulo}»",
   "page.objeto.wikilink.suggestions": "Sugerencias de enlace",
   "page.objeto.wikilink.unresolved": "Enlace sin resolver: {titulo}",
+  "page.proyecto.addInGroup": "Añadir a {grupo}",
   "page.proyecto.associateHint":
     "Todavía no hay elementos asociados. Asocia notas, tareas, eventos o recordatorios escribiendo [[{nombre}]] en su cuerpo o en sus enlaces.",
   "page.proyecto.associated": "Elementos asociados",
@@ -567,6 +568,7 @@ const webEn = {
   "page.objeto.wikilink.suggestionCreate": "Create note “{titulo}”",
   "page.objeto.wikilink.suggestions": "Link suggestions",
   "page.objeto.wikilink.unresolved": "Unresolved link: {titulo}",
+  "page.proyecto.addInGroup": "Add to {group}",
   "page.proyecto.associateHint":
     "There are no associated records yet. Associate notes, tasks, events or reminders by writing [[{nombre}]] in their body or links.",
   "page.proyecto.associated": "Associated items",

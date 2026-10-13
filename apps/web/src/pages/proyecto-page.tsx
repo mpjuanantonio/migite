@@ -1,10 +1,12 @@
 import type { ObjectPayload, ObjetosPage } from "@migite/contracts";
 import type { UseQueryResult } from "@tanstack/react-query";
-import { FolderKanban, SquareArrowOutUpRight } from "lucide-react";
+import { FolderKanban, Plus, SquareArrowOutUpRight } from "lucide-react";
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError } from "@/api/api";
 import { useGuardarAtributos, useObjeto, useObjetos } from "@/api/hooks";
 import { MarkdownPreview } from "@/components/editor/markdown-preview";
+import { AltaObjetoDialog } from "@/components/objetos/alta-objeto";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n/context";
 import type { AppTranslationKey } from "@/i18n/translate";
@@ -42,9 +44,10 @@ const estiloEstado = (estado: string): string => {
 type GrupoAsociadosProps = {
   readonly grupo: Grupo;
   readonly consulta: UseQueryResult<ObjetosPage, Error>;
+  readonly onAgregar: () => void;
 };
 
-const GrupoAsociados = ({ grupo, consulta }: GrupoAsociadosProps) => {
+const GrupoAsociados = ({ grupo, consulta, onAgregar }: GrupoAsociadosProps) => {
   const { t, locale } = useI18n();
   const objetos = consulta.data?.objetos ?? [];
 
@@ -55,9 +58,21 @@ const GrupoAsociados = ({ grupo, consulta }: GrupoAsociadosProps) => {
     >
       <header className="flex items-center justify-between gap-2 border-b border-border/70 px-4 py-2.5">
         <h3 className="text-sm font-medium">{t(grupo.labelKey)}</h3>
-        <span className="rounded-sm border border-border bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-          {objetos.length}
-        </span>
+        <div className="flex items-center gap-1">
+          <span className="rounded-sm border border-border bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+            {objetos.length}
+          </span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="text-muted-foreground"
+            aria-label={t("page.proyecto.addInGroup", { grupo: t(grupo.labelKey) })}
+            onClick={onAgregar}
+          >
+            <Plus aria-hidden="true" />
+          </Button>
+        </div>
       </header>
 
       {consulta.isPending ? (
@@ -116,6 +131,7 @@ const GrupoAsociados = ({ grupo, consulta }: GrupoAsociadosProps) => {
 const ProyectoDetalle = ({ proyecto }: { readonly proyecto: ObjectPayload }) => {
   const { t, locale } = useI18n();
   const guardar = useGuardarAtributos(proyecto.id);
+  const [altaTipo, setAltaTipo] = useState<string>();
 
   const estadoBruto = proyecto.atributos.estado;
   const estado = esEstadoProyecto(estadoBruto) ? estadoBruto : "";
@@ -221,10 +237,25 @@ const ProyectoDetalle = ({ proyecto }: { readonly proyecto: ObjectPayload }) => 
         ) : null}
         <div className="grid gap-4 md:grid-cols-2">
           {grupos.map(({ grupo, consulta }) => (
-            <GrupoAsociados key={grupo.tipo} grupo={grupo} consulta={consulta} />
+            <GrupoAsociados
+              key={grupo.tipo}
+              grupo={grupo}
+              consulta={consulta}
+              onAgregar={() => setAltaTipo(grupo.tipo)}
+            />
           ))}
         </div>
       </section>
+
+      {altaTipo === undefined ? null : (
+        <AltaObjetoDialog
+          tipoInicial={altaTipo}
+          tipoFijo
+          enlacesIniciales={[`[[${proyecto.titulo}]]`]}
+          onCerrar={() => setAltaTipo(undefined)}
+          onCreado={() => setAltaTipo(undefined)}
+        />
+      )}
     </div>
   );
 };

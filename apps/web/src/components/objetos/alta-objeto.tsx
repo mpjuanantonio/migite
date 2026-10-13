@@ -28,6 +28,8 @@ const faltaObligatorio = (atributo: AttributePayload, valor: unknown): boolean =
 
 export type AltaObjetoDialogProps = {
   readonly tipoInicial?: string;
+  readonly tipoFijo?: boolean;
+  readonly enlacesIniciales?: readonly string[];
   readonly carpetaInicial?: string;
   readonly carpetasConocidas?: readonly string[];
   readonly onCerrar: () => void;
@@ -36,6 +38,8 @@ export type AltaObjetoDialogProps = {
 
 export const AltaObjetoDialog = ({
   tipoInicial,
+  tipoFijo = false,
+  enlacesIniciales,
   carpetaInicial,
   carpetasConocidas,
   onCerrar,
@@ -76,6 +80,8 @@ export const AltaObjetoDialog = ({
     faltaObligatorio(atributo, atributosWire[atributo.id]),
   );
 
+  const ocultarTipo = tipoFijo && tipoInicial !== undefined;
+
   const enviar = () => {
     const limpio = titulo.trim();
     if (tipo === undefined || crear.isPending) {
@@ -96,6 +102,9 @@ export const AltaObjetoDialog = ({
         titulo: limpio,
         ...(Object.keys(atributosWire).length === 0 ? {} : { atributos: atributosWire }),
         ...(carpeta.trim() === "" ? {} : { carpeta: carpeta.trim() }),
+        ...(enlacesIniciales === undefined || enlacesIniciales.length === 0
+          ? {}
+          : { enlaces: [...enlacesIniciales] }),
       },
       {
         onSuccess: (objeto) => {
@@ -122,50 +131,52 @@ export const AltaObjetoDialog = ({
             enviar();
           }}
         >
-          <div className="flex flex-col gap-1.5">
-            <label
-              htmlFor={`${campoId}-tipo`}
-              className="text-xs font-medium text-muted-foreground"
-            >
-              {t("altas.objeto.typeLabel")}
-            </label>
-            {tipos.isPending ? (
-              <p role="status" className="text-sm text-muted-foreground">
-                {t("altas.objeto.typesLoading")}
-              </p>
-            ) : null}
-            {tipos.isError ? (
-              <div
-                role="alert"
-                className="rounded-md border border-destructive/30 bg-destructive/5 px-3.5 py-2.5 text-sm text-destructive"
+          {ocultarTipo ? null : (
+            <div className="flex flex-col gap-1.5">
+              <label
+                htmlFor={`${campoId}-tipo`}
+                className="text-xs font-medium text-muted-foreground"
               >
-                <span className="font-medium">{t("altas.objeto.typesError")}. </span>
-                {tipos.error instanceof ApiError ? tipos.error.mensaje : t("error.genericError")}
-              </div>
-            ) : null}
-            {tipos.isSuccess ? (
-              <select
-                id={`${campoId}-tipo`}
-                className={ESTILO_SELECT}
-                value={tipoId}
-                disabled={crear.isPending}
-                onChange={(evento) => {
-                  setTipoId(evento.target.value);
-                  setValores({});
-                  setAviso("");
-                }}
-              >
-                <option value="">{t("altas.objeto.typePlaceholder")}</option>
-                {tipos.data.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {esTipoSistema(item.id)
-                      ? t("altas.objeto.typeSystemOption", { nombre: item.nombre })
-                      : item.nombre}
-                  </option>
-                ))}
-              </select>
-            ) : null}
-          </div>
+                {t("altas.objeto.typeLabel")}
+              </label>
+              {tipos.isPending ? (
+                <p role="status" className="text-sm text-muted-foreground">
+                  {t("altas.objeto.typesLoading")}
+                </p>
+              ) : null}
+              {tipos.isError ? (
+                <div
+                  role="alert"
+                  className="rounded-md border border-destructive/30 bg-destructive/5 px-3.5 py-2.5 text-sm text-destructive"
+                >
+                  <span className="font-medium">{t("altas.objeto.typesError")}. </span>
+                  {tipos.error instanceof ApiError ? tipos.error.mensaje : t("error.genericError")}
+                </div>
+              ) : null}
+              {tipos.isSuccess ? (
+                <select
+                  id={`${campoId}-tipo`}
+                  className={ESTILO_SELECT}
+                  value={tipoId}
+                  disabled={crear.isPending}
+                  onChange={(evento) => {
+                    setTipoId(evento.target.value);
+                    setValores({});
+                    setAviso("");
+                  }}
+                >
+                  <option value="">{t("altas.objeto.typePlaceholder")}</option>
+                  {tipos.data.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {esTipoSistema(item.id)
+                        ? t("altas.objeto.typeSystemOption", { nombre: item.nombre })
+                        : item.nombre}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
+            </div>
+          )}
 
           <div className="flex flex-col gap-1.5">
             <label

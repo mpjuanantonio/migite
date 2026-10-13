@@ -602,11 +602,13 @@ describe("listado de notas", () => {
     await waitFor(() => {
       const post = posteos()[0];
       expect(post?.[0]).toBe("/api/objetos");
-      expect(JSON.parse(String(post?.[1]?.body))).toEqual({
+      const body = JSON.parse(String(post?.[1]?.body)) as Record<string, unknown>;
+      expect(body).toEqual({
         tipo: "tarea",
         titulo: "Preparar informe",
         atributos: { estado: "pendiente" },
       });
+      expect(body).not.toHaveProperty("enlaces");
     });
   });
 

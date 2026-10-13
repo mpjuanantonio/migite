@@ -1,4 +1,4 @@
-import type { ObjectPayload } from "@migite/contracts";
+import type { CreateObjectBody, ObjectPayload, TipoPayload } from "@migite/contracts";
 import { QueryClient } from "@tanstack/react-query";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -7,10 +7,30 @@ import { errorResponse, jsonResponse, renderApp, sesionResponse } from "@/test/r
 
 let fetchMock: Mock<typeof fetch>;
 let listados: URL[];
+let creaciones: CreateObjectBody[];
 let parches: {
   readonly id: string;
   readonly body: { readonly atributos?: Record<string, unknown> };
 }[];
+
+const tipoNota: TipoPayload = { id: "nota", nombre: "Nota", atributos: [] };
+
+const tipoTarea: TipoPayload = {
+  id: "tarea",
+  nombre: "Tarea",
+  atributos: [
+    {
+      id: "estado",
+      nombre: "Estado",
+      tipo: "seleccion",
+      rol: "estado",
+      obligatorio: true,
+      opciones: ["pendiente", "en curso", "hecha"],
+    },
+  ],
+};
+
+const TIPOS_SISTEMA: readonly TipoPayload[] = [tipoNota, tipoTarea];
 
 type OpcionesObjeto = {
   readonly estado?: string;
@@ -42,6 +62,7 @@ const objeto = (
 type MockApiOptions = {
   readonly proyecto?: ObjectPayload;
   readonly asociados?: Partial<Record<string, readonly ObjectPayload[]>>;
+  readonly tipos?: readonly TipoPayload[];
 };
 
 const mockApi = (options: MockApiOptions = {}): void => {
@@ -51,7 +72,12 @@ const mockApi = (options: MockApiOptions = {}): void => {
       estado: "activo",
       cuerpo: "## Objetivo\n\nTerminar la app",
     });
-  const asociados = options.asociados ?? {};
+  const asociados: Record<string, ObjectPayload[]> = {};
+  for (const [tipo, lista] of Object.entries(options.asociados ?? {})) {
+    if (lista !== undefined) {
+      asociados[tipo] = [...lista];
+    }
+  }
 
   fetchMock.mockImplementation(async (input, init) => {
     const url = new URL(String(input), "http://localhost");
@@ -59,6 +85,21 @@ const mockApi = (options: MockApiOptions = {}): void => {
 
     if (url.pathname === "/api/sesion") {
       return sesionResponse(true);
+    }
+
+    if (url.pathname === "/api/tipos" && method === "GET") {
+      return jsonResponse({ tipos: options.tipos ?? TIPOS_SISTEMA });
+    }
+
+    if (url.pathname === "/api/objetos" && method === "POST") {
+      const body = JSON.parse(String(init?.body ?? "{}")) as CreateObjectBody;
+      creaciones.push(body);
+      const tipo = body.tipo ?? "nota";
+      const creado = objeto(tipo, "NUEVO", body.titulo, {
+        ...(typeof body.atributos?.estado === "string" ? { estado: body.atributos.estado } : {}),
+      });
+      asociados[tipo] = [creado, ...(asociados[tipo] ?? [])];
+      return jsonResponse(creado, 201);
     }
 
     if (url.pathname === `/api/objetos/${principal.id}` && method === "PATCH") {
@@ -82,12 +123,7 @@ const mockApi = (options: MockApiOptions = {}): void => {
 
     if (url.pathname.startsWith("/api/objetos/") && method === "GET") {
       const id = decodeURIComponent(url.pathname.slice("/api/objetos/".length));
-      const todos: ObjectPayload[] = [principal];
-      for (const lista of Object.values(asociados)) {
-        if (lista !== undefined) {
-          todos.push(...lista);
-        }
-      }
+      const todos: ObjectPayload[] = [principal, ...Object.values(asociados).flat()];
       const encontrado = todos.find((item) => item.id === id);
       return encontrado === undefined
         ? errorResponse("not_found", "No existe la ficha", 404)
@@ -104,6 +140,7 @@ const renderProyecto = (id = "P1") =>
 beforeEach(() => {
   localStorage.clear();
   listados = [];
+  creaciones = [];
   parches = [];
   fetchMock = vi.fn<typeof fetch>();
   vi.stubGlobal("fetch", fetchMock);
@@ -189,5 +226,72 @@ describe("vista de proyecto", () => {
 
     expect(await screen.findByText(/\[\[Mi proyecto\]\]/)).toBeInTheDocument();
     expect(screen.getAllByText("Ninguno asociado.")).toHaveLength(4);
+  });
+
+  it("crea una tarea enlazada al proyecto desde el botón del grupo", async () => {
+    mockApi({
+      asociados: {
+        tarea: [objeto("tarea", "T1", "Preparar despliegue", { estado: "pendiente" })],
+      },
+    });
+    const user = userEvent.setup();
+    renderProyecto();
+
+    const tareas = await screen.findByRole("region", { name: "Tareas" });
+    await user.click(within(tareas).getByRole("button", { name: "Añadir a Tareas" }));
+
+    const dialogo = within(await screen.findByRole("dialog"));
+    expect(dialogo.queryByLabelText("Tipo")).toBeNull();
+    const estado = dialogo.getByLabelText(/^Estado/);
+    expect(estado).toHaveValue("pendiente");
+    expect(within(estado).queryByRole("option", { name: "hecha" })).toBeNull();
+
+    await user.type(dialogo.getByLabelText("Título"), "Revisar presupuesto");
+    await user.click(dialogo.getByRole("button", { name: "Crear objeto" }));
+
+    await waitFor(() => {
+      expect(creaciones).toHaveLength(1);
+      expect(creaciones[0]).toEqual({
+        tipo: "tarea",
+        titulo: "Revisar presupuesto",
+        atributos: { estado: "pendiente" },
+        enlaces: ["[[Mi proyecto]]"],
+      });
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(
+      await within(screen.getByRole("region", { name: "Tareas" })).findByRole("link", {
+        name: "Revisar presupuesto",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("crea una nota enlazada al proyecto desde el botón del grupo", async () => {
+    mockApi();
+    const user = userEvent.setup();
+    renderProyecto();
+
+    const notas = await screen.findByRole("region", { name: "Notas" });
+    await user.click(within(notas).getByRole("button", { name: "Añadir a Notas" }));
+
+    const dialogo = within(await screen.findByRole("dialog"));
+    expect(dialogo.queryByLabelText("Tipo")).toBeNull();
+
+    await user.type(dialogo.getByLabelText("Título"), "Ideas sueltas");
+    await user.click(dialogo.getByRole("button", { name: "Crear objeto" }));
+
+    await waitFor(() => {
+      expect(creaciones).toHaveLength(1);
+      expect(creaciones[0]).toEqual({
+        tipo: "nota",
+        titulo: "Ideas sueltas",
+        enlaces: ["[[Mi proyecto]]"],
+      });
+    });
+    expect(
+      await within(screen.getByRole("region", { name: "Notas" })).findByRole("link", {
+        name: "Ideas sueltas",
+      }),
+    ).toBeInTheDocument();
   });
 });
