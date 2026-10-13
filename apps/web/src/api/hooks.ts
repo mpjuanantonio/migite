@@ -29,7 +29,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { ApiError, apiFetch } from "./api";
-import { queryKeys } from "./keys";
+import { esColeccionDeObjetos, queryKeys } from "./keys";
 
 export type RangoAtributo = {
   readonly clave: string;
@@ -232,23 +232,25 @@ export const useCrearObjeto = () => {
     mutationFn: async (body: CreateObjectBody): Promise<ObjectPayload> =>
       objectPayloadSchema.parse(await apiFetch("/api/objetos", { method: "POST", body })),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.objetos });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.arbol });
+      invalidarColeccionesDeObjetos(queryClient);
     },
   });
 };
 
 const objetoPath = (id: string): string => `/api/objetos/${encodeURIComponent(id)}`;
 
-const invalidarListasDeObjetos = (queryClient: QueryClient): void => {
-  void queryClient.invalidateQueries({
-    predicate: (query) =>
-      query.queryKey[0] === queryKeys.objetos[0] && typeof query.queryKey[1] !== "string",
-  });
+export type OpcionesInvalidacionColecciones = {
+  readonly refetchType?: "all" | "active" | "inactive" | "none";
 };
 
-const invalidarArbol = (queryClient: QueryClient): void => {
-  void queryClient.invalidateQueries({ queryKey: queryKeys.arbol });
+export const invalidarColeccionesDeObjetos = (
+  queryClient: QueryClient,
+  opciones?: OpcionesInvalidacionColecciones,
+): void => {
+  void queryClient.invalidateQueries({
+    predicate: (query) => esColeccionDeObjetos(query.queryKey),
+    ...(opciones ?? {}),
+  });
 };
 
 const invalidarResolucionesDeTitulo = (queryClient: QueryClient): void => {
@@ -320,6 +322,7 @@ export const useGuardarObjeto = (id: string) => {
       ),
     onSuccess: (objeto) => {
       queryClient.setQueryData(queryKeys.objeto(id), objeto);
+      invalidarColeccionesDeObjetos(queryClient);
     },
   });
 };
@@ -336,7 +339,7 @@ const guardarAtributosDe = (
 
 const aplicarAtributosGuardados = (queryClient: QueryClient, objeto: ObjectPayload): void => {
   queryClient.setQueryData(queryKeys.objeto(objeto.id), objeto);
-  invalidarListasDeObjetos(queryClient);
+  invalidarColeccionesDeObjetos(queryClient);
 };
 
 export const useGuardarAtributos = (id: string) => {
@@ -383,9 +386,8 @@ export const useRenombrarObjeto = (id: string) => {
     onSuccess: (reporte) => {
       queryClient.setQueryData(queryKeys.objeto(id), reporte.objeto);
       void queryClient.invalidateQueries({ queryKey: queryKeys.enlacesEntrantes(id) });
-      invalidarListasDeObjetos(queryClient);
+      invalidarColeccionesDeObjetos(queryClient);
       invalidarResolucionesDeTitulo(queryClient);
-      invalidarArbol(queryClient);
     },
   });
 };
@@ -399,9 +401,8 @@ export const useBorrarObjeto = () => {
     onSuccess: (_resultado, id) => {
       queryClient.removeQueries({ queryKey: queryKeys.objeto(id) });
       queryClient.removeQueries({ queryKey: queryKeys.enlacesEntrantes(id) });
-      invalidarListasDeObjetos(queryClient);
+      invalidarColeccionesDeObjetos(queryClient);
       invalidarResolucionesDeTitulo(queryClient);
-      invalidarArbol(queryClient);
     },
   });
 };
