@@ -1,6 +1,6 @@
 import type { AttributePayload, ObjectPayload } from "@migite/contracts";
 import { Plus, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "@/api/api";
 import { useGuardarAtributos, useTipos } from "@/api/hooks";
 import { CampoAtributo } from "@/components/atributos/campo-atributo";
@@ -13,9 +13,15 @@ const DEBOUNCE_GUARDADO_MS = 600;
 
 type BandejaAtributosProps = {
   readonly objeto: ObjectPayload;
+  readonly altaAbierta?: boolean;
+  readonly onCerrarAlta?: () => void;
 };
 
-export const BandejaAtributos = ({ objeto }: BandejaAtributosProps) => {
+export const BandejaAtributos = ({
+  objeto,
+  altaAbierta = false,
+  onCerrarAlta,
+}: BandejaAtributosProps) => {
   const { t } = useI18n();
   const tipos = useTipos();
   const guardar = useGuardarAtributos(objeto.id);
@@ -146,6 +152,15 @@ export const BandejaAtributos = ({ objeto }: BandejaAtributosProps) => {
     [objeto.id, falloAlGuardar, descartarFalloAlGuardar],
   );
 
+  const cerrarConEscape = useCallback(
+    (evento: KeyboardEvent<HTMLInputElement>) => {
+      if (evento.key === "Escape") {
+        onCerrarAlta?.();
+      }
+    },
+    [onCerrarAlta],
+  );
+
   const agregarLibre = useCallback(() => {
     const clave = nuevaClave.trim();
     if (clave === "") {
@@ -154,7 +169,8 @@ export const BandejaAtributos = ({ objeto }: BandejaAtributosProps) => {
     actualizar(clave, nuevoValor);
     setNuevaClave("");
     setNuevoValor("");
-  }, [actualizar, nuevaClave, nuevoValor]);
+    onCerrarAlta?.();
+  }, [actualizar, nuevaClave, nuevoValor, onCerrarAlta]);
 
   const guardarAtributos = useCallback(() => {
     if (!puedeGuardar) {
@@ -178,21 +194,9 @@ export const BandejaAtributos = ({ objeto }: BandejaAtributosProps) => {
 
   return (
     <section aria-label={t("page.objeto.attributes.title")} className="flex flex-col">
-      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border/70 pb-2">
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <h2 className="text-xs font-medium tracking-wide text-muted-foreground">
-            {t("page.objeto.attributes.title")}
-          </h2>
-          {crudo ? (
-            <span className="text-xs text-muted-foreground">{t("page.objeto.attributes.raw")}</span>
-          ) : null}
-        </div>
-        {guardando ? (
-          <p role="status" aria-live="polite" className="text-xs text-muted-foreground">
-            {t("page.objeto.attributes.saving")}
-          </p>
-        ) : null}
-      </header>
+      {crudo ? (
+        <p className="pb-1 text-xs text-muted-foreground">{t("page.objeto.attributes.raw")}</p>
+      ) : null}
 
       {falloAlGuardar ? (
         <div
@@ -268,48 +272,56 @@ export const BandejaAtributos = ({ objeto }: BandejaAtributosProps) => {
         </dl>
       )}
 
-      <div className="flex flex-wrap items-end gap-2 pt-3">
-        <div className="flex flex-col gap-1">
-          <label
-            htmlFor="atributo-nuevo-clave"
-            className="text-xs font-medium text-muted-foreground"
+      {altaAbierta ? (
+        <div className="flex flex-wrap items-end gap-2 pt-3">
+          <div className="flex flex-col gap-1">
+            <label
+              htmlFor="atributo-nuevo-clave"
+              className="text-xs font-medium text-muted-foreground"
+            >
+              {t("page.objeto.attributes.key")}
+            </label>
+            <Input
+              id="atributo-nuevo-clave"
+              autoFocus
+              className="h-8 w-36"
+              value={nuevaClave}
+              placeholder={t("page.objeto.attributes.keyPlaceholder")}
+              onChange={(evento) => setNuevaClave(evento.target.value)}
+              onKeyDown={cerrarConEscape}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label
+              htmlFor="atributo-nuevo-valor"
+              className="text-xs font-medium text-muted-foreground"
+            >
+              {t("page.objeto.attributes.value")}
+            </label>
+            <Input
+              id="atributo-nuevo-valor"
+              className="h-8 w-52"
+              value={nuevoValor}
+              placeholder={t("page.objeto.attributes.valuePlaceholder")}
+              onChange={(evento) => setNuevoValor(evento.target.value)}
+              onKeyDown={cerrarConEscape}
+            />
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={nuevaClave.trim() === "" || guardando}
+            onClick={agregarLibre}
           >
-            {t("page.objeto.attributes.key")}
-          </label>
-          <Input
-            id="atributo-nuevo-clave"
-            className="h-8 w-36"
-            value={nuevaClave}
-            placeholder={t("page.objeto.attributes.keyPlaceholder")}
-            onChange={(evento) => setNuevaClave(evento.target.value)}
-          />
+            <Plus aria-hidden="true" />
+            {t("page.objeto.attributes.add")}
+          </Button>
+          <Button type="button" variant="ghost" size="sm" onClick={() => onCerrarAlta?.()}>
+            {t("page.objeto.attributes.cancel")}
+          </Button>
         </div>
-        <div className="flex flex-col gap-1">
-          <label
-            htmlFor="atributo-nuevo-valor"
-            className="text-xs font-medium text-muted-foreground"
-          >
-            {t("page.objeto.attributes.value")}
-          </label>
-          <Input
-            id="atributo-nuevo-valor"
-            className="h-8 w-52"
-            value={nuevoValor}
-            placeholder={t("page.objeto.attributes.valuePlaceholder")}
-            onChange={(evento) => setNuevoValor(evento.target.value)}
-          />
-        </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={nuevaClave.trim() === "" || guardando}
-          onClick={agregarLibre}
-        >
-          <Plus aria-hidden="true" />
-          {t("page.objeto.attributes.add")}
-        </Button>
-      </div>
+      ) : null}
     </section>
   );
 };

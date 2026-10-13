@@ -1,5 +1,5 @@
 import type { ObjectPayload, RenameReport } from "@migite/contracts";
-import { CircleCheck, FileWarning, Pencil, Trash2, TriangleAlert } from "lucide-react";
+import { FileWarning, MoreHorizontal, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "@/api/api";
@@ -16,6 +16,7 @@ import { Wikilink } from "@/components/editor/wikilink";
 import { DisposicionExplorador } from "@/components/explorador/disposicion-explorador";
 import { type EstadoGuardado, IndicadorGuardado } from "@/components/objetos/indicador-guardado";
 import { PanelEnlacesEntrantes } from "@/components/objetos/panel-enlaces-entrantes";
+import { TituloEditable } from "@/components/objetos/titulo-editable";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -26,7 +27,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useI18n } from "@/i18n/context";
 import { formatFecha } from "@/lib/fecha";
 
@@ -34,7 +40,7 @@ const DEBOUNCE_GUARDADO_MS = 1200;
 
 type InformeRenombrado = RenameReport["informe"];
 
-const AvisoInforme = ({ informe }: { readonly informe: InformeRenombrado }) => {
+const AvisoRenombrado = ({ informe }: { readonly informe: InformeRenombrado }) => {
   const { t } = useI18n();
 
   if (informe.omitidos.length === 0 && informe.enlacesSinResolver.length === 0) {
@@ -42,96 +48,29 @@ const AvisoInforme = ({ informe }: { readonly informe: InformeRenombrado }) => {
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div
+      role="status"
+      className="flex flex-col gap-1 rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground"
+    >
       {informe.omitidos.length > 0 ? (
-        <div className="rounded-md border border-chart-4/40 bg-chart-4/10 px-3.5 py-2.5">
-          <h3 className="flex items-center gap-2 text-sm font-medium">
-            <TriangleAlert aria-hidden="true" className="size-4 shrink-0 text-chart-4" />
-            {t("page.objeto.renameOmitted")}
-          </h3>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            {t("page.objeto.renameOmittedHint")}
-          </p>
-          <ul className="mt-1.5 flex flex-col gap-1 text-sm">
-            {informe.omitidos.map((entrada) => (
-              <li key={entrada.path}>
-                <code className="text-xs">{entrada.path}</code>
-                <span className="text-muted-foreground"> — {entrada.problems.join("; ")}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
+        <p>
+          <span className="font-medium text-foreground">{t("page.objeto.renameOmitted")}</span>:{" "}
+          {informe.omitidos
+            .map((entrada) => `${entrada.path} (${entrada.problems.join("; ")})`)
+            .join(", ")}
+        </p>
       ) : null}
-
       {informe.enlacesSinResolver.length > 0 ? (
-        <div
-          role="alert"
-          className="rounded-md border border-destructive/30 bg-destructive/5 px-3.5 py-2.5"
-        >
-          <h3 className="flex items-center gap-2 text-sm font-medium text-destructive">
-            <TriangleAlert aria-hidden="true" className="size-4 shrink-0" />
-            {t("page.objeto.renameUnresolved")}
-          </h3>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            {t("page.objeto.renameUnresolvedHint")}
-          </p>
-          <ul className="mt-1.5 flex flex-col gap-1 text-sm">
-            {informe.enlacesSinResolver.map((enlace) => (
-              <li key={`${enlace.path}:${enlace.link}`}>
-                {t("page.objeto.renameUnresolvedAt", { link: enlace.link, path: enlace.path })}
-              </li>
-            ))}
-          </ul>
-        </div>
+        <p>
+          <span className="font-medium text-foreground">{t("page.objeto.renameUnresolved")}</span>:{" "}
+          {informe.enlacesSinResolver
+            .map((enlace) =>
+              t("page.objeto.renameUnresolvedAt", { link: enlace.link, path: enlace.path }),
+            )
+            .join("; ")}
+        </p>
       ) : null}
     </div>
-  );
-};
-
-const PanelInforme = ({
-  informe,
-  onCerrar,
-}: {
-  readonly informe: InformeRenombrado;
-  readonly onCerrar: () => void;
-}) => {
-  const { t } = useI18n();
-
-  return (
-    <section
-      aria-label={t("page.objeto.renameSuccess")}
-      className="overflow-hidden rounded-lg border border-border bg-card shadow-sheet"
-    >
-      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border/70 px-4 py-3">
-        <p role="status" className="flex items-center gap-2 text-sm font-medium">
-          <CircleCheck aria-hidden="true" className="size-4 shrink-0 text-primary" />
-          {t("page.objeto.renameSuccess")}
-        </p>
-        <Button type="button" variant="ghost" size="xs" onClick={onCerrar}>
-          {t("page.objeto.renameDismiss")}
-        </Button>
-      </header>
-      <div className="flex flex-col gap-3 px-4 py-3">
-        {informe.reescritos.length > 0 ? (
-          <div>
-            <h3 className="text-sm font-medium">
-              {t("page.objeto.renameRewritten", { total: informe.reescritos.length })}
-            </h3>
-            <ul className="mt-1 flex list-disc flex-col gap-0.5 pl-5 text-sm text-muted-foreground">
-              {informe.reescritos.map((path) => (
-                <li key={path}>
-                  <code className="text-xs">{path}</code>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">{t("page.objeto.renameRewrittenNone")}</p>
-        )}
-
-        <AvisoInforme informe={informe} />
-      </div>
-    </section>
   );
 };
 
@@ -175,12 +114,19 @@ export const ObjetoPage = () => {
   const borrar = useBorrarObjeto();
   const [borrador, setBorrador] = useState<{ readonly id: string; readonly valor: string }>();
   const [guardadoEn, setGuardadoEn] = useState<string>();
-  const [renombrarAbierto, setRenombrarAbierto] = useState(false);
-  const [nuevoTitulo, setNuevoTitulo] = useState("");
   const [informe, setInforme] = useState<InformeRenombrado>();
   const [borrarAbierto, setBorrarAbierto] = useState(false);
+  const [altaAbierta, setAltaAbierta] = useState(false);
   const [wikilinkTitulo, setWikilinkTitulo] = useState<string>();
+  const [idAnterior, setIdAnterior] = useState(id);
   const borradorPendiente = useRef<string | undefined>(undefined);
+  const menuRestauraFoco = useRef(true);
+
+  if (idAnterior !== id) {
+    setIdAnterior(id);
+    setInforme(undefined);
+    setAltaAbierta(false);
+  }
 
   const objeto: ObjectPayload | null | undefined = objetoQuery.data;
   const titulosSugeridos = (objetosSugeridos.data?.objetos ?? []).map((item) => item.titulo);
@@ -313,20 +259,13 @@ export const ObjetoPage = () => {
     );
   }
 
-  const abrirRenombrar = () => {
-    setNuevoTitulo(objeto.titulo);
-    renombrar.reset();
-    setRenombrarAbierto(true);
-  };
-
-  const confirmarRenombrar = () => {
-    const titulo = nuevoTitulo.trim();
-    if (titulo === "" || renombrar.isPending) {
+  const renombrarTitulo = (titulo: string) => {
+    if (renombrar.isPending) {
       return;
     }
+    renombrar.reset();
     renombrar.mutate(titulo, {
       onSuccess: (reporte) => {
-        setRenombrarAbierto(false);
         setInforme(reporte.informe);
       },
     });
@@ -355,16 +294,16 @@ export const ObjetoPage = () => {
       carpetaSeleccionada={objeto.carpeta}
       onSeleccionarCarpeta={(carpeta) => navigate("/notas", { state: { carpeta } })}
     >
-      <div className="flex flex-col gap-6">
+      <article className="flex flex-col gap-6 rounded-lg border border-border bg-card px-5 py-6 shadow-sheet sm:px-8 sm:py-8">
         <GuardadoDeBorradorPendiente
           key={objeto.id}
           idObjeto={objeto.id}
           pendiente={borradorPendiente}
         />
         <header className="flex flex-col gap-4 border-b border-border pb-5">
-          <div className="flex flex-wrap items-start justify-between gap-x-8 gap-y-4">
-            <div className="min-w-0">
-              <h1 className="font-heading text-display font-medium break-words">{objeto.titulo}</h1>
+          <div className="flex items-start justify-between gap-x-6 gap-y-2">
+            <div className="min-w-0 flex-1">
+              <TituloEditable titulo={objeto.titulo} onRenombrar={renombrarTitulo} />
               <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
                 <span className="rounded-sm border border-border bg-muted px-1.5 py-0.5 text-xs font-medium text-foreground">
                   {objeto.tipo}
@@ -377,15 +316,54 @@ export const ObjetoPage = () => {
                 </span>
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button type="button" variant="outline" onClick={abrirRenombrar}>
-                <Pencil aria-hidden="true" />
-                {t("page.objeto.rename")}
-              </Button>
-              <Button type="button" variant="destructive" onClick={abrirBorrar}>
-                <Trash2 aria-hidden="true" />
-                {t("page.objeto.delete")}
-              </Button>
+            <div className="flex shrink-0 items-center gap-0.5">
+              <IndicadorGuardado
+                estado={estadoGuardado}
+                mensaje={guardar.error instanceof ApiError ? guardar.error.mensaje : undefined}
+                onReintentar={guardarCuerpo}
+              />
+              <DropdownMenu
+                onOpenChange={(abierto) => {
+                  if (abierto) {
+                    menuRestauraFoco.current = true;
+                  }
+                }}
+              >
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={t("page.objeto.menu.label")}
+                  >
+                    <MoreHorizontal aria-hidden="true" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  onCloseAutoFocus={(evento) => {
+                    if (!menuRestauraFoco.current) {
+                      evento.preventDefault();
+                    }
+                  }}
+                >
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      menuRestauraFoco.current = false;
+                      setAltaAbierta(true);
+                    }}
+                  >
+                    <Plus aria-hidden="true" />
+                    {t("page.objeto.menu.addAttribute")}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="text-destructive data-[highlighted]:bg-destructive/10 data-[highlighted]:text-destructive"
+                    onSelect={abrirBorrar}
+                  >
+                    <Trash2 aria-hidden="true" />
+                    {t("page.objeto.delete")}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
           {objeto.degraded.length > 0 ? (
@@ -397,17 +375,27 @@ export const ObjetoPage = () => {
               </div>
             </div>
           ) : null}
+          {renombrar.isError ? (
+            <p role="alert" className="text-xs text-destructive">
+              <span className="font-medium">{t("page.objeto.renameError")}. </span>
+              {renombrar.error instanceof ApiError
+                ? renombrar.error.mensaje
+                : t("error.genericError")}
+            </p>
+          ) : null}
+          {informe !== undefined ? <AvisoRenombrado informe={informe} /> : null}
         </header>
 
-        <BandejaAtributos key={objeto.id} objeto={objeto} />
-
-        {informe !== undefined ? (
-          <PanelInforme informe={informe} onCerrar={() => setInforme(undefined)} />
-        ) : null}
+        <BandejaAtributos
+          key={objeto.id}
+          objeto={objeto}
+          altaAbierta={altaAbierta}
+          onCerrarAlta={() => setAltaAbierta(false)}
+        />
 
         <section
           aria-label={t("page.objeto.editor")}
-          className="editor-lectura relative overflow-hidden rounded-lg border border-border/70 bg-card shadow-sheet"
+          className="editor-lectura"
           onBlur={(evento) => {
             const destino = evento.relatedTarget;
             if (destino instanceof Node && evento.currentTarget.contains(destino)) {
@@ -416,13 +404,6 @@ export const ObjetoPage = () => {
             guardarCuerpo();
           }}
         >
-          <div className="pointer-events-none absolute top-2 right-2 z-10 rounded-md bg-card/80 px-1 py-0.5 shadow-xs backdrop-blur-sm">
-            <IndicadorGuardado
-              estado={estadoGuardado}
-              mensaje={guardar.error instanceof ApiError ? guardar.error.mensaje : undefined}
-              onReintentar={guardarCuerpo}
-            />
-          </div>
           <div className="h-[30rem] sm:h-[40rem]">
             <MarkdownEditor
               value={cuerpo}
@@ -441,57 +422,6 @@ export const ObjetoPage = () => {
         </section>
 
         <PanelEnlacesEntrantes id={objeto.id} />
-
-        <Dialog open={renombrarAbierto} onOpenChange={setRenombrarAbierto}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{t("page.objeto.renameTitle")}</DialogTitle>
-              <DialogDescription>{t("page.objeto.renameDescription")}</DialogDescription>
-            </DialogHeader>
-            <form
-              className="flex flex-col gap-4"
-              onSubmit={(event) => {
-                event.preventDefault();
-                confirmarRenombrar();
-              }}
-            >
-              <div className="flex flex-col gap-1.5">
-                <label
-                  htmlFor="objeto-nuevo-titulo"
-                  className="text-xs font-medium text-muted-foreground"
-                >
-                  {t("page.objeto.renameLabel")}
-                </label>
-                <Input
-                  id="objeto-nuevo-titulo"
-                  value={nuevoTitulo}
-                  onChange={(event) => setNuevoTitulo(event.target.value)}
-                />
-              </div>
-              {renombrar.isError ? (
-                <div
-                  role="alert"
-                  className="rounded-md border border-destructive/30 bg-destructive/5 px-3.5 py-2.5 text-sm text-destructive"
-                >
-                  <span className="font-medium">{t("page.objeto.renameError")}. </span>
-                  {renombrar.error instanceof ApiError
-                    ? renombrar.error.mensaje
-                    : t("error.genericError")}
-                </div>
-              ) : null}
-              <DialogFooter>
-                <DialogClose asChild>
-                  <Button type="button" variant="outline" disabled={renombrar.isPending}>
-                    {t("page.objeto.renameCancel")}
-                  </Button>
-                </DialogClose>
-                <Button type="submit" disabled={nuevoTitulo.trim() === "" || renombrar.isPending}>
-                  {renombrar.isPending ? t("page.objeto.renaming") : t("page.objeto.renameSubmit")}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
 
         <Dialog open={borrarAbierto} onOpenChange={setBorrarAbierto}>
           <DialogContent>
@@ -556,7 +486,7 @@ export const ObjetoPage = () => {
             )}
           </DialogContent>
         </Dialog>
-      </div>
+      </article>
     </DisposicionExplorador>
   );
 };

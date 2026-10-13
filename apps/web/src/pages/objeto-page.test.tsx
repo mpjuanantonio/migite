@@ -353,6 +353,11 @@ describe("ficha de objeto", () => {
     expect(sigueA(propiedades, escritura)).toBe(true);
     expect(sigueA(escritura, entrantes)).toBe(true);
     expect(escritura).toHaveClass("editor-lectura");
+    expect(escritura).not.toHaveClass("rounded-lg");
+    expect(escritura).not.toHaveClass("border");
+    expect(escritura).not.toHaveClass("bg-card");
+    expect(escritura).not.toHaveClass("shadow-sheet");
+    expect(escritura.closest("article")).toHaveClass("shadow-sheet");
   });
 
   it("muestra el mensaje del API cuando la ficha no existe", async () => {
@@ -607,6 +612,9 @@ describe("bandeja de atributos", () => {
     const user = userEvent.setup();
     renderObjeto();
 
+    await user.click(await screen.findByRole("button", { name: "Más acciones" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Añadir atributo" }));
+
     await user.type(await screen.findByLabelText("Clave"), "proyecto");
     await user.type(screen.getByLabelText("Valor"), "migite");
     await user.click(screen.getByRole("button", { name: "Añadir atributo" }));
@@ -694,60 +702,30 @@ describe("bandeja de atributos", () => {
   });
 });
 
-const abrirDialogoRenombrar = async (user: ReturnType<typeof userEvent.setup>) => {
-  await user.click(await screen.findByRole("button", { name: "Renombrar" }));
+const abrirTitulo = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.click(await screen.findByRole("button", { name: "Cuaderno de campo" }));
+  return screen.getByRole("textbox", { name: "Título de la ficha" });
+};
+
+const abrirMenu = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.click(await screen.findByRole("button", { name: "Más acciones" }));
+  return screen.findByRole("menu");
+};
+
+const abrirBorrarDesdeMenu = async (user: ReturnType<typeof userEvent.setup>) => {
+  await abrirMenu(user);
+  await user.click(await screen.findByRole("menuitem", { name: "Borrar" }));
   return screen.findByRole("dialog");
 };
 
-describe("renombrar y borrar la ficha", () => {
-  it("renombra la ficha y muestra el informe de ficheros reescritos", async () => {
+describe("título editable", () => {
+  it("renombra al confirmar con Enter y muestra el informe discreto", async () => {
     mockObjetoApi({
       rename: (nuevoTitulo) =>
         jsonResponse({
           objeto: objetoDePrueba({ titulo: nuevoTitulo }),
           informe: {
-            reescritos: ["diario/ref.md", "tareas/x.md"],
-            omitidos: [],
-            enlacesSinResolver: [],
-          },
-        }),
-    });
-    const user = userEvent.setup();
-    renderObjeto();
-
-    const dialogo = await abrirDialogoRenombrar(user);
-    const campo = within(dialogo).getByLabelText("Nuevo título");
-    expect(campo).toHaveValue("Cuaderno de campo");
-    await user.clear(campo);
-    await user.type(campo, "Cuaderno nuevo");
-    await user.click(within(dialogo).getByRole("button", { name: "Renombrar" }));
-
-    expect(
-      await screen.findByRole("heading", { level: 1, name: "Cuaderno nuevo" }),
-    ).toBeInTheDocument();
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).toBeNull();
-    });
-
-    const llamada = fetchMock.mock.calls.find(([input]) => String(input).endsWith("/renombrar"));
-    expect(llamada?.[0]).toBe("/api/objetos/01JALFA/renombrar");
-    expect(llamada?.[1]?.method).toBe("POST");
-    expect(JSON.parse(String(llamada?.[1]?.body))).toEqual({ nuevoTitulo: "Cuaderno nuevo" });
-
-    expect(await screen.findByText("Ficha renombrada")).toBeInTheDocument();
-    expect(screen.getByText("Ficheros reescritos (2)")).toBeInTheDocument();
-    expect(screen.getByText("diario/ref.md")).toBeInTheDocument();
-    expect(screen.getByText("tareas/x.md")).toBeInTheDocument();
-    expect(screen.queryByRole("alert")).toBeNull();
-  });
-
-  it("avisa de los enlaces sin resolver y de los ficheros omitidos", async () => {
-    mockObjetoApi({
-      rename: () =>
-        jsonResponse({
-          objeto: objetoDePrueba({ titulo: "Cuaderno nuevo" }),
-          informe: {
-            reescritos: [],
+            reescritos: ["diario/ref.md"],
             omitidos: [{ path: "roto.md", problems: ["frontmatter ilegible"] }],
             enlacesSinResolver: [{ path: "notas/otra.md", link: "[[Cuaderno de campo]]" }],
           },
@@ -756,16 +734,87 @@ describe("renombrar y borrar la ficha", () => {
     const user = userEvent.setup();
     renderObjeto();
 
-    const dialogo = await abrirDialogoRenombrar(user);
-    await user.clear(within(dialogo).getByLabelText("Nuevo título"));
-    await user.type(within(dialogo).getByLabelText("Nuevo título"), "Cuaderno nuevo");
-    await user.click(within(dialogo).getByRole("button", { name: "Renombrar" }));
+    const campo = await abrirTitulo(user);
+    await user.clear(campo);
+    await user.type(campo, "Cuaderno nuevo");
+    fireEvent.keyDown(campo, { key: "Enter" });
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Cuaderno nuevo" }),
+    ).toBeInTheDocument();
+
+    const llamada = fetchMock.mock.calls.find(([input]) => String(input).endsWith("/renombrar"));
+    expect(llamada?.[0]).toBe("/api/objetos/01JALFA/renombrar");
+    expect(llamada?.[1]?.method).toBe("POST");
+    expect(JSON.parse(String(llamada?.[1]?.body))).toEqual({ nuevoTitulo: "Cuaderno nuevo" });
 
     expect(await screen.findByText("Ficheros omitidos")).toBeInTheDocument();
     expect(screen.getByText(/frontmatter ilegible/)).toBeInTheDocument();
-    const aviso = await screen.findByRole("alert");
-    expect(aviso).toHaveTextContent("Enlaces sin resolver");
-    expect(aviso).toHaveTextContent("«[[Cuaderno de campo]]» en notas/otra.md");
+    expect(screen.getByText("Enlaces sin resolver")).toBeInTheDocument();
+    expect(screen.getByText(/«\[\[Cuaderno de campo\]\]» en notas\/otra.md/)).toBeInTheDocument();
+    expect(screen.queryByText("Ficha renombrada")).toBeNull();
+    expect(screen.queryByText(/Ficheros reescritos/)).toBeNull();
+  });
+
+  it("Escape revierte el título sin llamar al API", async () => {
+    mockObjetoApi();
+    const user = userEvent.setup();
+    renderObjeto();
+
+    const campo = await abrirTitulo(user);
+    await user.clear(campo);
+    await user.type(campo, "Otro título");
+    fireEvent.keyDown(campo, { key: "Escape" });
+
+    expect(screen.queryByRole("textbox", { name: "Título de la ficha" })).toBeNull();
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Cuaderno de campo" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cuaderno de campo" })).toHaveFocus();
+    expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith("/renombrar"))).toBe(
+      false,
+    );
+  });
+
+  it("no renombra si el título no cambia o queda vacío", async () => {
+    mockObjetoApi();
+    const user = userEvent.setup();
+    renderObjeto();
+
+    let campo = await abrirTitulo(user);
+    fireEvent.keyDown(campo, { key: "Enter" });
+
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Cuaderno de campo" }),
+    ).toBeInTheDocument();
+
+    campo = await abrirTitulo(user);
+    await user.clear(campo);
+    fireEvent.keyDown(campo, { key: "Enter" });
+
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Cuaderno de campo" }),
+    ).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith("/renombrar"))).toBe(
+      false,
+    );
+  });
+
+  it("confirma el título al salir del campo", async () => {
+    mockObjetoApi();
+    const user = userEvent.setup();
+    renderObjeto();
+
+    const campo = await abrirTitulo(user);
+    await user.clear(campo);
+    await user.type(campo, "Cuaderno nuevo");
+    await user.click(screen.getByLabelText("Cuerpo de la ficha en markdown"));
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Cuaderno nuevo" }),
+    ).toBeInTheDocument();
+    const llamada = fetchMock.mock.calls.find(([input]) => String(input).endsWith("/renombrar"));
+    expect(JSON.parse(String(llamada?.[1]?.body))).toEqual({ nuevoTitulo: "Cuaderno nuevo" });
   });
 
   it("muestra el error del API cuando el título está duplicado", async () => {
@@ -775,24 +824,76 @@ describe("renombrar y borrar la ficha", () => {
     const user = userEvent.setup();
     renderObjeto();
 
-    const dialogo = await abrirDialogoRenombrar(user);
-    await user.clear(within(dialogo).getByLabelText("Nuevo título"));
-    await user.type(within(dialogo).getByLabelText("Nuevo título"), "Otro título");
-    await user.click(within(dialogo).getByRole("button", { name: "Renombrar" }));
+    const campo = await abrirTitulo(user);
+    await user.clear(campo);
+    await user.type(campo, "Otro título");
+    fireEvent.keyDown(campo, { key: "Enter" });
 
     const alerta = await screen.findByRole("alert");
     expect(alerta).toHaveTextContent("Ya existe una ficha con ese título");
-    expect(within(dialogo).getByLabelText("Nuevo título")).toHaveValue("Otro título");
-    expect(screen.getByText("Cuaderno de campo", { selector: "h1" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Cuaderno de campo" }),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("menú de acciones de la hoja", () => {
+  it("no muestra los botones de renombrar, borrar ni añadir atributo", async () => {
+    mockObjetoApi();
+    renderObjeto();
+
+    await screen.findByRole("heading", { level: 1, name: "Cuaderno de campo" });
+    expect(screen.queryByRole("button", { name: "Renombrar" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Borrar" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Añadir atributo" })).toBeNull();
   });
 
+  it("abre y cierra con teclado y contiene las acciones", async () => {
+    mockObjetoApi();
+    const user = userEvent.setup();
+    renderObjeto();
+
+    const disparador = await screen.findByRole("button", { name: "Más acciones" });
+    disparador.focus();
+    await user.keyboard("{Enter}");
+
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).getByRole("menuitem", { name: "Añadir atributo" })).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: "Borrar" })).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByRole("menu")).toBeNull();
+    });
+    expect(disparador).toHaveFocus();
+  });
+
+  it("abre el formulario de atributo libre desde el menú y lo añade", async () => {
+    mockObjetoApi();
+    const user = userEvent.setup();
+    renderObjeto();
+
+    await abrirMenu(user);
+    await user.click(screen.getByRole("menuitem", { name: "Añadir atributo" }));
+
+    await user.type(await screen.findByLabelText("Clave"), "proyecto");
+    await user.type(screen.getByLabelText("Valor"), "migite");
+    await user.click(screen.getByRole("button", { name: "Añadir atributo" }));
+
+    expect(await screen.findByLabelText("proyecto")).toHaveValue("migite");
+    await waitFor(() => {
+      expect(patchAtributos()?.atributos).toEqual({ proyecto: "migite" });
+    });
+  });
+});
+
+describe("borrar la ficha", () => {
   it("no llama al API si el borrado no se confirma", async () => {
     mockObjetoApi();
     const user = userEvent.setup();
     const { router } = renderObjeto();
 
-    await user.click(await screen.findByRole("button", { name: "Borrar" }));
-    const dialogo = await screen.findByRole("dialog");
+    const dialogo = await abrirBorrarDesdeMenu(user);
     expect(dialogo).toHaveTextContent("¿Borrar «Cuaderno de campo»?");
     expect(dialogo).toHaveTextContent("Esta acción no se puede deshacer.");
 
@@ -810,8 +911,7 @@ describe("renombrar y borrar la ficha", () => {
     const user = userEvent.setup();
     const { router } = renderObjeto();
 
-    await user.click(await screen.findByRole("button", { name: "Borrar" }));
-    const dialogo = await screen.findByRole("dialog");
+    const dialogo = await abrirBorrarDesdeMenu(user);
     await user.click(within(dialogo).getByRole("button", { name: "Borrar ficha" }));
 
     await waitFor(() => {
@@ -829,8 +929,7 @@ describe("renombrar y borrar la ficha", () => {
     const user = userEvent.setup();
     const { router } = renderObjeto();
 
-    await user.click(await screen.findByRole("button", { name: "Borrar" }));
-    const dialogo = await screen.findByRole("dialog");
+    const dialogo = await abrirBorrarDesdeMenu(user);
     await user.click(within(dialogo).getByRole("button", { name: "Borrar ficha" }));
 
     const alerta = await screen.findByRole("alert");
