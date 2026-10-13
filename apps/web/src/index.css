@@ -131,8 +131,13 @@
     @apply font-sans;
     color-scheme: light;
   }
-  .dark {
+  :root.dark {
     color-scheme: dark;
+  }
+  option,
+  optgroup {
+    background-color: var(--popover);
+    color: var(--popover-foreground);
   }
   body {
     @apply bg-background text-foreground antialiased;
