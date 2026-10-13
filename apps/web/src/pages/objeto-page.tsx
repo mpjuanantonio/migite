@@ -4,10 +4,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { ApiError } from "@/api/api";
 import {
+  useArbolObjetos,
   useBorrarObjeto,
   useGuardarObjeto,
   useObjeto,
-  useObjetos,
   useRenombrarObjeto,
 } from "@/api/hooks";
 import { BandejaAtributos } from "@/components/atributos/bandeja-atributos";
@@ -102,7 +102,7 @@ export const ObjetoPage = () => {
   const navigate = useNavigate();
   const { fijarCarpeta } = useOutletContext<ContextoExplorador>();
   const objetoQuery = useObjeto(id);
-  const objetosSugeridos = useObjetos({ limite: 100 });
+  const arbolSugerido = useArbolObjetos();
   const guardar = useGuardarObjeto(id ?? "");
   const {
     isError: falloAlGuardar,
@@ -138,7 +138,7 @@ export const ObjetoPage = () => {
     fijarCarpeta(objeto.carpeta);
   }, [objeto, fijarCarpeta]);
 
-  const titulosSugeridos = (objetosSugeridos.data?.objetos ?? []).map((item) => item.titulo);
+  const titulosSugeridos = (arbolSugerido.data?.nodos ?? []).map((nodo) => nodo.titulo);
   const cuerpo =
     borrador !== undefined && borrador.id === id ? borrador.valor : (objeto?.cuerpo ?? "");
   const conCambios =
@@ -269,9 +269,6 @@ export const ObjetoPage = () => {
   }
 
   const renombrarTitulo = (titulo: string) => {
-    if (renombrar.isPending) {
-      return;
-    }
     renombrar.reset();
     renombrar.mutate(titulo, {
       onSuccess: (reporte) => {

@@ -50,7 +50,7 @@ type PatchBody = {
 
 type PatchHandler = (body: PatchBody, attempt: number) => Response;
 
-type RenameHandler = (nuevoTitulo: string, attempt: number) => Response;
+type RenameHandler = (nuevoTitulo: string, attempt: number) => Response | Promise<Response>;
 
 type CrearHandler = (titulo: string) => Response;
 
@@ -182,7 +182,7 @@ const mockObjetoApi = (options: ObjetoApiOptions = {}): void => {
       const body = JSON.parse(String(init?.body ?? "{}")) as { readonly nuevoTitulo?: string };
       const nuevoTitulo = body.nuevoTitulo ?? objeto.titulo;
       if (options.rename !== undefined) {
-        return options.rename(nuevoTitulo, intentosRenombrado);
+        return await options.rename(nuevoTitulo, intentosRenombrado);
       }
       return jsonResponse({
         objeto: { ...objeto, titulo: nuevoTitulo },
@@ -243,6 +243,11 @@ const patchesDe = (clave: "cuerpo" | "atributos"): PatchBody[] => {
 };
 
 const patchCuerpo = (): PatchBody | undefined => patchesDe("cuerpo")[0];
+
+const renombrados = (): { readonly nuevoTitulo: string }[] =>
+  fetchMock.mock.calls
+    .filter(([input, init]) => String(input).endsWith("/renombrar") && init?.method === "POST")
+    .map(([, init]) => JSON.parse(String(init?.body ?? "{}")) as { readonly nuevoTitulo: string });
 
 const indicadorGuardando = (): HTMLElement | null =>
   screen.queryByRole("status", { name: "Guardando…" });
@@ -337,6 +342,20 @@ describe("ficha de objeto", () => {
     expect(within(arbol).getByRole("button", { name: "Plegar Libros" })).toBeInTheDocument();
     expect(within(arbol).getByRole("button", { name: "Plegar clasicos" })).toBeInTheDocument();
     expect(within(arbol).getByRole("link", { name: "Cuaderno de campo" })).toBeInTheDocument();
+  });
+
+  it("toma las sugerencias de wikilinks del árbol ligero sin listar objetos completos", async () => {
+    mockObjetoApi();
+    renderObjeto();
+
+    await screen.findByLabelText("Cuerpo de la ficha en markdown");
+
+    expect(fetchMock.mock.calls.some(([input]) => String(input) === "/api/objetos/arbol")).toBe(
+      true,
+    );
+    expect(
+      fetchMock.mock.calls.some(([input]) => String(input).startsWith("/api/objetos?limite=100")),
+    ).toBe(false);
   });
 
   it("ordena la ficha con propiedades arriba y escritura a ancho completo", async () => {
@@ -675,6 +694,20 @@ describe("bandeja de atributos", () => {
     });
   });
 
+  it("asocia las etiquetas cuando la clave del atributo lleva espacios", async () => {
+    mockObjetoApi({
+      objeto: objetoDePrueba({ atributos: { "clave con espacios": "valor" } }),
+    });
+    renderObjeto();
+
+    const campo = await screen.findByLabelText("clave con espacios");
+    const etiqueta = screen.getByText("clave con espacios");
+
+    expect(campo.id).not.toMatch(/\s/);
+    expect(etiqueta.tagName).toBe("LABEL");
+    expect(etiqueta).toHaveAttribute("for", campo.id);
+  });
+
   it("conserva lo tipeado cuando el PATCH de atributos falla", async () => {
     mockObjetoApi({
       objeto: objetoTarea({ atributos: { estado: "pendiente", web: "https://ejemplo.dev" } }),
@@ -754,6 +787,57 @@ describe("título editable", () => {
     expect(screen.getByText(/«\[\[Cuaderno de campo\]\]» en notas\/otra.md/)).toBeInTheDocument();
     expect(screen.queryByText("Ficha renombrada")).toBeNull();
     expect(screen.queryByText(/Ficheros reescritos/)).toBeNull();
+  });
+
+  it("encola una segunda edición del título en lugar de descartarla", async () => {
+    let liberarPrimero: (() => void) | undefined;
+    const primeroEnVuelo = new Promise<void>((resolve) => {
+      liberarPrimero = resolve;
+    });
+    mockObjetoApi({
+      rename: async (nuevoTitulo, attempt) => {
+        if (attempt === 1) {
+          await primeroEnVuelo;
+        }
+        return jsonResponse({
+          objeto: objetoDePrueba({ titulo: nuevoTitulo }),
+          informe: { reescritos: [], omitidos: [], enlacesSinResolver: [] },
+        });
+      },
+    });
+    const user = userEvent.setup();
+    renderObjeto();
+
+    let campo = await abrirTitulo(user);
+    await user.clear(campo);
+    await user.type(campo, "Primer título");
+    fireEvent.keyDown(campo, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(renombrados()).toHaveLength(1);
+    });
+
+    campo = await abrirTitulo(user);
+    await user.clear(campo);
+    await user.type(campo, "Segundo título");
+    fireEvent.keyDown(campo, { key: "Enter" });
+
+    expect(renombrados()).toHaveLength(1);
+
+    await act(async () => {
+      liberarPrimero?.();
+    });
+
+    await waitFor(() => {
+      expect(renombrados()).toHaveLength(2);
+    });
+    expect(renombrados().map((cuerpo) => cuerpo.nuevoTitulo)).toEqual([
+      "Primer título",
+      "Segundo título",
+    ]);
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Segundo título" }),
+    ).toBeInTheDocument();
   });
 
   it("Escape revierte el título sin llamar al API", async () => {

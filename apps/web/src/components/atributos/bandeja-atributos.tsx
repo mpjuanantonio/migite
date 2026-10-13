@@ -226,7 +226,8 @@ export const BandejaAtributos = ({
       ) : (
         <dl className="flex flex-col border-b border-border/70">
           {filas.map((fila) => {
-            const etiquetaId = `atributo-etiqueta-${fila.clave}`;
+            const editorId = `atributo-${encodeURIComponent(fila.clave)}`;
+            const etiquetaId = `${editorId}-etiqueta`;
             return (
               <div
                 key={fila.clave}
@@ -236,7 +237,7 @@ export const BandejaAtributos = ({
                   <dt className="min-w-0">
                     <label
                       id={etiquetaId}
-                      htmlFor={`atributo-${fila.clave}`}
+                      htmlFor={editorId}
                       className="block truncate text-sm text-muted-foreground"
                     >
                       {fila.definicion?.nombre ?? fila.clave}
@@ -257,7 +258,7 @@ export const BandejaAtributos = ({
                 </div>
                 <dd className="min-w-0 sm:max-w-sm">
                   <CampoAtributo
-                    editorId={`atributo-${fila.clave}`}
+                    editorId={editorId}
                     etiquetaId={etiquetaId}
                     definicion={fila.definicion}
                     valor={fila.valor}
