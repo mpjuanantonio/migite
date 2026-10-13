@@ -135,6 +135,28 @@ const PanelInforme = ({
   );
 };
 
+const GuardadoDeBorradorPendiente = ({
+  idObjeto,
+  pendiente,
+}: {
+  readonly idObjeto: string;
+  readonly pendiente: { readonly current: string | undefined };
+}) => {
+  const { mutate } = useGuardarObjeto(idObjeto);
+
+  useEffect(
+    () => () => {
+      const valor = pendiente.current;
+      if (valor !== undefined) {
+        mutate(valor);
+      }
+    },
+    [mutate, pendiente],
+  );
+
+  return null;
+};
+
 export const ObjetoPage = () => {
   const { t, locale } = useI18n();
   const { id } = useParams();
@@ -251,14 +273,8 @@ export const ObjetoPage = () => {
       evento.returnValue = "";
     };
     window.addEventListener("beforeunload", avisarAntesDeDescargar);
-    return () => {
-      window.removeEventListener("beforeunload", avisarAntesDeDescargar);
-      const pendiente = borradorPendiente.current;
-      if (pendiente !== undefined) {
-        guardarCuerpoAhora(pendiente);
-      }
-    };
-  }, [guardarCuerpoAhora]);
+    return () => window.removeEventListener("beforeunload", avisarAntesDeDescargar);
+  }, []);
 
   if (objetoQuery.isPending) {
     return (
@@ -340,6 +356,11 @@ export const ObjetoPage = () => {
       onSeleccionarCarpeta={(carpeta) => navigate("/notas", { state: { carpeta } })}
     >
       <div className="flex flex-col gap-6">
+        <GuardadoDeBorradorPendiente
+          key={objeto.id}
+          idObjeto={objeto.id}
+          pendiente={borradorPendiente}
+        />
         <header className="flex flex-col gap-4 border-b border-border pb-5">
           <div className="flex flex-wrap items-start justify-between gap-x-8 gap-y-4">
             <div className="min-w-0">

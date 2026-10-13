@@ -462,6 +462,31 @@ describe("borrador sin guardar al salir", () => {
     expect(aviso.defaultPrevented).toBe(false);
   });
 
+  it("flushea el borrador del objeto anterior al cambiar de objeto", async () => {
+    mockObjetoApi({
+      objetos: [objetoDePrueba({ id: "01JOTRA", titulo: "Tareas del mes", cuerpo: "" })],
+    });
+    const { router } = renderObjeto();
+
+    const editor = await screen.findByLabelText("Cuerpo de la ficha en markdown");
+    fireEvent.change(editor, { target: { value: "Borrador de A" } });
+
+    await act(async () => {
+      await router.navigate("/objetos/01JOTRA");
+    });
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Tareas del mes" }),
+    ).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(patchCuerpo()?.cuerpo).toBe("Borrador de A");
+    });
+    const llamada = fetchMock.mock.calls.find(([, init]) => init?.method === "PATCH");
+    expect(llamada?.[0]).toBe("/api/objetos/01JALFA");
+    expect(screen.getByLabelText("Cuerpo de la ficha en markdown")).toHaveValue("");
+  });
+
   it("flushea el borrador al desmontar la ficha", async () => {
     mockObjetoApi();
     const { unmount } = renderObjeto();
