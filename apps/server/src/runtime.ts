@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
-import { resolve } from "node:path";
-import type { AppConfig } from "@migite/core";
+import { join, resolve } from "node:path";
+import { type AppConfig, seedNativeTypes } from "@migite/core";
 import { type IndexDatabase, openIndex, startWatcher } from "@migite/index";
 
 export type WatchStatus = {
@@ -34,6 +34,7 @@ export const startRuntime = (config: AppConfig, root: string): AppRuntime => {
   const handle = openIndex({ dbPath: resolve(root, config.paths.index) });
   try {
     mkdirSync(vaultDir, { recursive: true });
+    seedNativeTypes(join(vaultDir, "tipos"));
     let listo = false;
     let ultimoError: string | null = null;
     const watcher = startWatcher({

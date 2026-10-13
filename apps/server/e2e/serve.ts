@@ -2,7 +2,7 @@ import { mkdirSync, rmSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
-import { loadConfig, seedNativeTypes } from "@migite/core";
+import { loadConfig } from "@migite/core";
 import { createApp } from "../src/app.js";
 import { loadAuthConfig } from "../src/auth.js";
 import { configureBuscar } from "../src/routes/buscar.js";
@@ -44,7 +44,6 @@ configureObjetos({
   timeZone: config.app.timeZone,
 });
 configureTipos({ tiposDir: join(runtime.vaultDir, "tipos") });
-seedNativeTypes(join(runtime.vaultDir, "tipos"));
 configureBuscar({ db: runtime.db });
 configureExport({ vaultDir: runtime.vaultDir });
 configureHealth({
