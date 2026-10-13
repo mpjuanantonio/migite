@@ -17,6 +17,7 @@ import {
   deleteTypeFile,
   loadTypeRegistry,
   TypeOperationError,
+  type TypePresentation,
   updateTypeFile,
 } from "./index.js";
 
@@ -110,6 +111,23 @@ atributos:
     expect(registry.types.get("libro")).toEqual(definition);
   });
 
+  it("writes and round-trips the optional presentacion block", () => {
+    const tiposDir = createTiposDir();
+    const presentacion: TypePresentation = { seccion: "notas", carpeta: "Libros", visible: false };
+
+    const definition = createTypeFile(tiposDir, { ...LIBRO, presentacion });
+
+    expect(definition.presentacion).toEqual(presentacion);
+    const text = readFileSync(join(tiposDir, "libro.yaml"), "utf8");
+    expect(text).toContain("presentacion:");
+    expect(text).toContain("seccion: notas");
+    expect(text).toContain("carpeta: Libros");
+    expect(text).toContain("visible: false");
+    const registry = loadTypeRegistry(tiposDir);
+    expect(registry.warnings).toEqual([]);
+    expect(registry.types.get("libro")?.presentacion).toEqual(presentacion);
+  });
+
   it("creates the tipos directory when it does not exist", () => {
     const root = mkdtempSync(join(tmpdir(), "migite-types-write-"));
     roots.push(root);
@@ -198,6 +216,74 @@ describe("updateTypeFile", () => {
     expect(updated.name).toBe("Libro de lectura");
     expect(updated.description).toBe("Nueva descripcion");
     expect(updated.attributes).toEqual([{ ...TITULO, name: "Obra" }]);
+  });
+
+  it("updates the presentacion block", () => {
+    const tiposDir = createTiposDir();
+    createTypeFile(tiposDir, LIBRO);
+
+    const updated = updateTypeFile(tiposDir, "libro", {
+      presentacion: { seccion: "productividad", visible: true },
+    });
+
+    expect(updated.presentacion).toEqual({ seccion: "productividad", visible: true });
+    expect(loadTypeRegistry(tiposDir).types.get("libro")?.presentacion).toEqual({
+      seccion: "productividad",
+      visible: true,
+    });
+  });
+
+  it("keeps presentacion and unknown user keys when updating other fields", () => {
+    const tiposDir = createTiposDir();
+    mkdirSync(tiposDir, { recursive: true });
+    writeFileSync(
+      join(tiposDir, "libro.yaml"),
+      `id: libro
+nombre: Libro
+atributos:
+  - id: titulo
+    nombre: Titulo
+    tipo: texto
+    obligatorio: true
+presentacion:
+  seccion: notas
+  carpeta: Libros
+prioridad: alta
+`,
+      "utf8",
+    );
+
+    const updated = updateTypeFile(tiposDir, "libro", { name: "Libro de lectura" });
+
+    const text = readFileSync(join(tiposDir, "libro.yaml"), "utf8");
+    expect(updated.name).toBe("Libro de lectura");
+    expect(updated.presentacion).toEqual({ seccion: "notas", carpeta: "Libros" });
+    expect(text).toContain("nombre: Libro de lectura");
+    expect(text).toContain("seccion: notas");
+    expect(text).toContain("carpeta: Libros");
+    expect(text).toContain("prioridad: alta");
+  });
+
+  it("still updates a type with an invalid presentacion block and keeps it untouched", () => {
+    const tiposDir = createTiposDir();
+    mkdirSync(tiposDir, { recursive: true });
+    writeFileSync(
+      join(tiposDir, "libro.yaml"),
+      `id: libro
+nombre: Libro
+atributos: []
+presentacion:
+  seccion: biblioteca
+`,
+      "utf8",
+    );
+
+    const updated = updateTypeFile(tiposDir, "libro", { name: "Otro" });
+
+    const text = readFileSync(join(tiposDir, "libro.yaml"), "utf8");
+    expect(updated.name).toBe("Otro");
+    expect(updated.presentacion).toBeUndefined();
+    expect(text).toContain("seccion: biblioteca");
   });
 
   it("removes an attribute without touching the data already stored in objects", () => {
