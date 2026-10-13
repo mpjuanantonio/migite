@@ -13,6 +13,7 @@ import {
 import { BandejaAtributos } from "@/components/atributos/bandeja-atributos";
 import { MarkdownEditor } from "@/components/editor/markdown-editor";
 import { Wikilink } from "@/components/editor/wikilink";
+import { DisposicionExplorador } from "@/components/explorador/disposicion-explorador";
 import { type EstadoGuardado, IndicadorGuardado } from "@/components/objetos/indicador-guardado";
 import { PanelEnlacesEntrantes } from "@/components/objetos/panel-enlaces-entrantes";
 import { Button } from "@/components/ui/button";
@@ -310,202 +311,208 @@ export const ObjetoPage = () => {
   };
 
   return (
-    <div className="flex flex-col gap-6">
-      <header className="flex flex-col gap-4 border-b border-border pb-5">
-        <div className="flex flex-wrap items-start justify-between gap-x-8 gap-y-4">
-          <div className="min-w-0">
-            <h1 className="font-heading text-display font-medium break-words">{objeto.titulo}</h1>
-            <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-              <span className="rounded-sm border border-border bg-muted px-1.5 py-0.5 text-xs font-medium text-foreground">
-                {objeto.tipo}
-              </span>
-              <span aria-hidden="true" className="h-3 w-px bg-border" />
-              <span>
-                {t("page.objeto.updated", {
-                  fecha: formatFecha(objeto.actualizado, locale),
-                })}
-              </span>
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" variant="outline" onClick={abrirRenombrar}>
-              <Pencil aria-hidden="true" />
-              {t("page.objeto.rename")}
-            </Button>
-            <Button type="button" variant="destructive" onClick={abrirBorrar}>
-              <Trash2 aria-hidden="true" />
-              {t("page.objeto.delete")}
-            </Button>
-          </div>
-        </div>
-        {objeto.degraded.length > 0 ? (
-          <div className="flex items-start gap-3 rounded-md border border-chart-4/40 bg-chart-4/10 px-3.5 py-2.5">
-            <FileWarning aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-chart-4" />
-            <div className="text-sm">
-              <p className="font-medium">{t("page.objeto.degraded")}</p>
-              <p className="mt-0.5 text-muted-foreground">{t("page.objeto.degradedHint")}</p>
+    <DisposicionExplorador
+      idSeleccionado={objeto.id}
+      carpetaSeleccionada={objeto.carpeta}
+      onSeleccionarCarpeta={(carpeta) => navigate("/notas", { state: { carpeta } })}
+    >
+      <div className="flex flex-col gap-6">
+        <header className="flex flex-col gap-4 border-b border-border pb-5">
+          <div className="flex flex-wrap items-start justify-between gap-x-8 gap-y-4">
+            <div className="min-w-0">
+              <h1 className="font-heading text-display font-medium break-words">{objeto.titulo}</h1>
+              <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+                <span className="rounded-sm border border-border bg-muted px-1.5 py-0.5 text-xs font-medium text-foreground">
+                  {objeto.tipo}
+                </span>
+                <span aria-hidden="true" className="h-3 w-px bg-border" />
+                <span>
+                  {t("page.objeto.updated", {
+                    fecha: formatFecha(objeto.actualizado, locale),
+                  })}
+                </span>
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="button" variant="outline" onClick={abrirRenombrar}>
+                <Pencil aria-hidden="true" />
+                {t("page.objeto.rename")}
+              </Button>
+              <Button type="button" variant="destructive" onClick={abrirBorrar}>
+                <Trash2 aria-hidden="true" />
+                {t("page.objeto.delete")}
+              </Button>
             </div>
           </div>
+          {objeto.degraded.length > 0 ? (
+            <div className="flex items-start gap-3 rounded-md border border-chart-4/40 bg-chart-4/10 px-3.5 py-2.5">
+              <FileWarning aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-chart-4" />
+              <div className="text-sm">
+                <p className="font-medium">{t("page.objeto.degraded")}</p>
+                <p className="mt-0.5 text-muted-foreground">{t("page.objeto.degradedHint")}</p>
+              </div>
+            </div>
+          ) : null}
+        </header>
+
+        <BandejaAtributos key={objeto.id} objeto={objeto} />
+
+        {informe !== undefined ? (
+          <PanelInforme informe={informe} onCerrar={() => setInforme(undefined)} />
         ) : null}
-      </header>
 
-      <BandejaAtributos key={objeto.id} objeto={objeto} />
+        <section
+          aria-label={t("page.objeto.editor")}
+          className="editor-lectura relative overflow-hidden rounded-lg border border-border/70 bg-card shadow-sheet"
+          onBlur={(evento) => {
+            const destino = evento.relatedTarget;
+            if (destino instanceof Node && evento.currentTarget.contains(destino)) {
+              return;
+            }
+            guardarCuerpo();
+          }}
+        >
+          <div className="pointer-events-none absolute top-2 right-2 z-10 rounded-md bg-card/80 px-1 py-0.5 shadow-xs backdrop-blur-sm">
+            <IndicadorGuardado
+              estado={estadoGuardado}
+              mensaje={guardar.error instanceof ApiError ? guardar.error.mensaje : undefined}
+              onReintentar={guardarCuerpo}
+            />
+          </div>
+          <div className="h-[30rem] sm:h-[40rem]">
+            <MarkdownEditor
+              value={cuerpo}
+              onChange={(valor) => {
+                if (falloAlGuardar) {
+                  descartarFalloAlGuardar();
+                }
+                setBorrador({ id: objeto.id, valor });
+              }}
+              ariaLabel={t("page.objeto.editorLabel")}
+              placeholder={t("page.objeto.editorPlaceholder")}
+              sugerencias={titulosSugeridos}
+              onWikilinkClick={abrirWikilink}
+            />
+          </div>
+        </section>
 
-      {informe !== undefined ? (
-        <PanelInforme informe={informe} onCerrar={() => setInforme(undefined)} />
-      ) : null}
+        <PanelEnlacesEntrantes id={objeto.id} />
 
-      <section
-        aria-label={t("page.objeto.editor")}
-        className="editor-lectura relative overflow-hidden rounded-lg border border-border/70 bg-card shadow-sheet"
-        onBlur={(evento) => {
-          const destino = evento.relatedTarget;
-          if (destino instanceof Node && evento.currentTarget.contains(destino)) {
-            return;
-          }
-          guardarCuerpo();
-        }}
-      >
-        <div className="pointer-events-none absolute top-2 right-2 z-10 rounded-md bg-card/80 px-1 py-0.5 shadow-xs backdrop-blur-sm">
-          <IndicadorGuardado
-            estado={estadoGuardado}
-            mensaje={guardar.error instanceof ApiError ? guardar.error.mensaje : undefined}
-            onReintentar={guardarCuerpo}
-          />
-        </div>
-        <div className="h-[30rem] sm:h-[40rem]">
-          <MarkdownEditor
-            value={cuerpo}
-            onChange={(valor) => {
-              if (falloAlGuardar) {
-                descartarFalloAlGuardar();
-              }
-              setBorrador({ id: objeto.id, valor });
-            }}
-            ariaLabel={t("page.objeto.editorLabel")}
-            placeholder={t("page.objeto.editorPlaceholder")}
-            sugerencias={titulosSugeridos}
-            onWikilinkClick={abrirWikilink}
-          />
-        </div>
-      </section>
+        <Dialog open={renombrarAbierto} onOpenChange={setRenombrarAbierto}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{t("page.objeto.renameTitle")}</DialogTitle>
+              <DialogDescription>{t("page.objeto.renameDescription")}</DialogDescription>
+            </DialogHeader>
+            <form
+              className="flex flex-col gap-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                confirmarRenombrar();
+              }}
+            >
+              <div className="flex flex-col gap-1.5">
+                <label
+                  htmlFor="objeto-nuevo-titulo"
+                  className="text-xs font-medium text-muted-foreground"
+                >
+                  {t("page.objeto.renameLabel")}
+                </label>
+                <Input
+                  id="objeto-nuevo-titulo"
+                  value={nuevoTitulo}
+                  onChange={(event) => setNuevoTitulo(event.target.value)}
+                />
+              </div>
+              {renombrar.isError ? (
+                <div
+                  role="alert"
+                  className="rounded-md border border-destructive/30 bg-destructive/5 px-3.5 py-2.5 text-sm text-destructive"
+                >
+                  <span className="font-medium">{t("page.objeto.renameError")}. </span>
+                  {renombrar.error instanceof ApiError
+                    ? renombrar.error.mensaje
+                    : t("error.genericError")}
+                </div>
+              ) : null}
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button type="button" variant="outline" disabled={renombrar.isPending}>
+                    {t("page.objeto.renameCancel")}
+                  </Button>
+                </DialogClose>
+                <Button type="submit" disabled={nuevoTitulo.trim() === "" || renombrar.isPending}>
+                  {renombrar.isPending ? t("page.objeto.renaming") : t("page.objeto.renameSubmit")}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
 
-      <PanelEnlacesEntrantes id={objeto.id} />
-
-      <Dialog open={renombrarAbierto} onOpenChange={setRenombrarAbierto}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("page.objeto.renameTitle")}</DialogTitle>
-            <DialogDescription>{t("page.objeto.renameDescription")}</DialogDescription>
-          </DialogHeader>
-          <form
-            className="flex flex-col gap-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              confirmarRenombrar();
-            }}
-          >
-            <div className="flex flex-col gap-1.5">
-              <label
-                htmlFor="objeto-nuevo-titulo"
-                className="text-xs font-medium text-muted-foreground"
-              >
-                {t("page.objeto.renameLabel")}
-              </label>
-              <Input
-                id="objeto-nuevo-titulo"
-                value={nuevoTitulo}
-                onChange={(event) => setNuevoTitulo(event.target.value)}
-              />
-            </div>
-            {renombrar.isError ? (
+        <Dialog open={borrarAbierto} onOpenChange={setBorrarAbierto}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{t("page.objeto.deleteTitle", { titulo: objeto.titulo })}</DialogTitle>
+              <DialogDescription>{t("page.objeto.deleteWarning")}</DialogDescription>
+            </DialogHeader>
+            {borrar.isError ? (
               <div
                 role="alert"
                 className="rounded-md border border-destructive/30 bg-destructive/5 px-3.5 py-2.5 text-sm text-destructive"
               >
-                <span className="font-medium">{t("page.objeto.renameError")}. </span>
-                {renombrar.error instanceof ApiError
-                  ? renombrar.error.mensaje
-                  : t("error.genericError")}
+                <span className="font-medium">{t("page.objeto.deleteError")}. </span>
+                {borrar.error instanceof ApiError ? borrar.error.mensaje : t("error.genericError")}
               </div>
             ) : null}
             <DialogFooter>
               <DialogClose asChild>
-                <Button type="button" variant="outline" disabled={renombrar.isPending}>
-                  {t("page.objeto.renameCancel")}
+                <Button type="button" variant="outline" disabled={borrar.isPending}>
+                  {t("page.objeto.deleteCancel")}
                 </Button>
               </DialogClose>
-              <Button type="submit" disabled={nuevoTitulo.trim() === "" || renombrar.isPending}>
-                {renombrar.isPending ? t("page.objeto.renaming") : t("page.objeto.renameSubmit")}
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={borrar.isPending}
+                onClick={confirmarBorrar}
+              >
+                <Trash2 aria-hidden="true" />
+                {borrar.isPending
+                  ? t("page.objeto.deleteConfirming")
+                  : t("page.objeto.deleteConfirm")}
               </Button>
             </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+          </DialogContent>
+        </Dialog>
 
-      <Dialog open={borrarAbierto} onOpenChange={setBorrarAbierto}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("page.objeto.deleteTitle", { titulo: objeto.titulo })}</DialogTitle>
-            <DialogDescription>{t("page.objeto.deleteWarning")}</DialogDescription>
-          </DialogHeader>
-          {borrar.isError ? (
-            <div
-              role="alert"
-              className="rounded-md border border-destructive/30 bg-destructive/5 px-3.5 py-2.5 text-sm text-destructive"
-            >
-              <span className="font-medium">{t("page.objeto.deleteError")}. </span>
-              {borrar.error instanceof ApiError ? borrar.error.mensaje : t("error.genericError")}
-            </div>
-          ) : null}
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button type="button" variant="outline" disabled={borrar.isPending}>
-                {t("page.objeto.deleteCancel")}
-              </Button>
-            </DialogClose>
-            <Button
-              type="button"
-              variant="destructive"
-              disabled={borrar.isPending}
-              onClick={confirmarBorrar}
-            >
-              <Trash2 aria-hidden="true" />
-              {borrar.isPending
-                ? t("page.objeto.deleteConfirming")
-                : t("page.objeto.deleteConfirm")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={wikilinkTitulo !== undefined}
-        onOpenChange={(abierto) => {
-          if (!abierto) {
-            setWikilinkTitulo(undefined);
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{wikilinkTitulo}</DialogTitle>
-            <DialogDescription>
-              {t("page.objeto.wikilink.unresolved", { titulo: wikilinkTitulo ?? "" })}
-            </DialogDescription>
-          </DialogHeader>
-          {wikilinkTitulo === undefined ? null : (
-            <Wikilink
-              titulo={wikilinkTitulo}
-              antesDeCrear={guardarAntesDeCrear}
-              autoNavegar
-              onNavegar={cerrarWikilink}
-            >
-              {wikilinkTitulo}
-            </Wikilink>
-          )}
-        </DialogContent>
-      </Dialog>
-    </div>
+        <Dialog
+          open={wikilinkTitulo !== undefined}
+          onOpenChange={(abierto) => {
+            if (!abierto) {
+              setWikilinkTitulo(undefined);
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{wikilinkTitulo}</DialogTitle>
+              <DialogDescription>
+                {t("page.objeto.wikilink.unresolved", { titulo: wikilinkTitulo ?? "" })}
+              </DialogDescription>
+            </DialogHeader>
+            {wikilinkTitulo === undefined ? null : (
+              <Wikilink
+                titulo={wikilinkTitulo}
+                antesDeCrear={guardarAntesDeCrear}
+                autoNavegar
+                onNavegar={cerrarWikilink}
+              >
+                {wikilinkTitulo}
+              </Wikilink>
+            )}
+          </DialogContent>
+        </Dialog>
+      </div>
+    </DisposicionExplorador>
   );
 };
