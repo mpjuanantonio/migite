@@ -14,7 +14,7 @@ import {
   obtenerAccion,
 } from "@migite/index";
 import { sanitizeWatcherError } from "../runtime.js";
-import { patchObjeto } from "./objetos.js";
+import { patchObjeto, renameObjeto } from "./objetos.js";
 
 export type AccionesDeps = {
   readonly db: IndexDatabase;
@@ -62,7 +62,16 @@ const aplicarPropuesta = (deps: AccionesDeps, propuesta: AccionPropuesta): unkno
       return { id: creado.id };
     }
     case "editar_objeto": {
-      const editado = patchObjeto(deps, propuesta.payload.id, propuesta.payload.cambios);
+      const { id, cambios } = propuesta.payload;
+      const { titulo, ...resto } = cambios;
+      let ref = id;
+      if (titulo !== undefined) {
+        ref = renameObjeto(deps, id, titulo).objeto.id;
+      }
+      if (Object.keys(resto).length === 0) {
+        return { id: ref };
+      }
+      const editado = patchObjeto(deps, ref, resto);
       return { id: editado.id };
     }
     case "borrar_objeto": {
