@@ -12,7 +12,11 @@ import {
   conversacionesListSchema,
   type EnlacesEntrantes,
   enlacesEntrantesSchema,
+  type Memoria,
+  type MemoriasList,
   type MensajesList,
+  memoriaSchema,
+  memoriasListSchema,
   mensajesListSchema,
   type ObjectPayload,
   type ObjetosPage,
@@ -228,6 +232,47 @@ export const useBorrarConversacion = () => {
     onSuccess: (_resultado, id) => {
       queryClient.removeQueries({ queryKey: queryKeys.mensajesConversacion(id) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.conversaciones });
+    },
+  });
+};
+
+export const useMemorias = () =>
+  useQuery({
+    queryKey: queryKeys.memorias,
+    staleTime: 0,
+    queryFn: async (): Promise<MemoriasList> =>
+      memoriasListSchema.parse(await apiFetch("/api/memorias")),
+  });
+
+const memoriaPath = (id: string): string => `/api/memorias/${encodeURIComponent(id)}`;
+
+export type ActualizarMemoriaParams = {
+  readonly id: string;
+  readonly contenido: string;
+};
+
+export const useActualizarMemoria = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, contenido }: ActualizarMemoriaParams): Promise<Memoria> =>
+      memoriaSchema.parse(
+        await apiFetch(memoriaPath(id), { method: "PATCH", body: { contenido } }),
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.memorias });
+    },
+  });
+};
+
+export const useBorrarMemoria = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string): Promise<void> =>
+      apiFetch<void>(memoriaPath(id), { method: "DELETE" }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.memorias });
     },
   });
 };

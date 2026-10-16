@@ -2,6 +2,7 @@ export const queryKeys = {
   accionesPendientes: ["acciones", "pendiente"] as const,
   buscar: ["buscar"] as const,
   conversaciones: ["conversaciones"] as const,
+  memorias: ["memorias"] as const,
   sesion: ["sesion"] as const,
   objetos: ["objetos"] as const,
   arbol: ["objetos", "arbol"] as const,

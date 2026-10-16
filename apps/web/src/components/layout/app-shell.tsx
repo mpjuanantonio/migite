@@ -1,5 +1,6 @@
 import {
   AlarmClock,
+  Brain,
   CalendarDays,
   FileText,
   Folder,
@@ -49,6 +50,7 @@ const SECCION_GESTION: readonly Section[] = [
 
 const SECCION_ASISTENTE: readonly Section[] = [
   { to: "/chat", labelKey: "nav.chat", icon: MessageSquare },
+  { to: "/memoria", labelKey: "nav.memoria", icon: Brain },
 ];
 
 const ESTILO_GRUPO = "px-3 pt-1 text-xs font-medium tracking-wide text-muted-foreground uppercase";
