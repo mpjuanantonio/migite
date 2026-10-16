@@ -20,7 +20,23 @@ export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 export interface OpenAICompatDeps {
   readonly fetch?: FetchLike;
   readonly env?: Readonly<Record<string, string | undefined>>;
+  readonly timeoutMs?: number;
 }
+
+interface RequestSession {
+  readonly response: Response;
+  readonly url: string;
+  readonly apiKey: string;
+  readonly providerId: string;
+  readonly timedOut: () => boolean;
+  readonly finish: () => void;
+  readonly cancel: () => void;
+}
+
+const DEFAULT_TIMEOUT_MS = 60_000;
+const MAX_EVENT_BYTES = 1_000_000;
+const MAX_STREAM_BYTES = 8_000_000;
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -38,6 +54,41 @@ const joinUrl = (baseUrl: string, path: string): string => `${baseUrl.replace(/\
 
 const redact = (text: string, secret: string): string =>
   secret === "" ? text : text.split(secret).join("[redactado]");
+
+const isLoopbackHost = (hostname: string): boolean => {
+  const lower = hostname.toLowerCase();
+  const host = lower.startsWith("[") && lower.endsWith("]") ? lower.slice(1, -1) : lower;
+  return LOOPBACK_HOSTS.has(host);
+};
+
+const assertSecureBaseUrl = (providerId: string, baseUrl: string): void => {
+  let url: URL;
+  try {
+    url = new URL(baseUrl);
+  } catch {
+    throw new LlmError(`baseUrl inválida en el proveedor "${providerId}": ${baseUrl}`);
+  }
+  if (url.protocol === "http:" && !isLoopbackHost(url.hostname)) {
+    throw new LlmError(
+      `el proveedor "${providerId}" usa http:// en ${baseUrl} y la clave viajaría sin cifrar; usa https:// o expón el proveedor en loopback (localhost, 127.0.0.1 o ::1)`,
+    );
+  }
+};
+
+const utf8 = new TextEncoder();
+
+const byteLength = (text: string): number => utf8.encode(text).byteLength;
+
+const assertWithinBytes = (text: string, limit: number, what: string): void => {
+  if (byteLength(text) > limit) {
+    throw new LlmError(`${what} supera el máximo de ${limit} bytes`);
+  }
+};
+
+const timeoutError = (providerId: string, url: string, timeoutMs: number): LlmError =>
+  new LlmError(
+    `tiempo de espera agotado (timeoutMs=${timeoutMs}) al contactar con el proveedor "${providerId}" en ${url}`,
+  );
 
 const mapFinishReason = (value: unknown): FinishReason => {
   switch (value) {
@@ -279,16 +330,23 @@ async function* readSseEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let totalBytes = 0;
   try {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) {
         break;
       }
+      totalBytes += value.byteLength;
+      if (totalBytes > MAX_STREAM_BYTES) {
+        throw new LlmError(`respuesta de streaming supera el máximo de ${MAX_STREAM_BYTES} bytes`);
+      }
       buffer += decoder.decode(value, { stream: true });
       const events = buffer.split(/\r?\n\r?\n/);
       buffer = events.pop() ?? "";
+      assertWithinBytes(buffer, MAX_EVENT_BYTES, "evento SSE sin separador");
       for (const event of events) {
+        assertWithinBytes(event, MAX_EVENT_BYTES, "evento SSE");
         for (const data of dataLines(event)) {
           if (data === "[DONE]") {
             return;
@@ -297,6 +355,7 @@ async function* readSseEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<
         }
       }
     }
+    assertWithinBytes(buffer, MAX_EVENT_BYTES, "evento SSE");
     for (const data of dataLines(buffer)) {
       if (data === "[DONE]") {
         return;
@@ -314,12 +373,15 @@ export const createOpenAICompatClient = (
 ): LLMClient => {
   const fetchFn: FetchLike = deps.fetch ?? fetch;
   const env = deps.env ?? process.env;
+  const timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   const send = async (
     resolved: ResolvedRoleModel,
     path: string,
     body: Record<string, unknown>,
-  ): Promise<{ response: Response; url: string; apiKey: string }> => {
+  ): Promise<RequestSession> => {
+    assertSecureBaseUrl(resolved.providerId, resolved.baseUrl);
+
     const apiKey = env[resolved.apiKeyEnv];
     if (apiKey === undefined || apiKey === "") {
       throw new LlmError(
@@ -328,6 +390,19 @@ export const createOpenAICompatClient = (
     }
 
     const url = joinUrl(resolved.baseUrl, path);
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(
+      () => {
+        timedOut = true;
+        controller.abort();
+      },
+      Math.max(0, timeoutMs),
+    );
+    const finish = (): void => {
+      clearTimeout(timer);
+    };
+
     let response: Response;
     try {
       response = await fetchFn(url, {
@@ -337,8 +412,13 @@ export const createOpenAICompatClient = (
           authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify(body),
+        signal: controller.signal,
       });
     } catch (cause) {
+      finish();
+      if (timedOut) {
+        throw timeoutError(resolved.providerId, url, timeoutMs);
+      }
       throw new LlmError(
         `no se pudo contactar con el proveedor "${resolved.providerId}" en ${url}`,
         {
@@ -348,10 +428,25 @@ export const createOpenAICompatClient = (
     }
 
     if (!response.ok) {
-      throw await toHttpError(response, url, apiKey);
+      try {
+        throw await toHttpError(response, url, apiKey);
+      } finally {
+        finish();
+      }
     }
 
-    return { response, url, apiKey };
+    return {
+      response,
+      url,
+      apiKey,
+      providerId: resolved.providerId,
+      timedOut: () => timedOut,
+      finish,
+      cancel: () => {
+        finish();
+        controller.abort();
+      },
+    };
   };
 
   const readJson = async (response: Response, url: string): Promise<unknown> => {
@@ -363,51 +458,82 @@ export const createOpenAICompatClient = (
     }
   };
 
+  const timeoutOf = (session: RequestSession): LlmError =>
+    timeoutError(session.providerId, session.url, timeoutMs);
+
   return {
     async chat(role: LLMRole, request: ChatRequest): Promise<ChatResponse> {
       const resolved = resolveRoleModel(llmConfig, role);
-      const { response, url } = await send(
+      const session = await send(
         resolved,
         "/chat/completions",
         buildChatBody(resolved.model, request, false),
       );
-      return parseChatResponse(await readJson(response, url));
+      try {
+        return parseChatResponse(await readJson(session.response, session.url));
+      } catch (error) {
+        if (session.timedOut()) {
+          throw timeoutOf(session);
+        }
+        throw error;
+      } finally {
+        session.finish();
+      }
     },
 
     async *chatStream(role: LLMRole, request: ChatRequest): AsyncIterable<ChatChunk> {
       const resolved = resolveRoleModel(llmConfig, role);
-      const { response, url, apiKey } = await send(
+      const session = await send(
         resolved,
         "/chat/completions",
         buildChatBody(resolved.model, request, true),
       );
-      if (response.body === null) {
-        throw new LlmError(`el proveedor no devolvió un cuerpo de streaming en ${url}`);
+      if (session.response.body === null) {
+        session.finish();
+        throw new LlmError(`el proveedor no devolvió un cuerpo de streaming en ${session.url}`);
       }
 
-      for await (const data of readSseEvents(response.body)) {
-        let raw: unknown;
-        try {
-          raw = JSON.parse(data);
-        } catch {
-          throw new LlmError(
-            `evento SSE con JSON inválido del proveedor en ${url}: ${redact(data.slice(0, 200), apiKey)}`,
-          );
+      try {
+        for await (const data of readSseEvents(session.response.body)) {
+          let raw: unknown;
+          try {
+            raw = JSON.parse(data);
+          } catch {
+            throw new LlmError(
+              `evento SSE con JSON inválido del proveedor en ${session.url}: ${redact(data.slice(0, 200), session.apiKey)}`,
+            );
+          }
+          const chunk = parseStreamChunk(raw);
+          if (chunk !== undefined) {
+            yield chunk;
+          }
         }
-        const chunk = parseStreamChunk(raw);
-        if (chunk !== undefined) {
-          yield chunk;
+      } catch (error) {
+        if (session.timedOut()) {
+          throw timeoutOf(session);
         }
+        throw error;
+      } finally {
+        session.cancel();
       }
     },
 
     async embed(role: LLMRole, texts: readonly string[]): Promise<number[][]> {
       const resolved = resolveRoleModel(llmConfig, role);
-      const { response, url } = await send(resolved, "/embeddings", {
+      const session = await send(resolved, "/embeddings", {
         model: resolved.model,
         input: [...texts],
       });
-      return parseEmbeddings(await readJson(response, url));
+      try {
+        return parseEmbeddings(await readJson(session.response, session.url));
+      } catch (error) {
+        if (session.timedOut()) {
+          throw timeoutOf(session);
+        }
+        throw error;
+      } finally {
+        session.finish();
+      }
     },
   };
 };

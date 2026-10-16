@@ -65,8 +65,17 @@ let token: string;
 
 const headers = (): Record<string, string> => ({ cookie: `${SESSION_COOKIE}=${token}` });
 
-const configure = (client: MockLLMClient): void => {
-  configureChat({ client, db: handle.db, vaultDir, locale: "es" });
+const configure = (
+  client: MockLLMClient,
+  rateLimit?: { readonly maxMensajes?: number; readonly ventanaMs?: number },
+): void => {
+  configureChat({
+    client,
+    db: handle.db,
+    vaultDir,
+    locale: "es",
+    ...(rateLimit === undefined ? {} : { rateLimit }),
+  });
 };
 
 const postMensaje = (
@@ -356,5 +365,50 @@ describe("POST /api/chat/mensajes", () => {
       "Memoria aprobada por la persona usuaria:",
     );
     expect(segundoPrompt.request.messages[0]?.content).toContain("- color favorito: azul");
+  });
+
+  it("aplica un tope de tokens a cada llamada del agente", async () => {
+    const client = new MockLLMClient({ responses: [finalTurn("Hola")] });
+    configure(client);
+
+    const res = await postMensaje({ mensaje: "hola" });
+
+    expect(res.status).toBe(200);
+    const call = client.calls[0];
+    if (call === undefined || call.method !== "chatStream") {
+      throw new Error("se esperaba una llamada de chatStream");
+    }
+    expect(call.request.options).toEqual({ maxTokens: 1024 });
+  });
+
+  it("limita a 8 las tool calls ejecutadas en un mismo paso", async () => {
+    const calls = Array.from({ length: 9 }, (_, index) =>
+      toolCall("listar_objetos", {}, `call-${index}`),
+    );
+    const client = new MockLLMClient({ responses: [toolTurn(calls), finalTurn("Hecho")] });
+    configure(client);
+
+    const res = await postMensaje({ mensaje: "lista todo" });
+
+    expect(res.status).toBe(200);
+    const { eventos } = await readEventos(res);
+    expect(eventos.filter((evento) => evento.tipo === "herramienta")).toHaveLength(8);
+    expect(eventos.at(-1)?.tipo).toBe("fin");
+    expect(client.calls.filter((call) => call.method === "chatStream")).toHaveLength(2);
+  });
+
+  it("answers 429 rate_limited when the session ip exceeds the message budget", async () => {
+    const client = new MockLLMClient({ responses: [finalTurn("Uno"), finalTurn("Dos")] });
+    configure(client, { maxMensajes: 2, ventanaMs: 60_000 });
+
+    const primera = await postMensaje({ mensaje: "uno" });
+    const segunda = await postMensaje({ mensaje: "dos" });
+    const bloqueada = await postMensaje({ mensaje: "tres" });
+
+    expect(primera.status).toBe(200);
+    expect(segunda.status).toBe(200);
+    expect(bloqueada.status).toBe(429);
+    expect((await errorOf(bloqueada)).error.codigo).toBe("rate_limited");
+    expect(client.calls).toHaveLength(2);
   });
 });

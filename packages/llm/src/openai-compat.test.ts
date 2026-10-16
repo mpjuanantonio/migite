@@ -92,6 +92,16 @@ const clientWith = (
   env: Readonly<Record<string, string | undefined>> = { CLAVE_A: "clave-a" },
 ) => createOpenAICompatClient(configA, { fetch, env });
 
+const configConBaseUrl = (baseUrl: string): LlmConfig => ({
+  providers: [{ id: "proveedor-test", baseUrl, apiKeyEnv: "CLAVE_A" }],
+  roles: {
+    chat: { provider: "proveedor-test", model: "modelo-test" },
+    retrieve: { provider: "proveedor-test", model: "modelo-test" },
+    summarize: { provider: "proveedor-test", model: "modelo-test" },
+    embeddings: { provider: "proveedor-test", model: "modelo-test" },
+  },
+});
+
 describe("createOpenAICompatClient", () => {
   it("cambiar de proveedor = cambiar configuración", async () => {
     const calls: { url: string; init: RequestInit }[] = [];
@@ -483,6 +493,143 @@ describe("createOpenAICompatClient", () => {
       /SSE con JSON inválido/,
     );
   });
+
+  it.each([
+    ["sin separador", (line: string) => line],
+    ["con separador", (line: string) => `${line}\r\n\r\n`],
+  ])("rechaza un evento SSE gigante (%s) sin acumular el buffer", async (_case, wrap) => {
+    const line = `data: ${"a".repeat(1_100_000)}`;
+    const client = clientWith(async () => streamResponse([wrap(line)]));
+
+    const error = await capturedError(collect(client.chatStream("chat", chatRequest)));
+
+    expect(error.message).toMatch(/supera el máximo/);
+  });
+
+  it("rechaza una respuesta de streaming que supera el máximo total de bytes", async () => {
+    const event = `data: ${JSON.stringify({ choices: [{ delta: { content: "x" } }] })}\r\n\r\n`;
+    const client = clientWith(async () => streamResponse([event.repeat(200_000)]));
+
+    const error = await capturedError(collect(client.chatStream("chat", chatRequest)));
+
+    expect(error.message).toMatch(/supera el máximo/);
+  });
+
+  it("aborta la petición y falla con error claro al agotar el tiempo de espera", async () => {
+    let signal: AbortSignal | undefined;
+    const client = createOpenAICompatClient(configA, {
+      timeoutMs: 10,
+      env: { CLAVE_A: "clave-a" },
+      fetch: (_url, init) => {
+        signal = init.signal ?? undefined;
+        return new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () => reject(new Error("abortado")));
+        });
+      },
+    });
+
+    const error = await capturedError(client.chat("chat", chatRequest));
+
+    expect(error.message).toMatch(/tiempo de espera agotado/);
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it("aborta el stream al agotar el tiempo de espera", async () => {
+    let signal: AbortSignal | undefined;
+    const client = createOpenAICompatClient(configA, {
+      timeoutMs: 10,
+      env: { CLAVE_A: "clave-a" },
+      fetch: async (_url, init) => {
+        signal = init.signal ?? undefined;
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            init.signal?.addEventListener("abort", () => controller.error(new Error("abortado")));
+          },
+        });
+        return new Response(body, { status: 200 });
+      },
+    });
+
+    const error = await capturedError(collect(client.chatStream("chat", chatRequest)));
+
+    expect(error.message).toMatch(/tiempo de espera agotado/);
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it("aborta la petición al terminar el stream", async () => {
+    let signal: AbortSignal | undefined;
+    const client = createOpenAICompatClient(configA, {
+      env: { CLAVE_A: "clave-a" },
+      fetch: async (_url, init) => {
+        signal = init.signal ?? undefined;
+        return streamResponse([
+          sseEvent({ choices: [{ delta: { content: "hola" }, finish_reason: "stop" }] }),
+          "data: [DONE]\r\n\r\n",
+        ]);
+      },
+    });
+
+    await collect(client.chatStream("chat", chatRequest));
+
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it("aborta la petición si se deja de consumir el stream", async () => {
+    let signal: AbortSignal | undefined;
+    const client = createOpenAICompatClient(configA, {
+      env: { CLAVE_A: "clave-a" },
+      fetch: async (_url, init) => {
+        signal = init.signal ?? undefined;
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(
+                new TextEncoder().encode(sseEvent({ choices: [{ delta: { content: "hola" } }] })),
+              );
+            },
+          }),
+          { status: 200 },
+        );
+      },
+    });
+
+    const iterator = client.chatStream("chat", chatRequest)[Symbol.asyncIterator]();
+    await iterator.next();
+    await iterator.return?.();
+
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it("rechaza una baseUrl http:// que no sea loopback sin llegar a llamar al proveedor", async () => {
+    let called = false;
+    const client = createOpenAICompatClient(configConBaseUrl("http://api.insegura.test/v1"), {
+      fetch: async () => {
+        called = true;
+        return jsonResponse(chatResponseBody);
+      },
+      env: { CLAVE_A: "clave-a" },
+    });
+
+    const error = await capturedError(client.chat("chat", chatRequest));
+
+    expect(error.message).toContain("http://");
+    expect(error.message).toContain("https");
+    expect(called).toBe(false);
+  });
+
+  it.each(["http://localhost:11434/v1", "http://127.0.0.1:11434/v1", "http://[::1]:11434/v1"])(
+    "permite http:// en loopback (%s)",
+    async (baseUrl) => {
+      const client = createOpenAICompatClient(configConBaseUrl(baseUrl), {
+        fetch: async () => jsonResponse(chatResponseBody),
+        env: { CLAVE_A: "clave-a" },
+      });
+
+      await expect(client.chat("chat", chatRequest)).resolves.toMatchObject({
+        message: { content: "hola" },
+      });
+    },
+  );
 
   it("propaga el error de un rol no configurado", async () => {
     const incomplete = {

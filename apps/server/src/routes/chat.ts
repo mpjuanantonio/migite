@@ -1,3 +1,4 @@
+import { getConnInfo } from "@hono/node-server/conninfo";
 import {
   type ChatStreamEvent,
   chatMensajeBodySchema,
@@ -8,6 +9,7 @@ import { type IndexDatabase, listarMemorias } from "@migite/index";
 import {
   type AgentStreamEvent,
   buildSystemPrompt,
+  type ChatChunk,
   createAgentRuntime,
   describeError,
   type LLMClient,
@@ -27,18 +29,78 @@ import {
   registrarMensaje,
 } from "../services/conversations.js";
 
+const CHAT_MAX_TOKENS = 1024;
+const MAX_HERRAMIENTAS_POR_PASO = 8;
+const MAX_MENSAJES_POR_MINUTO = 20;
+const VENTANA_RATE_LIMIT_MS = 60_000;
+
+export type ChatRateLimitOptions = {
+  readonly maxMensajes?: number;
+  readonly ventanaMs?: number;
+};
+
 export type ChatDeps = {
   readonly client: LLMClient;
   readonly db: IndexDatabase;
   readonly vaultDir: string;
   readonly timeZone?: string;
   readonly locale?: Locale;
+  readonly rateLimit?: ChatRateLimitOptions;
+};
+
+type RegistroMensajes = {
+  mensajes: number;
+  expiraEn: number;
+};
+
+const createRateLimiter = (options: ChatRateLimitOptions = {}) => {
+  const maxMensajes = options.maxMensajes ?? MAX_MENSAJES_POR_MINUTO;
+  const ventanaMs = options.ventanaMs ?? VENTANA_RATE_LIMIT_MS;
+  const registros = new Map<string, RegistroMensajes>();
+
+  const vigente = (ip: string, ahora: number): RegistroMensajes | undefined => {
+    const registro = registros.get(ip);
+    if (registro === undefined) {
+      return undefined;
+    }
+    if (registro.expiraEn <= ahora) {
+      registros.delete(ip);
+      return undefined;
+    }
+    return registro;
+  };
+
+  return {
+    permitir: (ip: string): boolean => {
+      const ahora = Date.now();
+      const registro = vigente(ip, ahora);
+      if (registro === undefined) {
+        registros.set(ip, { mensajes: 1, expiraEn: ahora + ventanaMs });
+        return true;
+      }
+      if (registro.mensajes >= maxMensajes) {
+        return false;
+      }
+      registro.mensajes += 1;
+      return true;
+    },
+  };
+};
+
+const clientIp = (c: Context<ServerEnv>): string => {
+  try {
+    return getConnInfo(c).remote.address ?? "local";
+  } catch {
+    return "local";
+  }
 };
 
 let deps: ChatDeps | undefined;
+let limiter = createRateLimiter();
 
 export const configureChat = (next: ChatDeps): void => {
   deps = next;
+  limiter = createRateLimiter(next.rateLimit);
 };
 
 const currentDeps = (): ChatDeps => {
@@ -66,12 +128,45 @@ const toWireEvent = (event: AgentStreamEvent): ChatStreamEvent | undefined => {
   return undefined;
 };
 
+const limitarToolCalls = async function* (
+  source: AsyncIterable<ChatChunk>,
+): AsyncGenerator<ChatChunk> {
+  for await (const chunk of source) {
+    if (chunk.toolCallDeltas === undefined) {
+      yield chunk;
+      continue;
+    }
+    const toolCallDeltas = chunk.toolCallDeltas.filter(
+      (delta) => delta.index < MAX_HERRAMIENTAS_POR_PASO,
+    );
+    yield { ...chunk, toolCallDeltas };
+  }
+};
+
+const conTopeDeHerramientas = (client: LLMClient): LLMClient => ({
+  chat: (role, request) => client.chat(role, request),
+  embed: (role, texts) => client.embed(role, texts),
+  chatStream: (role, request) => limitarToolCalls(client.chatStream(role, request)),
+});
+
 export const chatRouter = new Hono<ServerEnv>();
 
 chatRouter.post("/mensajes", async (c) => {
   const body = chatMensajeBodySchema.parse(await readJson(c));
   const actual = currentDeps();
   const locale = resolveLocale(c.req.header("accept-language"), actual.locale ?? defaultLocale);
+  if (!limiter.permitir(clientIp(c))) {
+    return c.json(
+      {
+        error: {
+          codigo: "rate_limited",
+          mensaje: t("error.rateLimited", undefined, locale),
+        },
+      },
+      429,
+    );
+  }
+
   const conversations: ConversationsDeps = { db: actual.db };
   const conversacion = abrirConversacion(conversations, body.conversacionId);
   const history = historialDeConversacion(conversations, conversacion.id).map((mensaje) => ({
@@ -88,7 +183,7 @@ chatRouter.post("/mensajes", async (c) => {
     vaultDir: actual.vaultDir,
     ...(actual.timeZone === undefined ? {} : { timeZone: actual.timeZone }),
   });
-  const runtime = createAgentRuntime({ client: actual.client, registry });
+  const runtime = createAgentRuntime({ client: conTopeDeHerramientas(actual.client), registry });
 
   return streamSSE(c, async (stream) => {
     const write = (event: ChatStreamEvent): Promise<void> =>
@@ -97,6 +192,7 @@ chatRouter.post("/mensajes", async (c) => {
       systemPrompt: buildSystemPrompt({ locale, memorias: listarMemorias(actual.db) }),
       history,
       userMessage: body.mensaje,
+      options: { maxTokens: CHAT_MAX_TOKENS },
     });
     const iterator = run[Symbol.asyncIterator]();
 
