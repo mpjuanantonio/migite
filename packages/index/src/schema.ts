@@ -104,6 +104,17 @@ export const acciones = sqliteTable(
   (table) => [index("acciones_estado_idx").on(table.estado)],
 );
 
+export const memorias = sqliteTable(
+  "memorias",
+  {
+    id: text("id").primaryKey(),
+    clave: text("clave").notNull(),
+    contenido: text("contenido").notNull(),
+    actualizada: text("actualizada").notNull(),
+  },
+  (table) => [uniqueIndex("memorias_clave_unique").on(table.clave)],
+);
+
 export const conversaciones = sqliteTable("conversaciones", {
   id: text("id").primaryKey(),
   titulo: text("titulo"),

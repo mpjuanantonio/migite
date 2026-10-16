@@ -15,6 +15,13 @@
       "when": 1792177688213,
       "tag": "0002_acciones_detalle_resultado",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1792181465959,
+      "tag": "0003_memorias",
+      "breakpoints": true
     }
   ]
 }

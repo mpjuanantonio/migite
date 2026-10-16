@@ -14,6 +14,8 @@ export {
   ESTADOS_ACCION,
   type EstadoAccion,
   editarObjetoPayloadSchema,
+  type GuardarMemoriaPayload,
+  guardarMemoriaPayloadSchema,
   type TipoAccion,
   tipoAccionSchema,
 } from "./acciones.js";
@@ -52,6 +54,14 @@ export {
   tiposListSchema,
 } from "./envelopes.js";
 export { type ErrorBody, errorBodySchema } from "./error.js";
+export {
+  type ActualizarMemoriaBody,
+  actualizarMemoriaBodySchema,
+  type Memoria,
+  type MemoriasList,
+  memoriaSchema,
+  memoriasListSchema,
+} from "./memories.js";
 export {
   type ArbolObjetoNode,
   type ArbolObjetos,

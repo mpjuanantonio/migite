@@ -9,7 +9,12 @@ export const accionEstadoSchema = z.enum(ESTADOS_ACCION);
 
 export type EstadoAccion = z.infer<typeof accionEstadoSchema>;
 
-export const tipoAccionSchema = z.enum(["crear_objeto", "editar_objeto", "borrar_objeto"]);
+export const tipoAccionSchema = z.enum([
+  "crear_objeto",
+  "editar_objeto",
+  "borrar_objeto",
+  "guardar_memoria",
+]);
 
 export type TipoAccion = z.infer<typeof tipoAccionSchema>;
 
@@ -29,6 +34,13 @@ export const borrarObjetoPayloadSchema = z.strictObject({
 });
 
 export type BorrarObjetoPayload = z.infer<typeof borrarObjetoPayloadSchema>;
+
+export const guardarMemoriaPayloadSchema = z.strictObject({
+  clave: nonEmptyText,
+  contenido: nonEmptyText,
+});
+
+export type GuardarMemoriaPayload = z.infer<typeof guardarMemoriaPayloadSchema>;
 
 const accionShape = {
   id: z.string(),
@@ -53,6 +65,11 @@ export const accionPropuestaSchema = z.discriminatedUnion("tipoAccion", [
     ...accionShape,
     tipoAccion: z.literal("borrar_objeto"),
     payload: borrarObjetoPayloadSchema,
+  }),
+  z.object({
+    ...accionShape,
+    tipoAccion: z.literal("guardar_memoria"),
+    payload: guardarMemoriaPayloadSchema,
   }),
 ]);
 

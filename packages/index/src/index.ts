@@ -43,6 +43,16 @@ export {
   type TitleCache,
 } from "./indexer.js";
 export {
+  type ActualizarMemoriaInput,
+  actualizarMemoria,
+  borrarMemoria,
+  type GuardarMemoriaInput,
+  guardarMemoria,
+  listarMemorias,
+  type MemoriaRecord,
+  obtenerMemoria,
+} from "./memories.js";
+export {
   type IndexDatabase,
   IndexError,
   type IndexHandle,
@@ -61,6 +71,7 @@ export {
   fragmentos,
   LINK_CONTEXTS,
   type LinkContext,
+  memorias,
   mensajes,
   meta,
   objetos,

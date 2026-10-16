@@ -38,6 +38,8 @@ export const resumirAccion = (accion: Accion, t: Traductor): string => {
       return t("page.chat.summary.edit", { titulo: payload.cambios.titulo ?? payload.id });
     case "borrar_objeto":
       return t("page.chat.summary.delete", { titulo: payload.id });
+    default:
+      return t("page.chat.summary.unknown", { tipo: tipoAccion });
   }
 };
 
