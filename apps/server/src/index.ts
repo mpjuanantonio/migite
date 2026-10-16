@@ -3,10 +3,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { loadConfig } from "@migite/core";
+import { createOpenAICompatClient } from "@migite/llm";
 import { createApp } from "./app.js";
 import { loadAuthConfig } from "./auth.js";
 import { configureAcciones } from "./routes/acciones.js";
 import { configureBuscar } from "./routes/buscar.js";
+import { configureChat } from "./routes/chat.js";
 import { configureExport } from "./routes/export.js";
 import { configureHealth } from "./routes/health.js";
 import { configureObjetos } from "./routes/objetos.js";
@@ -49,6 +51,13 @@ const start = (): void => {
     db: runtime.db,
     vaultDir: runtime.vaultDir,
     timeZone: config.app.timeZone,
+  });
+  configureChat({
+    client: createOpenAICompatClient(config.llm),
+    db: runtime.db,
+    vaultDir: runtime.vaultDir,
+    timeZone: config.app.timeZone,
+    locale: config.app.locale,
   });
   configureTipos({ tiposDir: join(runtime.vaultDir, "tipos") });
   configureBuscar({ db: runtime.db });
