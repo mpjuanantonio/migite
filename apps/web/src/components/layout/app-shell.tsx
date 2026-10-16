@@ -6,6 +6,7 @@ import {
   LayoutList,
   LogOut,
   type LucideIcon,
+  MessageSquare,
   NotebookPen,
   Search,
   Shapes,
@@ -44,6 +45,10 @@ const SECCION_PRODUCTIVIDAD: readonly Section[] = [
 const SECCION_GESTION: readonly Section[] = [
   { to: "/tipos", labelKey: "nav.tipos", icon: Shapes },
   { to: "/buscar", labelKey: "nav.buscar", icon: Search },
+];
+
+const SECCION_ASISTENTE: readonly Section[] = [
+  { to: "/chat", labelKey: "nav.chat", icon: MessageSquare },
 ];
 
 const ESTILO_GRUPO = "px-3 pt-1 text-xs font-medium tracking-wide text-muted-foreground uppercase";
@@ -96,6 +101,7 @@ export const AppShell = () => {
   const tipos = useTipos();
   const idGrupoNotas = useId();
   const idGrupoProductividad = useId();
+  const idGrupoAsistente = useId();
   const [carpeta, setCarpeta] = useState<string | undefined>(undefined);
   const barra = useBarraSecundaria(EXPLORADOR_PANEL_KEY);
 
@@ -214,6 +220,20 @@ export const AppShell = () => {
                 <li key={tipo.id}>
                   <EnlaceNav to={`/tipo/${encodeURIComponent(tipo.id)}`} icon={FileText}>
                     {tipo.nombre}
+                  </EnlaceNav>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="flex flex-col gap-1">
+            <h2 id={idGrupoAsistente} className={ESTILO_GRUPO}>
+              {t("shell.navGroupAsistente")}
+            </h2>
+            <ul aria-labelledby={idGrupoAsistente} className="flex flex-col gap-1">
+              {SECCION_ASISTENTE.map((section) => (
+                <li key={section.to}>
+                  <EnlaceNav to={section.to} icon={section.icon}>
+                    {t(section.labelKey)}
                   </EnlaceNav>
                 </li>
               ))}

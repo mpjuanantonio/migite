@@ -122,6 +122,7 @@ describe("barra lateral agrupada", () => {
       "Recordatorios",
       "Calendario",
       "Proyectos",
+      "Chat",
       "Tipos",
       "Buscar",
     ]) {

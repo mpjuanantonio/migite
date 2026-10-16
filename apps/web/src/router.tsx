@@ -12,6 +12,7 @@ import { useSesion } from "@/api/hooks";
 import { AppShell } from "@/components/layout/app-shell";
 import { BuscarPage } from "@/pages/buscar-page";
 import { CalendarioPage } from "@/pages/calendario-page";
+import { ChatPage } from "@/pages/chat-page";
 import { LoginPage, readLoginDestino } from "@/pages/login-page";
 import { NotasPage } from "@/pages/notas-page";
 import { ObjetoPage } from "@/pages/objeto-page";
@@ -96,6 +97,7 @@ export const routes: RouteObject[] = [
           { path: "calendario", element: <CalendarioPage /> },
           { path: "proyectos", element: <ProyectosPage /> },
           { path: "proyectos/:id", element: <ProyectoPage /> },
+          { path: "chat", element: <ChatPage /> },
           { path: "tipo/:id", element: <TipoObjetosPage /> },
           { path: "tipos", element: <TiposPage /> },
           { path: "tipos/nuevo", element: <TipoNuevoPage /> },

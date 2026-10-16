@@ -53,6 +53,7 @@ describe("shell de la SPA", () => {
       "Recordatorios",
       "Calendario",
       "Proyectos",
+      "Chat",
       "Tipos",
       "Buscar",
     ]) {
