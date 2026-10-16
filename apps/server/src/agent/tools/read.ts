@@ -26,6 +26,15 @@ export const LIMITE_LISTADO_OBJETOS = 20;
 
 export const MAX_LIMITE_LISTADO_OBJETOS = 100;
 
+export const DELIMITADOR_DATOS_VAULT_INICIO = "<datos_vault>";
+
+export const DELIMITADOR_DATOS_VAULT_FIN = "</datos_vault>";
+
+// Espejo del delimitador de @migite/llm (no reexportado): los campos de texto del vault
+// viajan marcados como datos para que el modelo no los interprete como instrucciones.
+const datoDeVault = (valor: string): string =>
+  `${DELIMITADOR_DATOS_VAULT_INICIO}${valor}${DELIMITADOR_DATOS_VAULT_FIN}`;
+
 const MAX_QUERY_LENGTH = 512;
 
 const jsonValue = (value: unknown): JsonValue => {
@@ -127,10 +136,10 @@ export const registrarHerramientasDeLectura = (
       resultados: rows.map((row) => ({
         id: row.id,
         tipo: row.tipo,
-        titulo: row.titulo,
-        ruta: row.ruta,
+        titulo: datoDeVault(row.titulo),
+        ruta: datoDeVault(row.ruta),
         actualizado: row.actualizado,
-        ...(row.snippet === undefined ? {} : { fragmento: row.snippet }),
+        ...(row.snippet === undefined ? {} : { fragmento: datoDeVault(row.snippet) }),
         fuente: cita(row),
       })),
       ...(rows.length === 0 ? { mensaje: `sin resultados para «${query}»` } : {}),
@@ -141,10 +150,10 @@ export const registrarHerramientasDeLectura = (
     const result = repositorio().readObject(id_o_titulo);
     if (!result.ok) {
       return {
-        titulo: result.degraded.title,
-        ruta: result.path,
+        titulo: datoDeVault(result.degraded.title),
+        ruta: datoDeVault(result.path),
         atributos: jsonObject(result.degraded.attributes),
-        cuerpo: result.degraded.body,
+        cuerpo: datoDeVault(result.degraded.body),
         degradado: {
           razones: [{ kind: "unreadableFrontmatter", problems: [...result.problems] }],
         },
@@ -154,13 +163,13 @@ export const registrarHerramientasDeLectura = (
     return {
       id: object.id,
       tipo: object.type,
-      titulo: object.title,
-      ruta: object.path,
+      titulo: datoDeVault(object.title),
+      ruta: datoDeVault(object.path),
       carpeta: object.folder,
       creado: object.created,
       actualizado: object.updated,
       atributos: jsonObject(object.attributes),
-      cuerpo: object.body,
+      cuerpo: datoDeVault(object.body),
       enlaces: [...object.links],
       ...(object.degraded.length === 0
         ? {}
@@ -187,8 +196,8 @@ export const registrarHerramientasDeLectura = (
       objetos: rows.map((row) => ({
         id: row.id,
         tipo: row.tipo,
-        titulo: row.titulo,
-        ruta: row.ruta,
+        titulo: datoDeVault(row.titulo),
+        ruta: datoDeVault(row.ruta),
         actualizado: row.actualizado,
       })),
       ...(rows.length === 0 ? { mensaje: "no hay objetos que cumplan los filtros" } : {}),

@@ -1,4 +1,5 @@
 import { describeError } from "./errors.js";
+import { envolverDatosVault } from "./prompt.js";
 import type { ToolRegistry } from "./tools.js";
 import type {
   ChatChunk,
@@ -119,6 +120,20 @@ const truncate = (text: string, limit: number): string => {
   const omitted = text.length - safeLimit;
   return `${text.slice(0, safeLimit)}…[truncado: ${omitted} caracteres omitidos]`;
 };
+
+const esResultadoEstructurado = (content: string): boolean => {
+  try {
+    const parsed: unknown = JSON.parse(content);
+    return typeof parsed === "object" && parsed !== null;
+  } catch {
+    return false;
+  }
+};
+
+// Punto único: el texto libre de una herramienta se marca como datos del usuario; los
+// resultados JSON ya delimitan sus propios campos de usuario (ver herramientas de lectura).
+const contenidoDeHerramienta = (content: string): string =>
+  esResultadoEstructurado(content) ? content : envolverDatosVault(content);
 
 const timeoutMessage = (timeoutMs: number): string =>
   `tiempo de espera agotado (timeoutMs=${timeoutMs})`;
@@ -353,7 +368,7 @@ const createAgentLoop = (options: AgentRuntimeOptions, streaming: boolean): Agen
         yield end;
         messages.push({
           role: "tool",
-          content: truncate(execution.content, maxToolResultChars),
+          content: contenidoDeHerramienta(truncate(execution.content, maxToolResultChars)),
           toolCallId: toolCall.id,
           name: toolCall.name,
         });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { MockLLMClient } from "./mock.js";
+import { envolverDatosVault } from "./prompt.js";
 import { type AgentRunResult, type AgentStreamEvent, createAgentRuntime } from "./runtime.js";
 import { ToolRegistry } from "./tools.js";
 import type {
@@ -239,7 +240,7 @@ describe("AgentRuntime.runStream", () => {
     expect(requests).toHaveLength(2);
     expect(requests[1]?.messages.at(-1)).toEqual({
       role: "tool",
-      content: "contenido de n1",
+      content: envolverDatosVault("contenido de n1"),
       toolCallId: "call-1",
       name: "leer_objeto",
     });

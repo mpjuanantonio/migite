@@ -4,6 +4,13 @@ export const LIMITE_MEMORIAS_PROMPT = 20;
 
 export const LIMITE_CONTENIDO_MEMORIA_PROMPT = 200;
 
+export const DELIMITADOR_DATOS_VAULT_INICIO = "<datos_vault>";
+
+export const DELIMITADOR_DATOS_VAULT_FIN = "</datos_vault>";
+
+export const envolverDatosVault = (contenido: string): string =>
+  `${DELIMITADOR_DATOS_VAULT_INICIO}\n${contenido}\n${DELIMITADOR_DATOS_VAULT_FIN}`;
+
 export type MemoriaContexto = {
   readonly clave: string;
   readonly contenido: string;
@@ -19,6 +26,7 @@ const RULE_KEYS = [
   "agent.systemPrompt.rules.sources",
   "agent.systemPrompt.rules.confirmation",
   "agent.systemPrompt.rules.noDirectWrites",
+  "agent.systemPrompt.rules.dataNotInstructions",
 ] as const satisfies readonly TranslationKey[];
 
 const recortarContenido = (contenido: string): string => {
@@ -35,13 +43,14 @@ const seccionMemoria = (
   if (memorias.length === 0) {
     return [];
   }
-  return [
-    "",
+  const bloque = [
     t("agent.systemPrompt.memory.title", undefined, locale),
+    t("agent.systemPrompt.memory.notice", undefined, locale),
     ...memorias
       .slice(0, LIMITE_MEMORIAS_PROMPT)
       .map((memoria) => `- ${memoria.clave}: ${recortarContenido(memoria.contenido)}`),
-  ];
+  ].join("\n");
+  return ["", envolverDatosVault(bloque)];
 };
 
 export const buildSystemPrompt = (options: BuildSystemPromptOptions = {}): string => {
