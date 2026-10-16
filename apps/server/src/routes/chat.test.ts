@@ -2,8 +2,15 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type ChatStreamEvent, chatStreamEventSchema } from "@migite/contracts";
-import { bootstrapVault } from "@migite/core";
-import { actualizarEstadoAccion, crearAccion, type IndexHandle, openIndex } from "@migite/index";
+import { bootstrapVault, isUlid } from "@migite/core";
+import {
+  actualizarEstadoAccion,
+  crearAccion,
+  type IndexHandle,
+  listarConversaciones,
+  listarMensajes,
+  openIndex,
+} from "@migite/index";
 import { type ChatResponse, MockLLMClient, type ToolCall } from "@migite/llm";
 import type { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -99,6 +106,14 @@ const readEventos = async (res: Response): Promise<StreamBody> => {
 
 const errorOf = async (res: Response): Promise<ErrorBody> => (await res.json()) as ErrorBody;
 
+const conversacionIdDe = (eventos: readonly ChatStreamEvent[]): string => {
+  const fin = eventos.at(-1);
+  if (fin?.tipo !== "fin" || fin.conversacionId === undefined) {
+    throw new Error("falta el evento de fin con conversacionId");
+  }
+  return fin.conversacionId;
+};
+
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "migite-chat-api-"));
   vaultDir = join(root, "vault");
@@ -124,14 +139,16 @@ describe("POST /api/chat/mensajes", () => {
   });
 
   it("answers 400 as JSON when the body is invalid", async () => {
-    const res = await postMensaje({ mensaje: "" });
+    for (const body of [{}, { mensaje: "" }, { mensaje: "hola", historial: [] }]) {
+      const res = await postMensaje(body);
 
-    expect(res.status).toBe(400);
-    expect(res.headers.get("content-type")).toContain("application/json");
-    expect((await errorOf(res)).error.codigo).toBe("validation_error");
+      expect(res.status).toBe(400);
+      expect(res.headers.get("content-type")).toContain("application/json");
+      expect((await errorOf(res)).error.codigo).toBe("validation_error");
+    }
   });
 
-  it("streams delta, tool and fin with the pending proposals", async () => {
+  it("streams delta, tool and fin with the pending proposals and the conversation id", async () => {
     const pendiente = crearAccion(handle.db, {
       tipoAccion: "crear_objeto",
       payload: { titulo: "Pendiente" },
@@ -172,6 +189,19 @@ describe("POST /api/chat/mensajes", () => {
     expect(fin.accionesPropuestas.map((accion) => accion.id)).toEqual([pendiente.id]);
     expect(fin.accionesPropuestas[0]?.estado).toBe("pendiente");
     expect(fin.accionesPropuestas[0]?.tipoAccion).toBe("crear_objeto");
+    expect(fin.conversacionId).toBeDefined();
+    const conversacionId = conversacionIdDe(eventos);
+    expect(isUlid(conversacionId)).toBe(true);
+
+    const [conversacion] = listarConversaciones(handle.db);
+    expect(conversacion?.id).toBe(conversacionId);
+    expect(conversacion?.titulo).toBe("¿qué tengo?");
+    expect(
+      listarMensajes(handle.db, conversacionId).map((mensaje) => [mensaje.rol, mensaje.contenido]),
+    ).toEqual([
+      ["user", "¿qué tengo?"],
+      ["assistant", "No hay objetos."],
+    ]);
 
     const first = client.calls[0];
     if (first === undefined || first.method !== "chatStream") {
@@ -182,26 +212,26 @@ describe("POST /api/chat/mensajes", () => {
     expect(first.request.messages.at(-1)).toEqual({ role: "user", content: "¿qué tengo?" });
   });
 
-  it("forwards the history and resolves the locale from the header", async () => {
-    const client = new MockLLMClient({ responses: [finalTurn("Hello")] });
+  it("reuses the persisted history when the conversation id is given", async () => {
+    const client = new MockLLMClient({
+      responses: [finalTurn("Hola"), finalTurn("Sigo")],
+    });
     configure(client);
 
+    const first = await postMensaje({ mensaje: "hola" });
+    const conversacionId = conversacionIdDe((await readEventos(first)).eventos);
+
     const res = await postMensaje(
-      {
-        mensaje: "hi",
-        historial: [
-          { role: "user", content: "hola" },
-          { role: "assistant", content: "buenas" },
-        ],
-      },
+      { conversacionId, mensaje: "sigue" },
       { acceptLanguage: "en-GB,en;q=0.9" },
     );
 
     expect(res.status).toBe(200);
     const { eventos } = await readEventos(res);
     expect(eventos.at(-1)?.tipo).toBe("fin");
+    expect(conversacionIdDe(eventos)).toBe(conversacionId);
 
-    const call = client.calls[0];
+    const call = client.calls[1];
     if (call === undefined || call.method !== "chatStream") {
       throw new Error("se esperaba una llamada de chatStream");
     }
@@ -211,7 +241,37 @@ describe("POST /api/chat/mensajes", () => {
       "assistant",
       "user",
     ]);
+    expect(call.request.messages.slice(1)).toEqual([
+      { role: "user", content: "hola" },
+      { role: "assistant", content: "Hola" },
+      { role: "user", content: "sigue" },
+    ]);
     expect(call.request.messages[0]?.content).toContain("You are the Migite assistant");
+
+    expect(
+      listarMensajes(handle.db, conversacionId).map((mensaje) => [mensaje.rol, mensaje.contenido]),
+    ).toEqual([
+      ["user", "hola"],
+      ["assistant", "Hola"],
+      ["user", "sigue"],
+      ["assistant", "Sigo"],
+    ]);
+    expect(listarConversaciones(handle.db)).toHaveLength(1);
+  });
+
+  it("answers 404 for an unknown conversation", async () => {
+    const client = new MockLLMClient({ responses: [finalTurn("Hola")] });
+    configure(client);
+
+    const res = await postMensaje({
+      conversacionId: "01JCONVERSACION0000000000000",
+      mensaje: "hola",
+    });
+
+    expect(res.status).toBe(404);
+    expect((await errorOf(res)).error.codigo).toBe("conversation_not_found");
+    expect(client.calls).toHaveLength(0);
+    expect(listarConversaciones(handle.db)).toEqual([]);
   });
 
   it("emits an error event when the run fails", async () => {
@@ -224,5 +284,13 @@ describe("POST /api/chat/mensajes", () => {
     expect(res.headers.get("content-type")).toContain("text/event-stream");
     const { eventos } = await readEventos(res);
     expect(eventos).toEqual([{ tipo: "error", mensaje: "proveedor caído" }]);
+
+    const [conversacion] = listarConversaciones(handle.db);
+    if (conversacion === undefined) {
+      throw new Error("falta la conversación");
+    }
+    expect(listarMensajes(handle.db, conversacion.id).map((mensaje) => mensaje.rol)).toEqual([
+      "user",
+    ]);
   });
 });

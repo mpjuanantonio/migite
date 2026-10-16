@@ -16,6 +16,7 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { ServerEnv } from "../env.js";
 import { createRequestId, writeLog } from "../logs.js";
 import { ActionError } from "../services/acciones.js";
+import { ConversationError } from "../services/conversations.js";
 
 export type ErrorCode =
   | "action_conflict"
@@ -26,6 +27,7 @@ export type ErrorCode =
   | "config_error"
   | "confirmation_required"
   | "conflict"
+  | "conversation_not_found"
   | "forbidden"
   | "index_error"
   | "internal_error"
@@ -50,6 +52,7 @@ const CODE_STATUS: Readonly<Record<ErrorCode, ContentfulStatusCode>> = {
   config_error: 500,
   confirmation_required: 409,
   conflict: 409,
+  conversation_not_found: 404,
   forbidden: 403,
   index_error: 500,
   internal_error: 500,
@@ -89,6 +92,7 @@ const CODE_MESSAGES: Readonly<Partial<Record<ErrorCode, TranslationKey>>> = {
   bad_request: "error.badRequest",
   confirmation_required: "error.confirmationRequired",
   conflict: "error.conflict",
+  conversation_not_found: "error.notFound",
   forbidden: "error.forbidden",
   index_error: "error.indexError",
   internal_error: "error.internalError",
@@ -252,6 +256,16 @@ const describeError = (error: Error, locale: Locale): ApiError => {
     };
   }
   if (error instanceof ActionError) {
+    return {
+      codigo: error.codigo,
+      status: CODE_STATUS[error.codigo],
+      mensaje: codeMessage(error.codigo, locale),
+      detalle: internalMessage(error),
+      problems: [],
+      stack: error.stack,
+    };
+  }
+  if (error instanceof ConversationError) {
     return {
       codigo: error.codigo,
       status: CODE_STATUS[error.codigo],

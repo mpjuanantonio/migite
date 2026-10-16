@@ -9,6 +9,7 @@ import { loadAuthConfig } from "./auth.js";
 import { configureAcciones } from "./routes/acciones.js";
 import { configureBuscar } from "./routes/buscar.js";
 import { configureChat } from "./routes/chat.js";
+import { configureConversaciones } from "./routes/conversaciones.js";
 import { configureExport } from "./routes/export.js";
 import { configureHealth } from "./routes/health.js";
 import { configureObjetos } from "./routes/objetos.js";
@@ -59,6 +60,7 @@ const start = (): void => {
     timeZone: config.app.timeZone,
     locale: config.app.locale,
   });
+  configureConversaciones({ db: runtime.db });
   configureTipos({ tiposDir: join(runtime.vaultDir, "tipos") });
   configureBuscar({ db: runtime.db });
   configureExport({ vaultDir: runtime.vaultDir });

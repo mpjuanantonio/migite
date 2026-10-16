@@ -20,6 +20,12 @@ import { crearRegistroDelAgente } from "../agent/registry.js";
 import type { ServerEnv } from "../env.js";
 import { resolveLocale } from "../middleware/errors.js";
 import { listarAcciones } from "../services/acciones.js";
+import {
+  abrirConversacion,
+  type ConversationsDeps,
+  historialDeConversacion,
+  registrarMensaje,
+} from "../services/conversations.js";
 
 export type ChatDeps = {
   readonly client: LLMClient;
@@ -66,16 +72,23 @@ chatRouter.post("/mensajes", async (c) => {
   const body = chatMensajeBodySchema.parse(await readJson(c));
   const actual = currentDeps();
   const locale = resolveLocale(c.req.header("accept-language"), actual.locale ?? defaultLocale);
+  const conversations: ConversationsDeps = { db: actual.db };
+  const conversacion = abrirConversacion(conversations, body.conversacionId);
+  const history = historialDeConversacion(conversations, conversacion.id).map((mensaje) => ({
+    role: mensaje.rol,
+    content: mensaje.contenido,
+  }));
+  registrarMensaje(conversations, {
+    conversacionId: conversacion.id,
+    rol: "user",
+    contenido: body.mensaje,
+  });
   const registry = crearRegistroDelAgente({
     db: actual.db,
     vaultDir: actual.vaultDir,
     ...(actual.timeZone === undefined ? {} : { timeZone: actual.timeZone }),
   });
   const runtime = createAgentRuntime({ client: actual.client, registry });
-  const history = (body.historial ?? []).map((message) => ({
-    role: message.role,
-    content: message.content,
-  }));
 
   return streamSSE(c, async (stream) => {
     const write = (event: ChatStreamEvent): Promise<void> =>
@@ -108,12 +121,21 @@ chatRouter.post("/mensajes", async (c) => {
         return;
       }
 
+      if (result.content.trim().length > 0) {
+        registrarMensaje(conversations, {
+          conversacionId: conversacion.id,
+          rol: "assistant",
+          contenido: result.content,
+        });
+      }
+
       await write(
         chatStreamEventSchema.parse({
           tipo: "fin",
           contenido: result.content,
           pasos: result.steps,
           estado: result.estado,
+          conversacionId: conversacion.id,
           accionesPropuestas: listarAcciones(
             {
               db: actual.db,

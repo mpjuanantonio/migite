@@ -14,6 +14,7 @@ import { requireSession } from "./middleware/session.js";
 import { accionesRouter } from "./routes/acciones.js";
 import { buscarRouter } from "./routes/buscar.js";
 import { chatRouter } from "./routes/chat.js";
+import { conversacionesRouter } from "./routes/conversaciones.js";
 import { exportRouter } from "./routes/export.js";
 import { healthRouter } from "./routes/health.js";
 import { mantenimientoRouter } from "./routes/mantenimiento.js";
@@ -65,6 +66,7 @@ export const createApp = (options: CreateAppOptions): Hono<ServerEnv> => {
 
   app.route("/api/acciones", accionesRouter);
   app.route("/api/chat", chatRouter);
+  app.route("/api/conversaciones", conversacionesRouter);
   app.route("/api/objetos", objetosRouter);
   app.route("/api/tipos", tiposRouter);
   app.route("/api/buscar", buscarRouter);
