@@ -21,7 +21,8 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@migite/core": "workspace:*"
+    "@migite/core": "workspace:*",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

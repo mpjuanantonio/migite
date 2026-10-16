@@ -4,3 +4,6 @@ export class LlmError extends Error {
     this.name = "LlmError";
   }
 }
+
+export const describeError = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
