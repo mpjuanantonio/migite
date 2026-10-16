@@ -16,6 +16,7 @@ export {
 export { type BuildSystemPromptOptions, buildSystemPrompt } from "./prompt.js";
 export { type ResolvedRoleModel, resolveRoleModel } from "./roles.js";
 export {
+  type AgentDeltaEvent,
   type AgentEvent,
   type AgentLimits,
   type AgentRunRequest,
@@ -23,6 +24,7 @@ export {
   type AgentRunState,
   type AgentRuntime,
   type AgentRuntimeOptions,
+  type AgentStreamEvent,
   createAgentRuntime,
   DEFAULT_AGENT_LIMITS,
 } from "./runtime.js";

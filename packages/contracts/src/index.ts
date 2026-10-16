@@ -18,6 +18,18 @@ export {
   tipoAccionSchema,
 } from "./acciones.js";
 export {
+  type ChatHistorialMensaje,
+  type ChatMensajeBody,
+  type ChatRunEstado,
+  type ChatStreamEvent,
+  chatHistorialMensajeSchema,
+  chatMensajeBodySchema,
+  chatRunEstadoSchema,
+  chatStreamEventSchema,
+  LIMITE_HISTORIAL_CHAT,
+  LIMITE_MENSAJE_CHAT,
+} from "./chat.js";
+export {
   type ObjetosPage,
   objetosPageSchema,
   type Salud,

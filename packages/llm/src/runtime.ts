@@ -1,14 +1,17 @@
 import { describeError } from "./errors.js";
 import type { ToolRegistry } from "./tools.js";
 import type {
+  ChatChunk,
   ChatMessage,
   ChatOptions,
+  ChatRequest,
   ChatResponse,
   ChatUsage,
   FinishReason,
   LLMClient,
   LLMRole,
   ToolCall,
+  ToolCallDelta,
 } from "./types.js";
 
 export const DEFAULT_AGENT_LIMITS = {
@@ -40,6 +43,13 @@ export type AgentEvent =
       readonly isError: boolean;
     };
 
+export type AgentDeltaEvent = {
+  readonly type: "delta";
+  readonly texto: string;
+};
+
+export type AgentStreamEvent = AgentEvent | AgentDeltaEvent;
+
 export type AgentRunState = "completado" | "limite" | "error";
 
 export interface AgentRunResult {
@@ -61,6 +71,7 @@ export interface AgentRuntimeOptions {
 
 export interface AgentRuntime {
   run(request: AgentRunRequest): Promise<AgentRunResult>;
+  runStream(request: AgentRunRequest): AsyncGenerator<AgentStreamEvent, AgentRunResult>;
 }
 
 type DeadlineOutcome<T> =
@@ -112,116 +123,263 @@ const truncate = (text: string, limit: number): string => {
 const timeoutMessage = (timeoutMs: number): string =>
   `tiempo de espera agotado (timeoutMs=${timeoutMs})`;
 
-export const createAgentRuntime = (options: AgentRuntimeOptions): AgentRuntime => {
+type TurnOutcome = DeadlineOutcome<ChatResponse>;
+
+type StreamTurn = (
+  request: ChatRequest,
+  deadlineAt: number,
+) => AsyncGenerator<AgentDeltaEvent, TurnOutcome>;
+
+const chatOutcome = (
+  client: LLMClient,
+  role: LLMRole,
+  request: ChatRequest,
+  deadlineAt: number,
+): Promise<TurnOutcome> => {
+  const remaining = deadlineAt - Date.now();
+  if (remaining <= 0) {
+    return Promise.resolve({ expired: true });
+  }
+  return withDeadline(client.chat(role, request), remaining);
+};
+
+type PartialToolCall = {
+  readonly id: string;
+  readonly name: string;
+  readonly arguments: string;
+};
+
+const mergeToolCallDelta = (current: PartialToolCall, delta: ToolCallDelta): PartialToolCall => ({
+  id: delta.id ?? current.id,
+  name: delta.name ?? current.name,
+  arguments: current.arguments + (delta.argumentsDelta ?? ""),
+});
+
+const parseToolArguments = (raw: string): Record<string, unknown> => {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+};
+
+const closeIterator = (iterator: AsyncIterator<ChatChunk>): void => {
+  const result = iterator.return?.();
+  if (result !== undefined) {
+    void result.catch(() => undefined);
+  }
+};
+
+const accumulateStream = async function* (
+  iterator: AsyncIterator<ChatChunk>,
+  deadlineAt: number,
+): AsyncGenerator<AgentDeltaEvent, TurnOutcome> {
+  let content = "";
+  let finishReason: FinishReason | undefined;
+  let usage: ChatUsage | undefined;
+  const pending = new Map<number, PartialToolCall>();
+
+  while (true) {
+    const remaining = deadlineAt - Date.now();
+    if (remaining <= 0) {
+      closeIterator(iterator);
+      return { expired: true };
+    }
+
+    const outcome = await withDeadline(iterator.next(), remaining);
+    if (outcome.expired) {
+      closeIterator(iterator);
+      return { expired: true };
+    }
+    if (outcome.value.done) {
+      break;
+    }
+
+    const chunk = outcome.value.value;
+    if (chunk.contentDelta !== undefined && chunk.contentDelta !== "") {
+      content += chunk.contentDelta;
+      yield { type: "delta", texto: chunk.contentDelta };
+    }
+    for (const delta of chunk.toolCallDeltas ?? []) {
+      const current = pending.get(delta.index) ?? { id: "", name: "", arguments: "" };
+      pending.set(delta.index, mergeToolCallDelta(current, delta));
+    }
+    if (chunk.finishReason !== undefined) {
+      finishReason = chunk.finishReason;
+    }
+    if (chunk.usage !== undefined) {
+      usage = chunk.usage;
+    }
+  }
+
+  const toolCalls: ToolCall[] = [...pending.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([, call]) => ({
+      id: call.id,
+      name: call.name,
+      arguments: parseToolArguments(call.arguments),
+    }));
+
+  return {
+    expired: false,
+    value: {
+      message: { content, toolCalls },
+      finishReason: finishReason ?? "stop",
+      ...(usage === undefined ? {} : { usage }),
+    },
+  };
+};
+
+const createStreamTurn = (client: LLMClient, role: LLMRole): StreamTurn =>
+  async function* streamTurn(request: ChatRequest, deadlineAt: number) {
+    const iterator = client.chatStream(role, request)[Symbol.asyncIterator]();
+    return yield* accumulateStream(iterator, deadlineAt);
+  };
+
+type AgentLoop = (request: AgentRunRequest) => AsyncGenerator<AgentStreamEvent, AgentRunResult>;
+
+const createAgentLoop = (options: AgentRuntimeOptions, streaming: boolean): AgentLoop => {
   const maxSteps = options.limits?.maxSteps ?? DEFAULT_AGENT_LIMITS.maxSteps;
   const maxToolResultChars =
     options.limits?.maxToolResultChars ?? DEFAULT_AGENT_LIMITS.maxToolResultChars;
   const timeoutMs = options.limits?.timeoutMs ?? DEFAULT_AGENT_LIMITS.timeoutMs;
 
-  return {
-    async run(request: AgentRunRequest): Promise<AgentRunResult> {
-      const role = request.role ?? "chat";
-      const events: AgentEvent[] = [];
-      const executed: ToolCall[] = [];
-      const messages: ChatMessage[] = [
-        ...(request.systemPrompt === undefined || request.systemPrompt === ""
-          ? []
-          : [{ role: "system" as const, content: request.systemPrompt }]),
-        ...request.history,
-        { role: "user", content: request.userMessage },
-      ];
-      const definitions = options.registry.definitions();
-      const deadline = Date.now() + timeoutMs;
+  return async function* agentLoop(
+    request: AgentRunRequest,
+  ): AsyncGenerator<AgentStreamEvent, AgentRunResult> {
+    const role = request.role ?? "chat";
+    const events: AgentEvent[] = [];
+    const executed: ToolCall[] = [];
+    const messages: ChatMessage[] = [
+      ...(request.systemPrompt === undefined || request.systemPrompt === ""
+        ? []
+        : [{ role: "system" as const, content: request.systemPrompt }]),
+      ...request.history,
+      { role: "user", content: request.userMessage },
+    ];
+    const definitions = options.registry.definitions();
+    const deadline = Date.now() + timeoutMs;
 
-      let content = "";
-      let finishReason: FinishReason | undefined;
-      let usage: ChatUsage | undefined;
-      let steps = 0;
+    let content = "";
+    let finishReason: FinishReason | undefined;
+    let usage: ChatUsage | undefined;
+    let steps = 0;
 
-      const finish = (estado: AgentRunState, error?: string): AgentRunResult => ({
-        content,
-        toolCallsEjecutados: [...executed],
-        steps,
-        finishReason,
-        ...(usage === undefined ? {} : { usage }),
-        estado,
-        ...(error === undefined ? {} : { error }),
-        events: [...events],
-      });
+    const finish = (estado: AgentRunState, error?: string): AgentRunResult => ({
+      content,
+      toolCallsEjecutados: [...executed],
+      steps,
+      finishReason,
+      ...(usage === undefined ? {} : { usage }),
+      estado,
+      ...(error === undefined ? {} : { error }),
+      events: [...events],
+    });
 
-      for (let step = 0; step < maxSteps; step += 1) {
-        const remaining = deadline - Date.now();
-        if (remaining <= 0) {
-          return finish("limite", timeoutMessage(timeoutMs));
-        }
-
-        steps += 1;
-        let outcome: DeadlineOutcome<ChatResponse>;
-        try {
-          outcome = await withDeadline(
-            options.client.chat(role, {
-              messages: [...messages],
-              ...(definitions.length === 0 ? {} : { tools: definitions }),
-              ...(request.options === undefined ? {} : { options: request.options }),
-            }),
-            remaining,
-          );
-        } catch (error) {
-          return finish("error", describeError(error));
-        }
-
-        if (outcome.expired) {
-          return finish("limite", timeoutMessage(timeoutMs));
-        }
-
-        const response = outcome.value;
-        finishReason = response.finishReason;
-        usage = addUsage(usage, response.usage);
-        content = response.message.content;
-
-        if (response.message.toolCalls.length === 0) {
-          return finish("completado");
-        }
-
-        messages.push({
-          role: "assistant",
-          content: response.message.content,
-          toolCalls: response.message.toolCalls,
-        });
-
-        for (const toolCall of response.message.toolCalls) {
-          const remainingForTool = deadline - Date.now();
-          if (remainingForTool <= 0) {
-            return finish("limite", timeoutMessage(timeoutMs));
-          }
-
-          events.push({ type: "toolStart", toolCallId: toolCall.id, name: toolCall.name });
-          const toolOutcome = await withDeadline(
-            options.registry.execute(toolCall),
-            remainingForTool,
-          );
-          if (toolOutcome.expired) {
-            return finish("limite", timeoutMessage(timeoutMs));
-          }
-
-          const execution = toolOutcome.value;
-          executed.push(toolCall);
-          events.push({
-            type: "toolEnd",
-            toolCallId: toolCall.id,
-            name: toolCall.name,
-            isError: execution.isError,
-          });
-          messages.push({
-            role: "tool",
-            content: truncate(execution.content, maxToolResultChars),
-            toolCallId: toolCall.id,
-            name: toolCall.name,
-          });
-        }
+    for (let step = 0; step < maxSteps; step += 1) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        return finish("limite", timeoutMessage(timeoutMs));
       }
 
-      return finish("limite", `se alcanzó el máximo de pasos (maxSteps=${maxSteps})`);
+      steps += 1;
+      const chatRequest: ChatRequest = {
+        messages: [...messages],
+        ...(definitions.length === 0 ? {} : { tools: definitions }),
+        ...(request.options === undefined ? {} : { options: request.options }),
+      };
+      let outcome: TurnOutcome;
+      try {
+        if (streaming) {
+          outcome = yield* createStreamTurn(options.client, role)(chatRequest, deadline);
+        } else {
+          outcome = await chatOutcome(options.client, role, chatRequest, deadline);
+        }
+      } catch (error) {
+        return finish("error", describeError(error));
+      }
+
+      if (outcome.expired) {
+        return finish("limite", timeoutMessage(timeoutMs));
+      }
+
+      const response = outcome.value;
+      finishReason = response.finishReason;
+      usage = addUsage(usage, response.usage);
+      content = response.message.content;
+
+      if (response.message.toolCalls.length === 0) {
+        return finish("completado");
+      }
+
+      messages.push({
+        role: "assistant",
+        content: response.message.content,
+        toolCalls: response.message.toolCalls,
+      });
+
+      for (const toolCall of response.message.toolCalls) {
+        const remainingForTool = deadline - Date.now();
+        if (remainingForTool <= 0) {
+          return finish("limite", timeoutMessage(timeoutMs));
+        }
+
+        const start: AgentEvent = {
+          type: "toolStart",
+          toolCallId: toolCall.id,
+          name: toolCall.name,
+        };
+        events.push(start);
+        yield start;
+
+        const toolOutcome = await withDeadline(
+          options.registry.execute(toolCall),
+          remainingForTool,
+        );
+        if (toolOutcome.expired) {
+          return finish("limite", timeoutMessage(timeoutMs));
+        }
+
+        const execution = toolOutcome.value;
+        executed.push(toolCall);
+        const end: AgentEvent = {
+          type: "toolEnd",
+          toolCallId: toolCall.id,
+          name: toolCall.name,
+          isError: execution.isError,
+        };
+        events.push(end);
+        yield end;
+        messages.push({
+          role: "tool",
+          content: truncate(execution.content, maxToolResultChars),
+          toolCallId: toolCall.id,
+          name: toolCall.name,
+        });
+      }
+    }
+
+    return finish("limite", `se alcanzó el máximo de pasos (maxSteps=${maxSteps})`);
+  };
+};
+
+export const createAgentRuntime = (options: AgentRuntimeOptions): AgentRuntime => {
+  const runLoop = createAgentLoop(options, false);
+  const streamLoop = createAgentLoop(options, true);
+
+  return {
+    async run(request: AgentRunRequest): Promise<AgentRunResult> {
+      const iterator = runLoop(request);
+      let step = await iterator.next();
+      while (!step.done) {
+        step = await iterator.next();
+      }
+      return step.value;
+    },
+
+    runStream(request: AgentRunRequest): AsyncGenerator<AgentStreamEvent, AgentRunResult> {
+      return streamLoop(request);
     },
   };
 };
