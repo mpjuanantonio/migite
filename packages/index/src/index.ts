@@ -1,4 +1,16 @@
 export {
+  ACCION_ESTADOS,
+  type AccionEstado,
+  type AccionRecord,
+  type ActualizarEstadoAccionInput,
+  actualizarEstadoAccion,
+  type CrearAccionInput,
+  crearAccion,
+  type ListarAccionesOptions,
+  listarAcciones,
+  obtenerAccion,
+} from "./actions.js";
+export {
   type ApplyObjectEventOptions,
   applyObjectEvent,
   type BuildIndexOptions,

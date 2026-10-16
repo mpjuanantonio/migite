@@ -97,6 +97,8 @@ export const acciones = sqliteTable(
     tipoAccion: text("tipo_accion").notNull(),
     payload: text("payload").notNull(),
     estado: text("estado").notNull(),
+    detalle: text("detalle"),
+    resultado: text("resultado"),
     creada: text("creada").notNull(),
   },
   (table) => [index("acciones_estado_idx").on(table.estado)],
