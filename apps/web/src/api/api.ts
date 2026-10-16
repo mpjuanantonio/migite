@@ -45,7 +45,7 @@ const localeActivo = (): Locale => {
   }
 };
 
-const toApiError = async (response: Response): Promise<ApiError> => {
+export const toApiError = async (response: Response): Promise<ApiError> => {
   let payload: unknown;
   try {
     payload = await response.json();

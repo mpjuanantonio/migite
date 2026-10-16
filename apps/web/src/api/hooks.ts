@@ -1,7 +1,11 @@
 import {
+  type Accion,
+  type AccionesList,
   type ArbolObjetos,
   type ArbolObjetosParams,
   type AttributePayload,
+  accionesListSchema,
+  accionSchema,
   arbolObjetosSchema,
   type CreateObjectBody,
   type EnlacesEntrantes,
@@ -181,6 +185,40 @@ export const useCerrarSesion = () => {
     mutationFn: () => apiFetch<void>("/api/sesion", { method: "DELETE" }),
     onSuccess: () => {
       queryClient.clear();
+    },
+  });
+};
+
+export const useAccionesPendientes = () =>
+  useQuery({
+    queryKey: queryKeys.accionesPendientes,
+    queryFn: async (): Promise<AccionesList> =>
+      accionesListSchema.parse(await apiFetch("/api/acciones?estado=pendiente")),
+  });
+
+const accionPath = (id: string, operacion: "confirmar" | "rechazar"): string =>
+  `/api/acciones/${encodeURIComponent(id)}/${operacion}`;
+
+export const useConfirmarAccion = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string): Promise<Accion> =>
+      accionSchema.parse(await apiFetch(accionPath(id, "confirmar"), { method: "POST" })),
+    onSuccess: () => {
+      invalidarColeccionesDeObjetos(queryClient);
+    },
+  });
+};
+
+export const useRechazarAccion = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string): Promise<void> =>
+      apiFetch<void>(accionPath(id, "rechazar"), { method: "POST" }),
+    onSuccess: () => {
+      invalidarColeccionesDeObjetos(queryClient);
     },
   });
 };
