@@ -18,6 +18,7 @@ import { conversacionesRouter } from "./routes/conversaciones.js";
 import { exportRouter } from "./routes/export.js";
 import { healthRouter } from "./routes/health.js";
 import { mantenimientoRouter } from "./routes/mantenimiento.js";
+import { memoriasRouter } from "./routes/memorias.js";
 import { objetosRouter } from "./routes/objetos.js";
 import { createSesionRouter } from "./routes/sesion.js";
 import { tiposRouter } from "./routes/tipos.js";
@@ -72,6 +73,7 @@ export const createApp = (options: CreateAppOptions): Hono<ServerEnv> => {
   app.route("/api/buscar", buscarRouter);
   app.route("/api/export", exportRouter);
   app.route("/api/mantenimiento", mantenimientoRouter);
+  app.route("/api/memorias", memoriasRouter);
 
   if (existsSync(webDist)) {
     app.use("*", serveStatic({ root: webDist }));

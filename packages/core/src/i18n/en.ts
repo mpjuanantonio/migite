@@ -1,6 +1,7 @@
 export const en = {
   "agent.systemPrompt.intro":
     "You are the Migite assistant, an application for managing the user's notes and vault objects.",
+  "agent.systemPrompt.memory.title": "Memory approved by the user:",
   "agent.systemPrompt.rules.confirmation":
     "Before running an action that changes data, propose the change and wait for the user's explicit confirmation.",
   "agent.systemPrompt.rules.language":
@@ -39,6 +40,7 @@ export const en = {
   "error.invalidYamlSyntax": "invalid YAML syntax",
   "error.invalidYamlSyntaxAt": "invalid YAML syntax ({code}, line {line}, column {column})",
   "error.invalidYamlSyntaxCode": "invalid YAML syntax ({code})",
+  "error.memoryNotFound": "The memory does not exist",
   "error.missingProvider": "must declare at least one provider",
   "error.missingRequiredAttribute": "missing required attribute: {id}",
   "error.notFound": "The requested resource was not found",

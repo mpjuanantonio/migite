@@ -9,6 +9,7 @@ import { createObjectRepository } from "@migite/core";
 import {
   type AccionRecord,
   actualizarEstadoAccion,
+  guardarMemoria,
   type IndexDatabase,
   listarAcciones as listarAccionesEnIndice,
   obtenerAccion,
@@ -77,6 +78,10 @@ const aplicarPropuesta = (deps: AccionesDeps, propuesta: AccionPropuesta): unkno
     case "borrar_objeto": {
       repositorioDe(deps).deleteObject(propuesta.payload.id);
       return { id: propuesta.payload.id };
+    }
+    case "guardar_memoria": {
+      const memoria = guardarMemoria(deps.db, propuesta.payload);
+      return { id: memoria.id };
     }
   }
 };

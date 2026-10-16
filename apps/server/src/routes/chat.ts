@@ -4,7 +4,7 @@ import {
   chatStreamEventSchema,
 } from "@migite/contracts";
 import { defaultLocale, type Locale, t } from "@migite/core";
-import type { IndexDatabase } from "@migite/index";
+import { type IndexDatabase, listarMemorias } from "@migite/index";
 import {
   type AgentStreamEvent,
   buildSystemPrompt,
@@ -94,7 +94,7 @@ chatRouter.post("/mensajes", async (c) => {
     const write = (event: ChatStreamEvent): Promise<void> =>
       stream.writeSSE({ data: JSON.stringify(event) });
     const run = runtime.runStream({
-      systemPrompt: buildSystemPrompt({ locale }),
+      systemPrompt: buildSystemPrompt({ locale, memorias: listarMemorias(actual.db) }),
       history,
       userMessage: body.mensaje,
     });

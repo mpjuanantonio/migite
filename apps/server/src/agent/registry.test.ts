@@ -97,6 +97,7 @@ describe("crearRegistroDelAgente", () => {
       "crear_objeto",
       "editar_objeto",
       "borrar_objeto",
+      "recordar_dato",
     ]);
   });
 
@@ -132,6 +133,7 @@ describe("crearRegistroDelAgente", () => {
       "crear_objeto",
       "editar_objeto",
       "borrar_objeto",
+      "recordar_dato",
     ]);
 
     const messages = toolMessagesAt(client, 2);

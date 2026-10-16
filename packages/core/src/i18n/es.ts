@@ -3,6 +3,7 @@ import type { TranslationKey } from "./en.js";
 export const es = {
   "agent.systemPrompt.intro":
     "Eres el asistente de Migite, una aplicación para gestionar las notas y objetos del vault de la persona usuaria.",
+  "agent.systemPrompt.memory.title": "Memoria aprobada por la persona usuaria:",
   "agent.systemPrompt.rules.confirmation":
     "Antes de ejecutar una acción que cambie datos, propón el cambio y espera la confirmación explícita de la persona usuaria.",
   "agent.systemPrompt.rules.language":
@@ -41,6 +42,7 @@ export const es = {
   "error.invalidYamlSyntax": "sintaxis YAML inválida",
   "error.invalidYamlSyntaxAt": "sintaxis YAML inválida ({code}, línea {line}, columna {column})",
   "error.invalidYamlSyntaxCode": "sintaxis YAML inválida ({code})",
+  "error.memoryNotFound": "No existe la memoria",
   "error.missingProvider": "debe declarar al menos un proveedor",
   "error.missingRequiredAttribute": "falta el atributo obligatorio: {id}",
   "error.notFound": "El recurso solicitado no existe",

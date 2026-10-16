@@ -12,6 +12,7 @@ import { configureChat } from "./routes/chat.js";
 import { configureConversaciones } from "./routes/conversaciones.js";
 import { configureExport } from "./routes/export.js";
 import { configureHealth } from "./routes/health.js";
+import { configureMemorias } from "./routes/memorias.js";
 import { configureObjetos } from "./routes/objetos.js";
 import { configureTipos } from "./routes/tipos.js";
 import { startRuntime } from "./runtime.js";
@@ -61,6 +62,7 @@ const start = (): void => {
     locale: config.app.locale,
   });
   configureConversaciones({ db: runtime.db });
+  configureMemorias({ db: runtime.db });
   configureTipos({ tiposDir: join(runtime.vaultDir, "tipos") });
   configureBuscar({ db: runtime.db });
   configureExport({ vaultDir: runtime.vaultDir });

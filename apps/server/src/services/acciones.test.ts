@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { bootstrapVault, createObjectRepository } from "@migite/core";
-import { crearAccion, type IndexHandle, openIndex } from "@migite/index";
+import { crearAccion, type IndexHandle, listarMemorias, openIndex } from "@migite/index";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { confirmarAccion } from "./acciones.js";
 
@@ -94,5 +94,23 @@ describe("confirmarAccion con editar_objeto", () => {
       expect(movido.object.title).toBe("Viejo");
       expect(movido.object.folder).toBe("archivo");
     }
+  });
+});
+
+describe("confirmarAccion con guardar_memoria", () => {
+  it("guarda la memoria aprobada y devuelve su id como resultado", () => {
+    const accion = crearAccion(handle.db, {
+      tipoAccion: "guardar_memoria",
+      payload: { clave: "color favorito", contenido: "azul" },
+    });
+
+    const aplicada = confirmarAccion({ db: handle.db, vaultDir }, accion.id);
+
+    expect(aplicada.estado).toBe("aplicada");
+    const [memoria] = listarMemorias(handle.db);
+    expect(memoria).toBeDefined();
+    expect(memoria?.clave).toBe("color favorito");
+    expect(memoria?.contenido).toBe("azul");
+    expect(aplicada.resultado).toEqual({ id: memoria?.id });
   });
 });

@@ -5,6 +5,8 @@ import {
   crearObjetoPayloadSchema,
   type EditarObjetoPayload,
   editarObjetoPayloadSchema,
+  type GuardarMemoriaPayload,
+  guardarMemoriaPayloadSchema,
 } from "@migite/contracts";
 import { createObjectRepository } from "@migite/core";
 import { crearAccion, type IndexDatabase } from "@migite/index";
@@ -77,6 +79,9 @@ export const registrarHerramientasDeEscritura = (
     return proponer(deps, "borrar_objeto", { id }, `Borrar «${titulo}»`);
   };
 
+  const recordar = ({ clave, contenido }: GuardarMemoriaPayload): JsonValue =>
+    proponer(deps, "guardar_memoria", { clave, contenido }, `Recordar «${clave}»`);
+
   registry.registerTool({
     name: "crear_objeto",
     description:
@@ -97,5 +102,12 @@ export const registrarHerramientasDeEscritura = (
       "Propone borrar un objeto del vault sin borrarlo: registra una acción pendiente de confirmación con el título del objeto para que la persona usuaria decida con información. La persona usuaria debe confirmarla antes de que se aplique.",
     schema: borrarObjetoPayloadSchema,
     handler: borrar,
+  });
+  registry.registerTool({
+    name: "recordar_dato",
+    description:
+      "Propone guardar un dato en la memoria del agente sin guardarlo: registra una acción pendiente de confirmación con la clave y el contenido para que la persona usuaria decida si lo recuerda en conversaciones futuras. La persona usuaria debe confirmarla antes de que se aplique.",
+    schema: guardarMemoriaPayloadSchema,
+    handler: recordar,
   });
 };

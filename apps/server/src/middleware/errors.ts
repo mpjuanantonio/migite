@@ -17,6 +17,7 @@ import type { ServerEnv } from "../env.js";
 import { createRequestId, writeLog } from "../logs.js";
 import { ActionError } from "../services/acciones.js";
 import { ConversationError } from "../services/conversations.js";
+import { MemoriaError } from "../services/memories.js";
 
 export type ErrorCode =
   | "action_conflict"
@@ -32,6 +33,7 @@ export type ErrorCode =
   | "index_error"
   | "internal_error"
   | "invalid_object_write"
+  | "memory_not_found"
   | "missing_required_attribute"
   | "not_found"
   | "object_not_found"
@@ -57,6 +59,7 @@ const CODE_STATUS: Readonly<Record<ErrorCode, ContentfulStatusCode>> = {
   index_error: 500,
   internal_error: 500,
   invalid_object_write: 422,
+  memory_not_found: 404,
   missing_required_attribute: 422,
   not_found: 404,
   object_not_found: 404,
@@ -96,6 +99,7 @@ const CODE_MESSAGES: Readonly<Partial<Record<ErrorCode, TranslationKey>>> = {
   forbidden: "error.forbidden",
   index_error: "error.indexError",
   internal_error: "error.internalError",
+  memory_not_found: "error.memoryNotFound",
   not_found: "error.notFound",
   rate_limited: "error.rateLimited",
   unauthorized: "error.unauthorized",
@@ -266,6 +270,16 @@ const describeError = (error: Error, locale: Locale): ApiError => {
     };
   }
   if (error instanceof ConversationError) {
+    return {
+      codigo: error.codigo,
+      status: CODE_STATUS[error.codigo],
+      mensaje: codeMessage(error.codigo, locale),
+      detalle: internalMessage(error),
+      problems: [],
+      stack: error.stack,
+    };
+  }
+  if (error instanceof MemoriaError) {
     return {
       codigo: error.codigo,
       status: CODE_STATUS[error.codigo],

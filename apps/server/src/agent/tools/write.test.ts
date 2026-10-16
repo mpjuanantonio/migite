@@ -14,6 +14,7 @@ import {
   buildIndex,
   type IndexHandle,
   listarAcciones,
+  listarMemorias,
   obtenerAccion,
   openIndex,
 } from "@migite/index";
@@ -252,6 +253,30 @@ describe("borrar_objeto", () => {
   });
 });
 
+describe("recordar_dato", () => {
+  it("propone guardar el dato sin escribir en la memoria", async () => {
+    const args = { clave: "color favorito", contenido: "azul" };
+
+    const body = await proponer("recordar_dato", args);
+
+    expect(body.accion_propuesta.tipoAccion).toBe("guardar_memoria");
+    expect(body.accion_propuesta.estado).toBe("pendiente");
+    expect(body.accion_propuesta.resumen).toBe("Recordar «color favorito»");
+    expect(obtenerAccion(handle.db, body.accion_propuesta.id)?.payload).toEqual(args);
+    expect(listarMemorias(handle.db)).toEqual([]);
+  });
+
+  it("rechaza un dato sin clave sin crear la acción", async () => {
+    const execution = await ejecutar("recordar_dato", { clave: "   ", contenido: "azul" });
+
+    expect(execution.isError).toBe(true);
+    expect(execution.content).toContain("argumentos inválidos");
+    expect(execution.content).toContain("clave");
+    expect(listarAcciones(handle.db)).toEqual([]);
+    expect(listarMemorias(handle.db)).toEqual([]);
+  });
+});
+
 describe("integración con el runtime del agente", () => {
   it("propone una creación con el registro del agente, no toca el vault y al confirmar aparece el objeto", async () => {
     const antes = snapshotVault(vaultDir);
@@ -337,5 +362,46 @@ describe("integración con el runtime del agente", () => {
       expect(renombrado.object.path).not.toBe("proyectos/beta.md");
       expect(renombrado.object.body).toContain("presupuesto");
     }
+  });
+
+  it("propone recordar un dato y solo lo guarda al confirmar la propuesta", async () => {
+    const client = new MockLLMClient({
+      responses: [
+        toolTurn([
+          toolCall(
+            "recordar_dato",
+            { clave: "color favorito", contenido: "azul" },
+            "call-recordar",
+          ),
+        ]),
+        finalTurn("Lo recordaré cuando lo confirmes."),
+      ],
+    });
+    const runtime = createAgentRuntime({
+      client,
+      registry: crearRegistroDelAgente({ db: handle.db, vaultDir }),
+    });
+
+    const result = await runtime.run({
+      history: [],
+      userMessage: "recuerda que mi color favorito es azul",
+    });
+
+    expect(result.estado).toBe("completado");
+    expect(result.toolCallsEjecutados.map((call) => call.name)).toEqual(["recordar_dato"]);
+    const messages = toolMessagesAt(client, 1);
+    expect(messages).toHaveLength(1);
+    const contenido = propuestaSchema.parse(JSON.parse(messages[0]?.content ?? "") as unknown);
+    expect(contenido.accion_propuesta.tipoAccion).toBe("guardar_memoria");
+    expect(contenido.accion_propuesta.resumen).toBe("Recordar «color favorito»");
+    expect(listarMemorias(handle.db)).toEqual([]);
+
+    const aplicada = confirmarAccion({ db: handle.db, vaultDir }, contenido.accion_propuesta.id);
+
+    expect(aplicada.estado).toBe("aplicada");
+    const [memoria] = listarMemorias(handle.db);
+    expect(memoria?.clave).toBe("color favorito");
+    expect(memoria?.contenido).toBe("azul");
+    expect(aplicada.resultado).toEqual({ id: memoria?.id });
   });
 });

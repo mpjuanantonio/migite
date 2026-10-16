@@ -8,6 +8,7 @@ import {
   crearAccion,
   type IndexHandle,
   listarConversaciones,
+  listarMemorias,
   listarMensajes,
   openIndex,
 } from "@migite/index";
@@ -292,5 +293,68 @@ describe("POST /api/chat/mensajes", () => {
     expect(listarMensajes(handle.db, conversacion.id).map((mensaje) => mensaje.rol)).toEqual([
       "user",
     ]);
+  });
+
+  it("propone recordar un dato y lo usa en el prompt siguiente tras confirmarlo", async () => {
+    const client = new MockLLMClient({
+      responses: [
+        toolTurn([
+          toolCall(
+            "recordar_dato",
+            { clave: "color favorito", contenido: "azul" },
+            "call-recordar",
+          ),
+        ]),
+        finalTurn("Lo recordaré cuando lo confirmes."),
+        finalTurn("Tu color favorito es azul."),
+      ],
+    });
+    configure(client);
+
+    const primera = await postMensaje({ mensaje: "recuerda que mi color favorito es azul" });
+    expect(primera.status).toBe(200);
+    const { eventos } = await readEventos(primera);
+    const fin = eventos.at(-1);
+    if (fin?.tipo !== "fin") {
+      throw new Error("falta el evento de fin");
+    }
+    const propuesta = fin.accionesPropuestas.find(
+      (accion) => accion.tipoAccion === "guardar_memoria",
+    );
+    if (propuesta === undefined) {
+      throw new Error("falta la propuesta de guardar memoria");
+    }
+    expect(propuesta.estado).toBe("pendiente");
+    expect(listarMemorias(handle.db)).toEqual([]);
+
+    const primerPrompt = client.calls[0];
+    if (primerPrompt === undefined || primerPrompt.method !== "chatStream") {
+      throw new Error("se esperaba una llamada de chatStream");
+    }
+    expect(primerPrompt.request.messages[0]?.content).not.toContain("Memoria aprobada");
+    expect(primerPrompt.request.messages[0]?.content).not.toContain("azul");
+
+    const confirmada = await app.request(`/api/acciones/${propuesta.id}/confirmar`, {
+      method: "POST",
+      headers: headers(),
+    });
+    expect(confirmada.status).toBe(200);
+    expect(listarMemorias(handle.db).map((memoria) => [memoria.clave, memoria.contenido])).toEqual([
+      ["color favorito", "azul"],
+    ]);
+
+    const segunda = await postMensaje({ mensaje: "¿cuál es mi color favorito?" });
+    expect(segunda.status).toBe(200);
+    const { eventos: eventosSegunda } = await readEventos(segunda);
+    expect(eventosSegunda.at(-1)?.tipo).toBe("fin");
+
+    const segundoPrompt = client.calls[2];
+    if (segundoPrompt === undefined || segundoPrompt.method !== "chatStream") {
+      throw new Error("se esperaba una llamada de chatStream");
+    }
+    expect(segundoPrompt.request.messages[0]?.content).toContain(
+      "Memoria aprobada por la persona usuaria:",
+    );
+    expect(segundoPrompt.request.messages[0]?.content).toContain("- color favorito: azul");
   });
 });
