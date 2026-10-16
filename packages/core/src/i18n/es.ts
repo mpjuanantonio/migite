@@ -1,6 +1,16 @@
 import type { TranslationKey } from "./en.js";
 
 export const es = {
+  "agent.systemPrompt.intro":
+    "Eres el asistente de Migite, una aplicación para gestionar las notas y objetos del vault de la persona usuaria.",
+  "agent.systemPrompt.rules.confirmation":
+    "Antes de ejecutar una acción que cambie datos, propón el cambio y espera la confirmación explícita de la persona usuaria.",
+  "agent.systemPrompt.rules.language":
+    "Responde siempre en el mismo idioma en el que te escribe la persona usuaria.",
+  "agent.systemPrompt.rules.noDirectWrites":
+    "Nunca apliques escrituras directamente: las herramientas de escritura solo preparan cambios que requieren confirmación.",
+  "agent.systemPrompt.rules.sources":
+    "Cuando consultes datos del vault, indica de qué fichero o título procede la información.",
   "app.name": "Migite",
   "error.ambiguousTitle": "título ambiguo «{title}»: corresponde a varios objetos",
   "error.attributeTypeImmutable": "no se puede cambiar el tipo del atributo «{id}»",

@@ -1,4 +1,14 @@
 export const en = {
+  "agent.systemPrompt.intro":
+    "You are the Migite assistant, an application for managing the user's notes and vault objects.",
+  "agent.systemPrompt.rules.confirmation":
+    "Before running an action that changes data, propose the change and wait for the user's explicit confirmation.",
+  "agent.systemPrompt.rules.language":
+    "Always reply in the same language the user writes to you in.",
+  "agent.systemPrompt.rules.noDirectWrites":
+    "Never apply writes directly: write tools only stage changes that require confirmation.",
+  "agent.systemPrompt.rules.sources":
+    "When you consult vault data, state which file or title the information comes from.",
   "app.name": "Migite",
   "error.ambiguousTitle": 'ambiguous title "{title}": it matches several objects',
   "error.attributeTypeImmutable": 'the type of attribute "{id}" cannot be changed',

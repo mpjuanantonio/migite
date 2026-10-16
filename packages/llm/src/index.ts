@@ -1,4 +1,4 @@
-export { LlmError } from "./errors.js";
+export { describeError, LlmError } from "./errors.js";
 export {
   type MockChatHandler,
   type MockChatStep,
@@ -13,7 +13,25 @@ export {
   type FetchLike,
   type OpenAICompatDeps,
 } from "./openai-compat.js";
+export { type BuildSystemPromptOptions, buildSystemPrompt } from "./prompt.js";
 export { type ResolvedRoleModel, resolveRoleModel } from "./roles.js";
+export {
+  type AgentEvent,
+  type AgentLimits,
+  type AgentRunRequest,
+  type AgentRunResult,
+  type AgentRunState,
+  type AgentRuntime,
+  type AgentRuntimeOptions,
+  createAgentRuntime,
+  DEFAULT_AGENT_LIMITS,
+} from "./runtime.js";
+export {
+  type ToolExecution,
+  type ToolHandlerResult,
+  ToolRegistry,
+  type ToolSpec,
+} from "./tools.js";
 export type {
   ChatChunk,
   ChatMessage,
