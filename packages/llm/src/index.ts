@@ -8,6 +8,11 @@ export {
   MockLLMClient,
   type MockLLMClientOptions,
 } from "./mock.js";
+export {
+  createOpenAICompatClient,
+  type FetchLike,
+  type OpenAICompatDeps,
+} from "./openai-compat.js";
 export { type ResolvedRoleModel, resolveRoleModel } from "./roles.js";
 export type {
   ChatChunk,
