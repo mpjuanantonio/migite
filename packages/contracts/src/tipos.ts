@@ -29,8 +29,8 @@ export const attributePayloadSchema = z.strictObject({
   tipo: fieldTypeWireSchema,
   rol: attributeRoleWireSchema.optional(),
   obligatorio: z.boolean(),
-  opciones: z.array(nonEmptyText).optional(),
-  referencia_a: z.array(nonEmptyText).optional(),
+  opciones: z.array(nonEmptyText).max(100).optional(),
+  referencia_a: z.array(nonEmptyText).max(32).optional(),
 });
 
 export type AttributePayload = z.infer<typeof attributePayloadSchema>;
@@ -41,7 +41,7 @@ export type PresentacionSeccion = z.infer<typeof presentacionSeccionSchema>;
 
 export const presentacionPayloadSchema = z.strictObject({
   seccion: presentacionSeccionSchema.optional(),
-  carpeta: nonEmptyText.optional(),
+  carpeta: nonEmptyText.max(200).optional(),
   visible: z.boolean().optional(),
 });
 

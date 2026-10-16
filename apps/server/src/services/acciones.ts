@@ -8,7 +8,9 @@ import {
 } from "@migite/contracts";
 import { createObjectRepository, createTypeFile, slugify } from "@migite/core";
 import {
+  AccionConflictoError,
   type AccionRecord,
+  type ActualizarEstadoAccionInput,
   actualizarEstadoAccion,
   guardarMemoria,
   type IndexDatabase,
@@ -102,6 +104,21 @@ const aplicarPropuesta = (deps: AccionesDeps, propuesta: AccionPropuesta): unkno
 export const listarAcciones = (deps: AccionesDeps, estado?: EstadoAccion): Accion[] =>
   listarAccionesEnIndice(deps.db, estado === undefined ? {} : { estado }).map(toWire);
 
+const transicionar = (
+  deps: AccionesDeps,
+  id: string,
+  input: ActualizarEstadoAccionInput & { readonly desde: "pendiente" },
+): AccionRecord => {
+  try {
+    return actualizarEstadoAccion(deps.db, id, input);
+  } catch (error) {
+    if (error instanceof AccionConflictoError) {
+      throw new ActionError("action_conflict");
+    }
+    throw error;
+  }
+};
+
 export const confirmarAccion = (deps: AccionesDeps, id: string): Accion => {
   const record = obtenerAccion(deps.db, id);
   if (record === undefined) {
@@ -115,13 +132,14 @@ export const confirmarAccion = (deps: AccionesDeps, id: string): Accion => {
     const propuesta = accionPropuestaSchema.parse(record);
     resultado = aplicarPropuesta(deps, propuesta);
   } catch (error) {
-    actualizarEstadoAccion(deps.db, id, {
+    transicionar(deps, id, {
       estado: "error",
       detalle: sanitizeWatcherError(error, deps.vaultDir),
+      desde: "pendiente",
     });
     throw error;
   }
-  return toWire(actualizarEstadoAccion(deps.db, id, { estado: "aplicada", resultado }));
+  return toWire(transicionar(deps, id, { estado: "aplicada", resultado, desde: "pendiente" }));
 };
 
 export const rechazarAccion = (deps: AccionesDeps, id: string): void => {
@@ -132,5 +150,5 @@ export const rechazarAccion = (deps: AccionesDeps, id: string): void => {
   if (record.estado !== "pendiente") {
     throw new ActionError("action_conflict");
   }
-  actualizarEstadoAccion(deps.db, id, { estado: "rechazada" });
+  transicionar(deps, id, { estado: "rechazada", desde: "pendiente" });
 };

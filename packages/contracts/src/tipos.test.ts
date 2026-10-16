@@ -109,6 +109,46 @@ describe("attributePayloadSchema", () => {
   });
 });
 
+describe("cotas de attributePayloadSchema", () => {
+  const atributo = (extra: Record<string, unknown>) => ({
+    id: "etiquetas",
+    nombre: "Etiquetas",
+    tipo: "seleccion",
+    obligatorio: false,
+    ...extra,
+  });
+
+  it("acepta hasta 100 opciones y rechaza 101", () => {
+    const cien = Array.from({ length: 100 }, (_, index) => `opcion-${index}`);
+
+    expect(attributePayloadSchema.safeParse(atributo({ opciones: cien })).success).toBe(true);
+    expect(
+      attributePayloadSchema.safeParse(atributo({ opciones: [...cien, "extra"] })).success,
+    ).toBe(false);
+  });
+
+  it("acepta hasta 32 referencias y rechaza 33", () => {
+    const treintaYDos = Array.from({ length: 32 }, (_, index) => `tipo-${index}`);
+
+    expect(
+      attributePayloadSchema.safeParse(atributo({ tipo: "referencia", referencia_a: treintaYDos }))
+        .success,
+    ).toBe(true);
+    expect(
+      attributePayloadSchema.safeParse(
+        atributo({ tipo: "referencia", referencia_a: [...treintaYDos, "extra"] }),
+      ).success,
+    ).toBe(false);
+  });
+});
+
+describe("cotas de presentacionPayloadSchema", () => {
+  it("acepta una carpeta de 200 caracteres y rechaza 201", () => {
+    expect(presentacionPayloadSchema.safeParse({ carpeta: "a".repeat(200) }).success).toBe(true);
+    expect(presentacionPayloadSchema.safeParse({ carpeta: "a".repeat(201) }).success).toBe(false);
+  });
+});
+
 describe("presentacionSeccionSchema", () => {
   it("accepts the documented sections", () => {
     expect(presentacionSeccionSchema.parse("notas")).toBe("notas");

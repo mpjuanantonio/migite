@@ -4,7 +4,13 @@ import { join } from "node:path";
 import { isUlid } from "@migite/core";
 import { sql } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { actualizarEstadoAccion, crearAccion, listarAcciones, obtenerAccion } from "./actions.js";
+import {
+  AccionConflictoError,
+  actualizarEstadoAccion,
+  crearAccion,
+  listarAcciones,
+  obtenerAccion,
+} from "./actions.js";
 import { IndexError, type IndexHandle, openIndex } from "./open.js";
 
 const MISSING_ID = "01J00000000000000000000000";
@@ -137,6 +143,41 @@ describe("actualizarEstadoAccion", () => {
     expect(() => actualizarEstadoAccion(handle.db, MISSING_ID, { estado: "aplicada" })).toThrow(
       IndexError,
     );
+  });
+
+  it("applies a transition only from the expected state", () => {
+    const action = create("crear_objeto", { titulo: "Nota nueva" });
+
+    const applied = actualizarEstadoAccion(handle.db, action.id, {
+      estado: "aplicada",
+      desde: "pendiente",
+    });
+
+    expect(applied.estado).toBe("aplicada");
+    expect(() =>
+      actualizarEstadoAccion(handle.db, action.id, { estado: "aplicada", desde: "pendiente" }),
+    ).toThrow(AccionConflictoError);
+    expect(obtenerAccion(handle.db, action.id)?.estado).toBe("aplicada");
+  });
+
+  it("reports the current state when the transition loses a race", () => {
+    const action = create("crear_objeto", { titulo: "Nota nueva" });
+    actualizarEstadoAccion(handle.db, action.id, { estado: "rechazada" });
+
+    let conflicto: AccionConflictoError | undefined;
+    try {
+      actualizarEstadoAccion(handle.db, action.id, { estado: "aplicada", desde: "pendiente" });
+    } catch (error) {
+      if (error instanceof AccionConflictoError) {
+        conflicto = error;
+      } else {
+        throw error;
+      }
+    }
+
+    expect(conflicto?.esperado).toBe("pendiente");
+    expect(conflicto?.estadoActual).toBe("rechazada");
+    expect(obtenerAccion(handle.db, action.id)?.estado).toBe("rechazada");
   });
 
   it("rejects a result that cannot be serialized", () => {

@@ -18,7 +18,7 @@ export const memoriasListSchema = z.strictObject({
 export type MemoriasList = z.infer<typeof memoriasListSchema>;
 
 export const actualizarMemoriaBodySchema = z.strictObject({
-  contenido: nonEmptyText,
+  contenido: nonEmptyText.max(4000),
 });
 
 export type ActualizarMemoriaBody = z.infer<typeof actualizarMemoriaBodySchema>;

@@ -10,7 +10,7 @@ import {
   openIndex,
 } from "@migite/index";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { confirmarAccion } from "./acciones.js";
+import { ActionError, confirmarAccion, rechazarAccion } from "./acciones.js";
 
 let root: string;
 let vaultDir: string;
@@ -210,5 +210,61 @@ describe("confirmarAccion con guardar_memoria", () => {
     expect(memoria?.clave).toBe("color favorito");
     expect(memoria?.contenido).toBe("azul");
     expect(aplicada.resultado).toEqual({ id: memoria?.id });
+  });
+});
+
+describe("transiciones atómicas de acciones", () => {
+  it("una segunda confirmación no vuelve a aplicar la acción", () => {
+    const accion = crearAccion(handle.db, {
+      tipoAccion: "guardar_memoria",
+      payload: { clave: "color favorito", contenido: "azul" },
+    });
+    confirmarAccion({ db: handle.db, vaultDir }, accion.id);
+
+    let codigo: string | undefined;
+    try {
+      confirmarAccion({ db: handle.db, vaultDir }, accion.id);
+    } catch (error) {
+      codigo = error instanceof ActionError ? error.codigo : undefined;
+    }
+
+    expect(codigo).toBe("action_conflict");
+    expect(listarMemorias(handle.db)).toHaveLength(1);
+  });
+
+  it("rechaza una acción solo una vez", () => {
+    const accion = crearAccion(handle.db, {
+      tipoAccion: "crear_objeto",
+      payload: { titulo: "Descartable" },
+    });
+    rechazarAccion({ db: handle.db, vaultDir }, accion.id);
+
+    let codigo: string | undefined;
+    try {
+      rechazarAccion({ db: handle.db, vaultDir }, accion.id);
+    } catch (error) {
+      codigo = error instanceof ActionError ? error.codigo : undefined;
+    }
+
+    expect(codigo).toBe("action_conflict");
+    expect(obtenerAccion(handle.db, accion.id)?.estado).toBe("rechazada");
+  });
+
+  it("no permite confirmar una acción rechazada", () => {
+    const accion = crearAccion(handle.db, {
+      tipoAccion: "guardar_memoria",
+      payload: { clave: "color favorito", contenido: "azul" },
+    });
+    rechazarAccion({ db: handle.db, vaultDir }, accion.id);
+
+    let codigo: string | undefined;
+    try {
+      confirmarAccion({ db: handle.db, vaultDir }, accion.id);
+    } catch (error) {
+      codigo = error instanceof ActionError ? error.codigo : undefined;
+    }
+
+    expect(codigo).toBe("action_conflict");
+    expect(listarMemorias(handle.db)).toHaveLength(0);
   });
 });

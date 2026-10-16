@@ -1,5 +1,6 @@
 export {
   ACCION_ESTADOS,
+  AccionConflictoError,
   type AccionEstado,
   type AccionRecord,
   type ActualizarEstadoAccionInput,

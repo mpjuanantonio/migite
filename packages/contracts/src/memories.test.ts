@@ -40,6 +40,34 @@ describe("actualizarMemoriaBodySchema", () => {
   });
 });
 
+describe("cotas de guardar_memoria y actualizarMemoriaBodySchema", () => {
+  it("acepta una clave de 100 caracteres y rechaza 101", () => {
+    expect(
+      guardarMemoriaPayloadSchema.safeParse({ clave: "c".repeat(100), contenido: "azul" }).success,
+    ).toBe(true);
+    expect(
+      guardarMemoriaPayloadSchema.safeParse({ clave: "c".repeat(101), contenido: "azul" }).success,
+    ).toBe(false);
+  });
+
+  it("acepta un contenido de 4000 caracteres y rechaza 4001", () => {
+    expect(
+      guardarMemoriaPayloadSchema.safeParse({ clave: "color", contenido: "a".repeat(4000) })
+        .success,
+    ).toBe(true);
+    expect(
+      guardarMemoriaPayloadSchema.safeParse({ clave: "color", contenido: "a".repeat(4001) })
+        .success,
+    ).toBe(false);
+    expect(actualizarMemoriaBodySchema.safeParse({ contenido: "a".repeat(4000) }).success).toBe(
+      true,
+    );
+    expect(actualizarMemoriaBodySchema.safeParse({ contenido: "a".repeat(4001) }).success).toBe(
+      false,
+    );
+  });
+});
+
 describe("guardar_memoria en los contratos de acciones", () => {
   it("acepta el tipo de acción y valida su payload", () => {
     expect(tipoAccionSchema.parse("guardar_memoria")).toBe("guardar_memoria");

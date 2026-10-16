@@ -1,11 +1,25 @@
 import { newUlid } from "@migite/core";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { type IndexDatabase, IndexError } from "./open.js";
 import { acciones } from "./schema.js";
 
 export const ACCION_ESTADOS = ["pendiente", "aplicada", "rechazada", "error"] as const;
 
 export type AccionEstado = (typeof ACCION_ESTADOS)[number];
+
+export class AccionConflictoError extends IndexError {
+  readonly esperado: AccionEstado;
+  readonly estadoActual: string;
+
+  constructor(id: string, esperado: AccionEstado, estadoActual: string) {
+    super(
+      `La acción "${id}" ya no está en estado "${esperado}": su estado actual es "${estadoActual}".`,
+    );
+    this.name = "AccionConflictoError";
+    this.esperado = esperado;
+    this.estadoActual = estadoActual;
+  }
+}
 
 export type AccionRecord = {
   readonly id: string;
@@ -30,6 +44,7 @@ export type ActualizarEstadoAccionInput = {
   readonly estado: AccionEstado;
   readonly detalle?: string;
   readonly resultado?: unknown;
+  readonly desde?: AccionEstado;
 };
 
 type AccionRow = {
@@ -146,10 +161,25 @@ export const actualizarEstadoAccion = (
       detalle: input.detalle ?? null,
       resultado: input.resultado === undefined ? null : serialize(input.resultado, id, "resultado"),
     })
-    .where(eq(acciones.id, id))
+    .where(
+      input.desde === undefined
+        ? eq(acciones.id, id)
+        : and(eq(acciones.id, id), eq(acciones.estado, input.desde)),
+    )
     .run();
   if (result.changes === 0) {
-    throw new IndexError(`La acción "${id}" no existe.`);
+    const current = db
+      .select({ estado: acciones.estado })
+      .from(acciones)
+      .where(eq(acciones.id, id))
+      .get();
+    if (current === undefined) {
+      throw new IndexError(`La acción "${id}" no existe.`);
+    }
+    if (input.desde !== undefined) {
+      throw new AccionConflictoError(id, input.desde, current.estado);
+    }
+    throw new IndexError(`No se pudo actualizar la acción "${id}".`);
   }
   const updated = obtenerAccion(db, id);
   if (updated === undefined) {

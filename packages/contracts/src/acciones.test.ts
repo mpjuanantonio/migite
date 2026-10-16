@@ -140,6 +140,46 @@ describe("payloads por tipo de acción", () => {
   });
 });
 
+describe("cotas de crear_tipo", () => {
+  const atributo = (index: number) => ({
+    id: `atributo-${index}`,
+    nombre: `Atributo ${index}`,
+    tipo: "texto",
+    obligatorio: false,
+  });
+
+  it("acepta hasta 64 atributos y rechaza 65", () => {
+    const sesentaYCuatro = Array.from({ length: 64 }, (_, index) => atributo(index));
+
+    expect(
+      crearTipoPayloadSchema.safeParse({ nombre: "Receta", atributos: sesentaYCuatro }).success,
+    ).toBe(true);
+    expect(
+      crearTipoPayloadSchema.safeParse({
+        nombre: "Receta",
+        atributos: [...sesentaYCuatro, atributo(64)],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("acepta una descripción de 1000 caracteres y rechaza 1001", () => {
+    expect(
+      crearTipoPayloadSchema.safeParse({
+        nombre: "Receta",
+        descripcion: "a".repeat(1000),
+        atributos: [],
+      }).success,
+    ).toBe(true);
+    expect(
+      crearTipoPayloadSchema.safeParse({
+        nombre: "Receta",
+        descripcion: "a".repeat(1001),
+        atributos: [],
+      }).success,
+    ).toBe(false);
+  });
+});
+
 describe("accionPropuestaSchema", () => {
   it("validates a pending proposal per action type", () => {
     const crear = accionPropuestaSchema.parse({

@@ -38,8 +38,8 @@ export const borrarObjetoPayloadSchema = z.strictObject({
 export type BorrarObjetoPayload = z.infer<typeof borrarObjetoPayloadSchema>;
 
 export const guardarMemoriaPayloadSchema = z.strictObject({
-  clave: nonEmptyText,
-  contenido: nonEmptyText,
+  clave: nonEmptyText.max(100),
+  contenido: nonEmptyText.max(4000),
 });
 
 export type GuardarMemoriaPayload = z.infer<typeof guardarMemoriaPayloadSchema>;
@@ -47,8 +47,8 @@ export type GuardarMemoriaPayload = z.infer<typeof guardarMemoriaPayloadSchema>;
 export const crearTipoPayloadSchema = z.strictObject({
   id: identifierSchema.optional(),
   nombre: nonEmptyText,
-  descripcion: z.string().optional(),
-  atributos: z.array(attributePayloadSchema),
+  descripcion: z.string().max(1000).optional(),
+  atributos: z.array(attributePayloadSchema).max(64),
   presentacion: presentacionPayloadSchema.optional(),
 });
 
