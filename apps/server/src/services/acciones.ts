@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import {
   type Accion,
   type AccionPropuesta,
@@ -5,7 +6,7 @@ import {
   accionSchema,
   type EstadoAccion,
 } from "@migite/contracts";
-import { createObjectRepository } from "@migite/core";
+import { createObjectRepository, createTypeFile, slugify } from "@migite/core";
 import {
   type AccionRecord,
   actualizarEstadoAccion,
@@ -16,6 +17,7 @@ import {
 } from "@migite/index";
 import { sanitizeWatcherError } from "../runtime.js";
 import { patchObjeto, renameObjeto } from "./objetos.js";
+import { toAttributes } from "./tipos.js";
 
 export type AccionesDeps = {
   readonly db: IndexDatabase;
@@ -82,6 +84,17 @@ const aplicarPropuesta = (deps: AccionesDeps, propuesta: AccionPropuesta): unkno
     case "guardar_memoria": {
       const memoria = guardarMemoria(deps.db, propuesta.payload);
       return { id: memoria.id };
+    }
+    case "crear_tipo": {
+      const { id, nombre, descripcion, atributos, presentacion } = propuesta.payload;
+      const definition = createTypeFile(join(deps.vaultDir, "tipos"), {
+        id: id ?? slugify(nombre),
+        name: nombre,
+        ...(descripcion === undefined ? {} : { description: descripcion }),
+        attributes: toAttributes(atributos),
+        ...(presentacion === undefined ? {} : { presentacion: { ...presentacion } }),
+      });
+      return { id: definition.id };
     }
   }
 };

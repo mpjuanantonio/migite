@@ -19,12 +19,12 @@ export const attributeRoleWireSchema = z.enum(["estado", "vencimiento", "inicio"
 
 export type AttributeRoleWire = z.infer<typeof attributeRoleWireSchema>;
 
-const attributeId = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/);
+export const identifierSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/);
 
 const nonEmptyText = z.string().trim().min(1);
 
 export const attributePayloadSchema = z.strictObject({
-  id: attributeId,
+  id: identifierSchema,
   nombre: nonEmptyText,
   tipo: fieldTypeWireSchema,
   rol: attributeRoleWireSchema.optional(),

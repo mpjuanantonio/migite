@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { createObjectBodySchema, patchObjectBodySchema } from "./objetos.js";
+import { attributePayloadSchema, identifierSchema, presentacionPayloadSchema } from "./tipos.js";
 
 const nonEmptyText = z.string().trim().min(1);
 
@@ -14,6 +15,7 @@ export const tipoAccionSchema = z.enum([
   "editar_objeto",
   "borrar_objeto",
   "guardar_memoria",
+  "crear_tipo",
 ]);
 
 export type TipoAccion = z.infer<typeof tipoAccionSchema>;
@@ -41,6 +43,16 @@ export const guardarMemoriaPayloadSchema = z.strictObject({
 });
 
 export type GuardarMemoriaPayload = z.infer<typeof guardarMemoriaPayloadSchema>;
+
+export const crearTipoPayloadSchema = z.strictObject({
+  id: identifierSchema.optional(),
+  nombre: nonEmptyText,
+  descripcion: z.string().optional(),
+  atributos: z.array(attributePayloadSchema),
+  presentacion: presentacionPayloadSchema.optional(),
+});
+
+export type CrearTipoPayload = z.infer<typeof crearTipoPayloadSchema>;
 
 const accionShape = {
   id: z.string(),
@@ -70,6 +82,11 @@ export const accionPropuestaSchema = z.discriminatedUnion("tipoAccion", [
     ...accionShape,
     tipoAccion: z.literal("guardar_memoria"),
     payload: guardarMemoriaPayloadSchema,
+  }),
+  z.object({
+    ...accionShape,
+    tipoAccion: z.literal("crear_tipo"),
+    payload: crearTipoPayloadSchema,
   }),
 ]);
 

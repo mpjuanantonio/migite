@@ -9,7 +9,12 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { bootstrapVault, createObjectRepository, writeObjectFile } from "@migite/core";
+import {
+  bootstrapVault,
+  createObjectRepository,
+  loadTypeRegistry,
+  writeObjectFile,
+} from "@migite/core";
 import {
   buildIndex,
   type IndexHandle,
@@ -277,6 +282,43 @@ describe("recordar_dato", () => {
   });
 });
 
+describe("crear_tipo", () => {
+  const definicion = {
+    id: "receta",
+    nombre: "Receta",
+    descripcion: "Recetas de cocina",
+    atributos: [{ id: "raciones", nombre: "Raciones", tipo: "numero", obligatorio: false }],
+    presentacion: { carpeta: "cocina" },
+  };
+
+  it("propone crear el tipo sin tocar el vault y con el resumen del nombre", async () => {
+    const antes = snapshotVault(vaultDir);
+
+    const body = await proponer("crear_tipo", { definicion });
+
+    expect(body.accion_propuesta.tipoAccion).toBe("crear_tipo");
+    expect(body.accion_propuesta.estado).toBe("pendiente");
+    expect(body.accion_propuesta.resumen).toBe("Crear tipo «Receta»");
+    expect(obtenerAccion(handle.db, body.accion_propuesta.id)?.payload).toEqual(definicion);
+    expect(existsSync(join(vaultDir, "tipos", "receta.yaml"))).toBe(false);
+    expect(snapshotVault(vaultDir)).toEqual(antes);
+  });
+
+  it("rechaza un tipo nativo sin crear la acción ni tocar el vault", async () => {
+    const antes = snapshotVault(vaultDir);
+
+    const execution = await ejecutar("crear_tipo", {
+      definicion: { id: "nota", nombre: "Nota", atributos: [] },
+    });
+
+    expect(execution.isError).toBe(true);
+    expect(execution.content).toContain("nativo");
+    expect(execution.content).toContain("nota");
+    expect(listarAcciones(handle.db)).toEqual([]);
+    expect(snapshotVault(vaultDir)).toEqual(antes);
+  });
+});
+
 describe("integración con el runtime del agente", () => {
   it("propone una creación con el registro del agente, no toca el vault y al confirmar aparece el objeto", async () => {
     const antes = snapshotVault(vaultDir);
@@ -403,5 +445,53 @@ describe("integración con el runtime del agente", () => {
     expect(memoria?.clave).toBe("color favorito");
     expect(memoria?.contenido).toBe("azul");
     expect(aplicada.resultado).toEqual({ id: memoria?.id });
+  });
+
+  it("propone un tipo y al confirmar el YAML existe y el registro lo carga", async () => {
+    const client = new MockLLMClient({
+      responses: [
+        toolTurn([
+          toolCall(
+            "crear_tipo",
+            {
+              definicion: {
+                nombre: "Receta",
+                atributos: [
+                  { id: "raciones", nombre: "Raciones", tipo: "numero", obligatorio: false },
+                ],
+              },
+            },
+            "call-tipo",
+          ),
+        ]),
+        finalTurn("He preparado la propuesta de tipo."),
+      ],
+    });
+    const runtime = createAgentRuntime({
+      client,
+      registry: crearRegistroDelAgente({ db: handle.db, vaultDir }),
+    });
+
+    const result = await runtime.run({
+      history: [],
+      userMessage: "crea un tipo receta",
+    });
+
+    expect(result.estado).toBe("completado");
+    expect(result.toolCallsEjecutados.map((call) => call.name)).toEqual(["crear_tipo"]);
+    const messages = toolMessagesAt(client, 1);
+    expect(messages).toHaveLength(1);
+    const contenido = propuestaSchema.parse(JSON.parse(messages[0]?.content ?? "") as unknown);
+    expect(contenido.accion_propuesta.tipoAccion).toBe("crear_tipo");
+    expect(contenido.accion_propuesta.resumen).toBe("Crear tipo «Receta»");
+    expect(existsSync(join(vaultDir, "tipos", "receta.yaml"))).toBe(false);
+
+    const aplicada = confirmarAccion({ db: handle.db, vaultDir }, contenido.accion_propuesta.id);
+
+    expect(aplicada.estado).toBe("aplicada");
+    expect(aplicada.resultado).toEqual({ id: "receta" });
+    const tipo = loadTypeRegistry(join(vaultDir, "tipos")).types.get("receta");
+    expect(tipo?.name).toBe("Receta");
+    expect(tipo?.attributes.map((attribute) => attribute.id)).toEqual(["raciones"]);
   });
 });

@@ -6,6 +6,7 @@ import {
   accionSchema,
   borrarObjetoPayloadSchema,
   crearObjetoPayloadSchema,
+  crearTipoPayloadSchema,
   editarObjetoPayloadSchema,
   tipoAccionSchema,
 } from "./acciones.js";
@@ -27,6 +28,7 @@ describe("tipoAccionSchema y accionEstadoSchema", () => {
     expect(tipoAccionSchema.parse("crear_objeto")).toBe("crear_objeto");
     expect(tipoAccionSchema.parse("editar_objeto")).toBe("editar_objeto");
     expect(tipoAccionSchema.parse("borrar_objeto")).toBe("borrar_objeto");
+    expect(tipoAccionSchema.parse("crear_tipo")).toBe("crear_tipo");
     expect(accionEstadoSchema.parse("pendiente")).toBe("pendiente");
     expect(accionEstadoSchema.parse("aplicada")).toBe("aplicada");
     expect(accionEstadoSchema.parse("rechazada")).toBe("rechazada");
@@ -34,7 +36,7 @@ describe("tipoAccionSchema y accionEstadoSchema", () => {
   });
 
   it("rejects unknown action types and states", () => {
-    expect(tipoAccionSchema.safeParse("crear_tipo").success).toBe(false);
+    expect(tipoAccionSchema.safeParse("editar_tipo").success).toBe(false);
     expect(accionEstadoSchema.safeParse("en curso").success).toBe(false);
   });
 });
@@ -76,6 +78,66 @@ describe("payloads por tipo de acción", () => {
     expect(borrarObjetoPayloadSchema.safeParse({}).success).toBe(false);
     expect(borrarObjetoPayloadSchema.safeParse({ id: OBJETO_ID, extra: 1 }).success).toBe(false);
   });
+
+  it("validates a complete crear_tipo payload", () => {
+    const definicion = {
+      id: "receta",
+      nombre: "Receta",
+      descripcion: "Recetas de cocina",
+      atributos: [
+        {
+          id: "raciones",
+          nombre: "Raciones",
+          tipo: "numero",
+          obligatorio: false,
+        },
+        {
+          id: "dificultad",
+          nombre: "Dificultad",
+          tipo: "seleccion",
+          rol: "estado",
+          obligatorio: true,
+          opciones: ["facil", "dificil"],
+        },
+        {
+          id: "fuente",
+          nombre: "Fuente",
+          tipo: "referencia",
+          obligatorio: false,
+          referencia_a: ["libro"],
+        },
+      ],
+      presentacion: { seccion: "notas", carpeta: "cocina", visible: true },
+    };
+
+    expect(crearTipoPayloadSchema.parse(definicion)).toEqual(definicion);
+  });
+
+  it("acepta una definición sin id ni presentación", () => {
+    const definicion = { nombre: "Receta", atributos: [] };
+
+    expect(crearTipoPayloadSchema.parse(definicion)).toEqual(definicion);
+  });
+
+  it("rejects a malformed crear_tipo payload", () => {
+    expect(crearTipoPayloadSchema.safeParse({ nombre: "Receta" }).success).toBe(false);
+    expect(crearTipoPayloadSchema.safeParse({ nombre: "   ", atributos: [] }).success).toBe(false);
+    expect(
+      crearTipoPayloadSchema.safeParse({ id: "con espacios", nombre: "Receta", atributos: [] })
+        .success,
+    ).toBe(false);
+    expect(
+      crearTipoPayloadSchema.safeParse({
+        nombre: "Receta",
+        atributos: [
+          { id: "raciones", nombre: "Raciones", tipo: "inexistente", obligatorio: false },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      crearTipoPayloadSchema.safeParse({ nombre: "Receta", atributos: [], extra: 1 }).success,
+    ).toBe(false);
+  });
 });
 
 describe("accionPropuestaSchema", () => {
@@ -95,6 +157,11 @@ describe("accionPropuestaSchema", () => {
       tipoAccion: "borrar_objeto",
       payload: { id: OBJETO_ID },
     });
+    const tipo = accionPropuestaSchema.parse({
+      ...base,
+      tipoAccion: "crear_tipo",
+      payload: { nombre: "Receta", atributos: [] },
+    });
 
     expect(crear.tipoAccion).toBe("crear_objeto");
     expect(crear.payload).toEqual({ titulo: "Nota nueva" });
@@ -102,6 +169,8 @@ describe("accionPropuestaSchema", () => {
     expect(editar.payload).toEqual({ id: OBJETO_ID, cambios: { cuerpo: "nuevo" } });
     expect(borrar.tipoAccion).toBe("borrar_objeto");
     expect(borrar.payload).toEqual({ id: OBJETO_ID });
+    expect(tipo.tipoAccion).toBe("crear_tipo");
+    expect(tipo.payload).toEqual({ nombre: "Receta", atributos: [] });
   });
 
   it("accepts the state detail and result envelope fields", () => {
@@ -136,8 +205,15 @@ describe("accionPropuestaSchema", () => {
     expect(
       accionPropuestaSchema.safeParse({
         ...base,
-        tipoAccion: "crear_tipo",
+        tipoAccion: "editar_tipo",
         payload: {},
+      }).success,
+    ).toBe(false);
+    expect(
+      accionPropuestaSchema.safeParse({
+        ...base,
+        tipoAccion: "crear_tipo",
+        payload: { nombre: "Nota" },
       }).success,
     ).toBe(false);
   });
@@ -168,7 +244,7 @@ describe("accionesListSchema", () => {
       acciones: [
         {
           ...base,
-          tipoAccion: "crear_tipo",
+          tipoAccion: "editar_tipo",
           payload: { id: "receta" },
           estado: "error",
           detalle: "el tipo no se pudo crear",
@@ -177,13 +253,29 @@ describe("accionesListSchema", () => {
     });
 
     expect(list.acciones).toHaveLength(1);
+    expect(list.acciones[0]?.tipoAccion).toBe("editar_tipo");
+  });
+
+  it("reads a crear_tipo applied action with its definition and result", () => {
+    const list = accionesListSchema.parse({
+      acciones: [
+        {
+          ...base,
+          tipoAccion: "crear_tipo",
+          payload: { nombre: "Receta", atributos: [] },
+          estado: "aplicada",
+          resultado: { id: "receta" },
+        },
+      ],
+    });
+
     expect(list.acciones[0]?.tipoAccion).toBe("crear_tipo");
   });
 
   it("still validates the common envelope of every action", () => {
     expect(
       accionesListSchema.safeParse({
-        acciones: [{ ...base, tipoAccion: "crear_tipo", payload: {}, estado: "rara" }],
+        acciones: [{ ...base, tipoAccion: "editar_tipo", payload: {}, estado: "rara" }],
       }).success,
     ).toBe(false);
     expect(accionSchema.safeParse({ tipoAccion: "borrar_objeto" }).success).toBe(false);

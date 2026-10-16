@@ -49,7 +49,7 @@ const toPayload = (definition: TypeDefinition): TipoPayload =>
       : { presentacion: { ...definition.presentacion } }),
   });
 
-const toAttributes = (attributes: readonly AttributePayload[]): AttributeDefinition[] =>
+export const toAttributes = (attributes: readonly AttributePayload[]): AttributeDefinition[] =>
   attributes.map((attribute) => ({
     id: attribute.id,
     name: attribute.nombre,

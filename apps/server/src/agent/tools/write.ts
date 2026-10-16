@@ -3,14 +3,16 @@ import {
   borrarObjetoPayloadSchema,
   type CrearObjetoPayload,
   crearObjetoPayloadSchema,
+  crearTipoPayloadSchema,
   type EditarObjetoPayload,
   editarObjetoPayloadSchema,
   type GuardarMemoriaPayload,
   guardarMemoriaPayloadSchema,
 } from "@migite/contracts";
-import { createObjectRepository } from "@migite/core";
+import { createObjectRepository, isReservedTypeId, slugify } from "@migite/core";
 import { crearAccion, type IndexDatabase } from "@migite/index";
 import type { JsonValue, ToolRegistry } from "@migite/llm";
+import { z } from "zod";
 
 export type HerramientasEscrituraDeps = {
   readonly db: IndexDatabase;
@@ -18,6 +20,12 @@ export type HerramientasEscrituraDeps = {
 };
 
 const TIPO_ACCION_POR_DEFECTO = "nota";
+
+const crearTipoArgsSchema = z.object({
+  definicion: crearTipoPayloadSchema,
+});
+
+type CrearTipoArgs = z.output<typeof crearTipoArgsSchema>;
 
 const proponer = (
   deps: HerramientasEscrituraDeps,
@@ -82,6 +90,14 @@ export const registrarHerramientasDeEscritura = (
   const recordar = ({ clave, contenido }: GuardarMemoriaPayload): JsonValue =>
     proponer(deps, "guardar_memoria", { clave, contenido }, `Recordar «${clave}»`);
 
+  const crearTipo = ({ definicion }: CrearTipoArgs): JsonValue => {
+    const id = definicion.id ?? slugify(definicion.nombre);
+    if (isReservedTypeId(id)) {
+      throw new Error(`el tipo «${id}» es nativo y no se puede crear de nuevo`);
+    }
+    return proponer(deps, "crear_tipo", definicion, `Crear tipo «${definicion.nombre}»`);
+  };
+
   registry.registerTool({
     name: "crear_objeto",
     description:
@@ -109,5 +125,12 @@ export const registrarHerramientasDeEscritura = (
       "Propone guardar un dato en la memoria del agente sin guardarlo: registra una acción pendiente de confirmación con la clave y el contenido para que la persona usuaria decida si lo recuerda en conversaciones futuras. La persona usuaria debe confirmarla antes de que se aplique.",
     schema: guardarMemoriaPayloadSchema,
     handler: recordar,
+  });
+  registry.registerTool({
+    name: "crear_tipo",
+    description:
+      "Propone crear un tipo de objeto personalizado sin crearlo: registra una acción pendiente de confirmación con la definición del tipo (id opcional, nombre, descripción, atributos y presentación). La persona usuaria debe confirmarla antes de que se aplique.",
+    schema: crearTipoArgsSchema,
+    handler: crearTipo,
   });
 };
