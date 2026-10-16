@@ -86,7 +86,7 @@ afterEach(() => {
 });
 
 describe("crearRegistroDelAgente", () => {
-  it("registra las cuatro herramientas de lectura con sus nombres exactos", () => {
+  it("registra las herramientas de lectura y de escritura con sus nombres exactos", () => {
     const registry = crearRegistroDelAgente({ db: handle.db, vaultDir });
 
     expect(registry.definitions().map((definition) => definition.name)).toEqual([
@@ -94,6 +94,9 @@ describe("crearRegistroDelAgente", () => {
       "obtener_objeto",
       "listar_objetos",
       "listar_tipos",
+      "crear_objeto",
+      "editar_objeto",
+      "borrar_objeto",
     ]);
   });
 
@@ -126,6 +129,9 @@ describe("crearRegistroDelAgente", () => {
       "obtener_objeto",
       "listar_objetos",
       "listar_tipos",
+      "crear_objeto",
+      "editar_objeto",
+      "borrar_objeto",
     ]);
 
     const messages = toolMessagesAt(client, 2);
