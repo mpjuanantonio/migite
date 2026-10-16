@@ -11,6 +11,22 @@ export {
   obtenerAccion,
 } from "./actions.js";
 export {
+  borrarConversacion,
+  type ConversacionRecord,
+  type CrearConversacionInput,
+  crearConversacion,
+  derivarTitulo,
+  type GuardarMensajeInput,
+  guardarMensaje,
+  listarConversaciones,
+  listarMensajes,
+  MENSAJE_ROLES,
+  type MensajeRecord,
+  type MensajeRol,
+  obtenerConversacion,
+  TITULO_CONVERSACION_MAX,
+} from "./conversations.js";
+export {
   type ApplyObjectEventOptions,
   applyObjectEvent,
   type BuildIndexOptions,

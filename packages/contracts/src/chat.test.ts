@@ -1,22 +1,18 @@
 import { describe, expect, it } from "vitest";
-import {
-  chatMensajeBodySchema,
-  chatStreamEventSchema,
-  LIMITE_HISTORIAL_CHAT,
-  LIMITE_MENSAJE_CHAT,
-} from "./chat.js";
+import { chatMensajeBodySchema, chatStreamEventSchema, LIMITE_MENSAJE_CHAT } from "./chat.js";
 
 describe("chatMensajeBodySchema", () => {
-  it("accepts a message with and without history", () => {
+  it("accepts a message with and without a conversation id", () => {
     expect(chatMensajeBodySchema.parse({ mensaje: "hola" })).toEqual({ mensaje: "hola" });
-    const body = {
+    expect(
+      chatMensajeBodySchema.parse({
+        conversacionId: "01JCONVERSACION0000000000000",
+        mensaje: "¿qué tengo pendiente?",
+      }),
+    ).toEqual({
+      conversacionId: "01JCONVERSACION0000000000000",
       mensaje: "¿qué tengo pendiente?",
-      historial: [
-        { role: "user", content: "hola" },
-        { role: "assistant", content: "buenas" },
-      ],
-    };
-    expect(chatMensajeBodySchema.parse(body)).toEqual(body);
+    });
   });
 
   it("trims the message and rejects empty or oversized ones", () => {
@@ -31,37 +27,29 @@ describe("chatMensajeBodySchema", () => {
     ).toBe(true);
   });
 
-  it("limits the history length", () => {
-    const historial = Array.from({ length: LIMITE_HISTORIAL_CHAT }, () => ({
-      role: "user" as const,
-      content: "hola",
-    }));
-    expect(chatMensajeBodySchema.safeParse({ mensaje: "sigue", historial }).success).toBe(true);
+  it("rejects an empty conversation id", () => {
     expect(
-      chatMensajeBodySchema.safeParse({
-        mensaje: "sigue",
-        historial: [...historial, { role: "assistant", content: "hola" }],
-      }).success,
+      chatMensajeBodySchema.safeParse({ conversacionId: "   ", mensaje: "hola" }).success,
     ).toBe(false);
   });
 
-  it("rejects invalid roles and unknown fields", () => {
+  it("no longer accepts the client history", () => {
     expect(
       chatMensajeBodySchema.safeParse({
         mensaje: "hola",
-        historial: [{ role: "tool", content: "x" }],
+        historial: [
+          { role: "user", content: "hola" },
+          { role: "assistant", content: "buenas" },
+        ],
       }).success,
     ).toBe(false);
-    expect(
-      chatMensajeBodySchema.safeParse({
-        mensaje: "hola",
-        historial: [{ role: "user", content: 10 }],
-      }).success,
-    ).toBe(false);
-    expect(chatMensajeBodySchema.safeParse({ mensaje: "hola", locale: "es" }).success).toBe(false);
     expect(chatMensajeBodySchema.safeParse({ mensaje: "hola", historial: "x" }).success).toBe(
       false,
     );
+  });
+
+  it("rejects unknown fields", () => {
+    expect(chatMensajeBodySchema.safeParse({ mensaje: "hola", locale: "es" }).success).toBe(false);
   });
 });
 
@@ -79,6 +67,7 @@ describe("chatStreamEventSchema", () => {
       contenido: "listo",
       pasos: 2,
       estado: "completado",
+      conversacionId: "01JCONVERSACION0000000000000",
       accionesPropuestas: [
         {
           id: "01JACCION00000000000000000",

@@ -30,6 +30,18 @@ export {
   LIMITE_MENSAJE_CHAT,
 } from "./chat.js";
 export {
+  type Conversacion,
+  type ConversacionesList,
+  conversacionesListSchema,
+  conversacionSchema,
+  type Mensaje,
+  type MensajeRol,
+  type MensajesList,
+  mensajeRolSchema,
+  mensajeSchema,
+  mensajesListSchema,
+} from "./conversations.js";
+export {
   type ObjetosPage,
   objetosPageSchema,
   type Salud,

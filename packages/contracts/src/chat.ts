@@ -13,8 +13,8 @@ export const chatHistorialMensajeSchema = z.strictObject({
 export type ChatHistorialMensaje = z.infer<typeof chatHistorialMensajeSchema>;
 
 export const chatMensajeBodySchema = z.strictObject({
+  conversacionId: z.string().trim().min(1).optional(),
   mensaje: z.string().trim().min(1).max(LIMITE_MENSAJE_CHAT),
-  historial: z.array(chatHistorialMensajeSchema).max(LIMITE_HISTORIAL_CHAT).optional(),
 });
 
 export type ChatMensajeBody = z.infer<typeof chatMensajeBodySchema>;
@@ -32,6 +32,7 @@ export const chatStreamEventSchema = z.discriminatedUnion("tipo", [
     pasos: z.number().int().nonnegative(),
     estado: chatRunEstadoSchema,
     accionesPropuestas: z.array(accionSchema),
+    conversacionId: z.string().optional(),
   }),
   z.strictObject({ tipo: z.literal("error"), mensaje: z.string() }),
 ]);
