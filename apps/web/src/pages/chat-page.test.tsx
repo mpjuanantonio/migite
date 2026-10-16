@@ -1,8 +1,9 @@
-import type { Accion, ChatHistorialMensaje, ChatStreamEvent } from "@migite/contracts";
+import type { Accion, ChatStreamEvent, Conversacion, Mensaje } from "@migite/contracts";
 import { QueryClient } from "@tanstack/react-query";
 import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
+import { formatFecha } from "@/lib/fecha";
 import {
   errorResponse,
   jsonResponse,
@@ -70,7 +71,33 @@ const accionCrear = (id = "A1", titulo = "Comprar pan"): Accion => ({
   creada: "2026-10-10T10:00:00.000Z",
 });
 
-const CAMPOS_VACIOS: ChatStreamEvent = {
+const conversacionC1: Conversacion = {
+  id: "C1",
+  titulo: "Notas del huerto",
+  creada: "2026-10-12T09:00:00.000Z",
+};
+
+const conversacionC2: Conversacion = {
+  id: "C2",
+  titulo: "Compras",
+  creada: "2026-10-10T08:30:00.000Z",
+};
+
+const mensajeUsuario: Mensaje = {
+  id: "M1",
+  rol: "user",
+  contenido: "¿Cuántas notas hay?",
+  creada: "2026-10-12T09:01:00.000Z",
+};
+
+const mensajeAsistente: Mensaje = {
+  id: "M2",
+  rol: "assistant",
+  contenido: "Tienes 12 notas.",
+  creada: "2026-10-12T09:01:05.000Z",
+};
+
+const FIN_VACIO: ChatStreamEvent = {
   tipo: "fin",
   contenido: "",
   pasos: 0,
@@ -80,13 +107,16 @@ const CAMPOS_VACIOS: ChatStreamEvent = {
 
 type MockApiOptions = {
   readonly pendientes?: readonly Accion[];
+  readonly conversaciones?: readonly Conversacion[];
+  readonly mensajes?: Readonly<Record<string, readonly Mensaje[]>>;
   readonly chat?: () => Response;
   readonly confirmar?: (id: string) => Response;
   readonly rechazar?: (id: string) => Response;
+  readonly eliminar?: (id: string) => Response;
 };
 
 let fetchMock: Mock<typeof fetch>;
-let cuerposChat: { mensaje: string; historial?: ChatHistorialMensaje[] }[];
+let cuerposChat: { mensaje: string; conversacionId?: string }[];
 
 const mockApi = (options: MockApiOptions = {}): void => {
   fetchMock.mockImplementation(async (input, init) => {
@@ -118,14 +148,25 @@ const mockApi = (options: MockApiOptions = {}): void => {
       const id = decodeURIComponent(url.pathname.split("/")[3] ?? "");
       return options.rechazar?.(id) ?? noContentResponse();
     }
+    if (url.pathname === "/api/conversaciones" && method === "GET") {
+      return jsonResponse({ conversaciones: options.conversaciones ?? [] });
+    }
+    if (url.pathname.startsWith("/api/conversaciones/") && url.pathname.endsWith("/mensajes")) {
+      const id = decodeURIComponent(url.pathname.split("/")[3] ?? "");
+      return jsonResponse({ mensajes: options.mensajes?.[id] ?? [] });
+    }
+    if (url.pathname.startsWith("/api/conversaciones/") && method === "DELETE") {
+      const id = decodeURIComponent(url.pathname.split("/")[3] ?? "");
+      return options.eliminar?.(id) ?? noContentResponse();
+    }
     if (url.pathname === "/api/chat/mensajes" && method === "POST") {
       cuerposChat.push(
         JSON.parse(String(init?.body ?? "{}")) as {
           mensaje: string;
-          historial?: ChatHistorialMensaje[];
+          conversacionId?: string;
         },
       );
-      return options.chat?.() ?? sseCerrado([CAMPOS_VACIOS]);
+      return options.chat?.() ?? sseCerrado([FIN_VACIO]);
     }
 
     return errorResponse("not_found", "No existe la ruta", 404);
@@ -312,11 +353,11 @@ describe("página del chat", () => {
     await cerrar(segundo);
   });
 
-  it("envía el historial de la conversación visible con el nuevo mensaje", async () => {
+  it("reutiliza el conversacionId del fin y no envía historial", async () => {
     const primera = crearSse();
     const segunda = crearSse();
     const respuestas = [primera, segunda];
-    mockApi({ chat: () => respuestas.shift()?.response ?? sseCerrado([CAMPOS_VACIOS]) });
+    mockApi({ chat: () => respuestas.shift()?.response ?? sseCerrado([FIN_VACIO]) });
     const user = userEvent.setup();
     renderChat();
 
@@ -329,6 +370,7 @@ describe("página del chat", () => {
       pasos: 1,
       estado: "completado",
       accionesPropuestas: [],
+      conversacionId: "C1",
     });
     await cerrar(primera);
     await waitFor(() => expect(screen.getByRole("textbox")).toBeEnabled());
@@ -338,13 +380,146 @@ describe("página del chat", () => {
     await waitFor(() => expect(cuerposChat).toHaveLength(2));
 
     expect(cuerposChat[0]).toEqual({ mensaje: "Hola" });
-    expect(cuerposChat[1]).toEqual({
-      mensaje: "¿Qué tal?",
-      historial: [
-        { role: "user", content: "Hola" },
-        { role: "assistant", content: "Hola mundo" },
-      ],
+    expect(cuerposChat[1]).toEqual({ mensaje: "¿Qué tal?", conversacionId: "C1" });
+    expect(cuerposChat.every((cuerpo) => !("historial" in cuerpo))).toBe(true);
+
+    await cerrar(segunda);
+  });
+
+  it("la nueva conversación limpia el transcript y el siguiente envío va sin id", async () => {
+    const primera = crearSse();
+    const segunda = crearSse();
+    const respuestas = [primera, segunda];
+    mockApi({
+      conversaciones: [conversacionC1],
+      chat: () => respuestas.shift()?.response ?? sseCerrado([FIN_VACIO]),
     });
+    const user = userEvent.setup();
+    renderChat();
+
+    await user.type(await cajaDeTexto(), "Hola");
+    await user.keyboard("{Enter}");
+    await emitir(primera, {
+      tipo: "fin",
+      contenido: "Hola mundo",
+      pasos: 1,
+      estado: "completado",
+      accionesPropuestas: [],
+      conversacionId: "C1",
+    });
+    await cerrar(primera);
+
+    const activa = await screen.findByRole("button", { name: "Notas del huerto" });
+    await waitFor(() => expect(activa).toHaveAttribute("aria-current", "true"));
+    expect(screen.getByText("Hola mundo")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Nueva conversación" }));
+
+    expect(screen.queryByText("Hola mundo")).toBeNull();
+    expect(await screen.findByText("Escribe un mensaje para empezar.")).toBeInTheDocument();
+    expect(activa).not.toHaveAttribute("aria-current");
+
+    await user.type(screen.getByRole("textbox"), "De cero");
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(cuerposChat).toHaveLength(2));
+    expect(cuerposChat[1]).toEqual({ mensaje: "De cero" });
+
+    await cerrar(segunda);
+  });
+
+  it("carga el transcript de una conversación y continúa con su id", async () => {
+    const sse = crearSse();
+    mockApi({
+      conversaciones: [conversacionC1, conversacionC2],
+      mensajes: { C1: [mensajeUsuario, mensajeAsistente] },
+      chat: () => sse.response,
+    });
+    const user = userEvent.setup();
+    renderChat();
+
+    await user.click(await screen.findByRole("button", { name: "Notas del huerto" }));
+
+    expect(await screen.findByText("¿Cuántas notas hay?")).toBeInTheDocument();
+    expect(screen.getByText("Tienes 12 notas.")).toBeInTheDocument();
+    expect(
+      fetchMock.mock.calls.some(
+        ([input]) =>
+          new URL(String(input), "http://localhost").pathname === "/api/conversaciones/C1/mensajes",
+      ),
+    ).toBe(true);
+
+    const caja = screen.getByRole("textbox");
+    await waitFor(() => expect(caja).toBeEnabled());
+    await user.type(caja, "Sigo con el huerto");
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(cuerposChat).toHaveLength(1));
+    expect(cuerposChat[0]).toEqual({ mensaje: "Sigo con el huerto", conversacionId: "C1" });
+
+    await emitir(sse, {
+      tipo: "fin",
+      contenido: "De acuerdo",
+      pasos: 1,
+      estado: "completado",
+      accionesPropuestas: [],
+      conversacionId: "C1",
+    });
+    await cerrar(sse);
+  });
+
+  it("lista las conversaciones con su fecha y resalta la activa", async () => {
+    mockApi({ conversaciones: [conversacionC1, conversacionC2] });
+    const user = userEvent.setup();
+    renderChat();
+
+    expect(await screen.findByText("Notas del huerto")).toBeInTheDocument();
+    expect(screen.getByText("Compras")).toBeInTheDocument();
+    expect(
+      screen.getByText(formatFecha(conversacionC1.creada, "es", { dateStyle: "medium" })),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(formatFecha(conversacionC2.creada, "es", { dateStyle: "medium" })),
+    ).toBeInTheDocument();
+
+    const primera = screen.getByRole("button", { name: "Notas del huerto" });
+    expect(primera).not.toHaveAttribute("aria-current");
+    await user.click(primera);
+    await waitFor(() => expect(primera).toHaveAttribute("aria-current", "true"));
+    expect(screen.getByRole("button", { name: "Compras" })).not.toHaveAttribute("aria-current");
+  });
+
+  it("borra una conversación con confirmación breve y refresca la lista", async () => {
+    const lista: Conversacion[] = [conversacionC1];
+    const eliminadas: string[] = [];
+    mockApi({
+      conversaciones: lista,
+      mensajes: { C1: [mensajeUsuario, mensajeAsistente] },
+      eliminar: (id) => {
+        eliminadas.push(id);
+        lista.splice(0, lista.length);
+        return noContentResponse();
+      },
+    });
+    const user = userEvent.setup();
+    renderChat();
+
+    await user.click(await screen.findByRole("button", { name: "Notas del huerto" }));
+    await screen.findByText("Tienes 12 notas.");
+
+    await user.click(screen.getByRole("button", { name: "Borrar «Notas del huerto»" }));
+    expect(screen.getByText("¿Borrar esta conversación?")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Borrar" }));
+
+    await waitFor(() => expect(eliminadas).toEqual(["C1"]));
+    expect(
+      fetchMock.mock.calls.some(([input, init]) => {
+        const url = new URL(String(input), "http://localhost");
+        return url.pathname === "/api/conversaciones/C1" && init?.method === "DELETE";
+      }),
+    ).toBe(true);
+    expect(await screen.findByText("Aún no hay conversaciones.")).toBeInTheDocument();
+    expect(screen.queryByText("Tienes 12 notas.")).toBeNull();
+    expect(screen.getByText("Escribe un mensaje para empezar.")).toBeInTheDocument();
   });
 
   it("envía con Enter y respeta Shift+Enter en el textarea", async () => {

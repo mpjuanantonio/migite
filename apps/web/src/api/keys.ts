@@ -1,12 +1,14 @@
 export const queryKeys = {
   accionesPendientes: ["acciones", "pendiente"] as const,
   buscar: ["buscar"] as const,
+  conversaciones: ["conversaciones"] as const,
   sesion: ["sesion"] as const,
   objetos: ["objetos"] as const,
   arbol: ["objetos", "arbol"] as const,
   objeto: (id: string) => ["objetos", "detalle", id] as const,
   resolver: (titulo: string) => ["objetos", "resolver", titulo] as const,
   enlacesEntrantes: (id: string) => ["objetos", "detalle", id, "enlaces-entrantes"] as const,
+  mensajesConversacion: (id: string) => ["conversaciones", id, "mensajes"] as const,
   tipos: ["tipos"] as const,
 };
 

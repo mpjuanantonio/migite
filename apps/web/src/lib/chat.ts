@@ -1,28 +1,27 @@
 import {
   type Accion,
   accionPropuestaSchema,
-  type ChatHistorialMensaje,
   type ChatStreamEvent,
   chatStreamEventSchema,
-  LIMITE_HISTORIAL_CHAT,
+  type Mensaje,
+  type MensajeRol,
 } from "@migite/contracts";
 import type { Locale, TranslationParams } from "@migite/core";
 import { ApiError, toApiError } from "@/api/api";
 import type { AppTranslationKey } from "@/i18n/translate";
 import { translate } from "@/i18n/translate";
 
-export type RolMensaje = "user" | "assistant";
-
 export type MensajeChat = {
   readonly id: string;
-  readonly rol: RolMensaje;
+  readonly rol: MensajeRol;
   readonly contenido: string;
 };
 
-export const construirHistorial = (mensajes: readonly MensajeChat[]): ChatHistorialMensaje[] =>
-  mensajes
-    .slice(-LIMITE_HISTORIAL_CHAT)
-    .map((mensaje) => ({ role: mensaje.rol, content: mensaje.contenido }));
+export const aMensajeChat = (mensaje: Mensaje): MensajeChat => ({
+  id: mensaje.id,
+  rol: mensaje.rol,
+  contenido: mensaje.contenido,
+});
 
 type Traductor = (clave: AppTranslationKey, params?: TranslationParams) => string;
 
@@ -63,7 +62,7 @@ const parsearLinea = (linea: string): ChatStreamEvent | undefined => {
 
 export type OpcionesStreamChat = {
   readonly mensaje: string;
-  readonly historial: readonly ChatHistorialMensaje[];
+  readonly conversacionId?: string;
   readonly locale: Locale;
   readonly signal?: AbortSignal;
   readonly onEvento: (evento: ChatStreamEvent) => void;
@@ -81,7 +80,7 @@ export const streamMensajeChat = async (opciones: OpcionesStreamChat): Promise<v
     },
     body: JSON.stringify({
       mensaje: opciones.mensaje,
-      ...(opciones.historial.length === 0 ? {} : { historial: opciones.historial }),
+      ...(opciones.conversacionId === undefined ? {} : { conversacionId: opciones.conversacionId }),
     }),
   });
 

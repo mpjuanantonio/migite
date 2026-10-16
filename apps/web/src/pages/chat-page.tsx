@@ -1,22 +1,32 @@
 import {
   type Accion,
-  type ChatHistorialMensaje,
+  type Conversacion,
   type EstadoAccion,
   LIMITE_MENSAJE_CHAT,
 } from "@migite/contracts";
-import { MessageSquare, Send, TriangleAlert } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { History, MessageSquare, Plus, Send, Trash2, TriangleAlert } from "lucide-react";
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { ApiError } from "@/api/api";
-import { useAccionesPendientes, useConfirmarAccion, useRechazarAccion } from "@/api/hooks";
+import {
+  useAccionesPendientes,
+  useBorrarConversacion,
+  useConfirmarAccion,
+  useConversaciones,
+  useMensajesConversacion,
+  useRechazarAccion,
+} from "@/api/hooks";
+import { queryKeys } from "@/api/keys";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n/context";
 import type { AppTranslationKey } from "@/i18n/translate";
-import { construirHistorial, type MensajeChat, resumirAccion, streamMensajeChat } from "@/lib/chat";
+import { aMensajeChat, type MensajeChat, resumirAccion, streamMensajeChat } from "@/lib/chat";
+import { formatFecha } from "@/lib/fecha";
 import { cn } from "@/lib/utils";
 
 type PeticionChat = {
   readonly mensaje: string;
-  readonly historial: readonly ChatHistorialMensaje[];
+  readonly conversacionId?: string;
 };
 
 type HerramientaEnCurso = {
@@ -109,8 +119,13 @@ const TarjetaAccion = ({ accion }: TarjetaAccionProps) => {
 
 export const ChatPage = () => {
   const { locale, t } = useI18n();
+  const queryClient = useQueryClient();
   const pendientes = useAccionesPendientes();
+  const conversaciones = useConversaciones();
+  const borrarConversacion = useBorrarConversacion();
   const [acciones, setAcciones] = useState<readonly Accion[]>([]);
+  const [conversacionId, setConversacionId] = useState<string | undefined>(undefined);
+  const [idCargado, setIdCargado] = useState<string | undefined>(undefined);
   const [mensajes, setMensajes] = useState<readonly MensajeChat[]>([]);
   const [texto, setTexto] = useState("");
   const [enviando, setEnviando] = useState(false);
@@ -118,9 +133,15 @@ export const ChatPage = () => {
   const [errorStream, setErrorStream] = useState<string | null>(null);
   const [avisoLimite, setAvisoLimite] = useState(false);
   const [ultimoEnvio, setUltimoEnvio] = useState<PeticionChat | null>(null);
+  const [panelAbierto, setPanelAbierto] = useState(true);
+  const [porBorrar, setPorBorrar] = useState<string | null>(null);
   const secuencia = useRef(0);
   const idPropuestas = useId();
+  const idConversaciones = useId();
   const accionesServidor = pendientes.data?.acciones;
+  const mensajesServidor = useMensajesConversacion(idCargado);
+  const cargandoConversacion = idCargado !== undefined && mensajesServidor.isFetching;
+  const totalConversaciones = conversaciones.data?.conversaciones.length ?? 0;
 
   useEffect(() => {
     if (accionesServidor !== undefined) {
@@ -128,9 +149,52 @@ export const ChatPage = () => {
     }
   }, [accionesServidor]);
 
+  useEffect(() => {
+    if (idCargado === undefined || mensajesServidor.data === undefined) {
+      return;
+    }
+    setMensajes(mensajesServidor.data.mensajes.map(aMensajeChat));
+  }, [idCargado, mensajesServidor.data]);
+
   const siguienteId = (): string => {
     secuencia.current += 1;
     return `mensaje-${secuencia.current}`;
+  };
+
+  const reiniciarConversacion = (): void => {
+    setConversacionId(undefined);
+    setIdCargado(undefined);
+    setMensajes([]);
+    setErrorStream(null);
+    setUltimoEnvio(null);
+    setAvisoLimite(false);
+    setHerramienta(null);
+    setPorBorrar(null);
+  };
+
+  const abrirConversacion = (conversacion: Conversacion): void => {
+    if (enviando || conversacion.id === idCargado) {
+      return;
+    }
+    setConversacionId(conversacion.id);
+    setIdCargado(conversacion.id);
+    setMensajes([]);
+    setErrorStream(null);
+    setUltimoEnvio(null);
+    setAvisoLimite(false);
+    setHerramienta(null);
+    setPorBorrar(null);
+  };
+
+  const confirmarBorrado = (id: string): void => {
+    borrarConversacion.mutate(id, {
+      onSuccess: () => {
+        setPorBorrar(null);
+        if (id === conversacionId || id === idCargado) {
+          reiniciarConversacion();
+        }
+      },
+    });
   };
 
   const ejecutar = async (peticion: PeticionChat, idAsistente: string): Promise<void> => {
@@ -141,7 +205,9 @@ export const ChatPage = () => {
     try {
       await streamMensajeChat({
         mensaje: peticion.mensaje,
-        historial: peticion.historial,
+        ...(peticion.conversacionId === undefined
+          ? {}
+          : { conversacionId: peticion.conversacionId }),
         locale,
         onEvento: (evento) => {
           switch (evento.tipo) {
@@ -169,6 +235,10 @@ export const ChatPage = () => {
               );
               setAcciones(evento.accionesPropuestas);
               setAvisoLimite(evento.estado === "limite");
+              if (evento.conversacionId !== undefined) {
+                setConversacionId(evento.conversacionId);
+                void queryClient.invalidateQueries({ queryKey: queryKeys.conversaciones });
+              }
               break;
             case "error":
               setHerramienta(null);
@@ -187,10 +257,9 @@ export const ChatPage = () => {
 
   const enviar = (textoBruto: string): void => {
     const limpio = textoBruto.trim();
-    if (limpio === "" || enviando) {
+    if (limpio === "" || enviando || cargandoConversacion) {
       return;
     }
-    const historial = construirHistorial(mensajes);
     const idUsuario = siguienteId();
     const idAsistente = siguienteId();
     setMensajes((previos) => [
@@ -199,13 +268,16 @@ export const ChatPage = () => {
       { id: idAsistente, rol: "assistant", contenido: "" },
     ]);
     setTexto("");
-    const peticion: PeticionChat = { mensaje: limpio, historial };
+    const peticion: PeticionChat = {
+      mensaje: limpio,
+      ...(conversacionId === undefined ? {} : { conversacionId }),
+    };
     setUltimoEnvio(peticion);
     void ejecutar(peticion, idAsistente);
   };
 
   const reintentar = (): void => {
-    if (ultimoEnvio === null || enviando) {
+    if (ultimoEnvio === null || enviando || cargandoConversacion) {
       return;
     }
     const idAsistente = siguienteId();
@@ -224,6 +296,8 @@ export const ChatPage = () => {
     }
   };
 
+  const bloqueado = enviando || cargandoConversacion;
+
   return (
     <div className="flex flex-col gap-6">
       <header className="border-b border-border pb-5">
@@ -232,6 +306,132 @@ export const ChatPage = () => {
           {t("page.chat.description")}
         </p>
       </header>
+
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          aria-expanded={panelAbierto}
+          aria-controls={idConversaciones}
+          onClick={() => setPanelAbierto((abierto) => !abierto)}
+        >
+          <History aria-hidden="true" />
+          {t("page.chat.conversations.toggle", { total: totalConversaciones })}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={reiniciarConversacion}
+          disabled={bloqueado}
+        >
+          <Plus aria-hidden="true" />
+          {t("page.chat.conversations.new")}
+        </Button>
+      </div>
+
+      {panelAbierto ? (
+        <section
+          id={idConversaciones}
+          aria-label={t("page.chat.conversations.title")}
+          className="rounded-lg border border-border bg-card p-3 shadow-sheet"
+        >
+          {conversaciones.isPending ? (
+            <p className="text-sm text-muted-foreground">{t("page.chat.conversations.loading")}</p>
+          ) : null}
+          {conversaciones.isError ? (
+            <div
+              role="alert"
+              className="rounded-md border border-destructive/30 bg-destructive/5 px-3.5 py-2.5 text-sm text-destructive"
+            >
+              <span className="font-medium">{t("page.chat.conversations.loadError")}. </span>
+              {conversaciones.error instanceof ApiError
+                ? conversaciones.error.mensaje
+                : t("error.genericError")}
+            </div>
+          ) : null}
+          {borrarConversacion.isError ? (
+            <div
+              role="alert"
+              className="mt-2 rounded-md border border-destructive/30 bg-destructive/5 px-3.5 py-2.5 text-sm text-destructive"
+            >
+              <span className="font-medium">{t("page.chat.conversations.deleteError")}. </span>
+              {borrarConversacion.error instanceof ApiError
+                ? borrarConversacion.error.mensaje
+                : t("error.genericError")}
+            </div>
+          ) : null}
+          {conversaciones.data !== undefined && totalConversaciones === 0 ? (
+            <p className="text-sm text-muted-foreground">{t("page.chat.conversations.empty")}</p>
+          ) : null}
+          <ul className="flex flex-col gap-2">
+            {(conversaciones.data?.conversaciones ?? []).map((conversacion) => {
+              const activa = conversacion.id === conversacionId;
+              return (
+                <li
+                  key={conversacion.id}
+                  className={cn(
+                    "flex items-stretch justify-between gap-1 rounded-md border",
+                    activa ? "border-primary/40 bg-primary/5" : "border-border bg-background",
+                  )}
+                >
+                  <button
+                    type="button"
+                    aria-current={activa ? "true" : undefined}
+                    aria-label={conversacion.titulo}
+                    onClick={() => abrirConversacion(conversacion)}
+                    className="flex min-w-0 flex-1 flex-col items-start gap-0.5 px-3 py-2 text-left transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  >
+                    <span className="w-full truncate text-sm font-medium">
+                      {conversacion.titulo}
+                    </span>
+                    <time dateTime={conversacion.creada} className="text-xs text-muted-foreground">
+                      {formatFecha(conversacion.creada, locale, { dateStyle: "medium" })}
+                    </time>
+                  </button>
+                  {porBorrar === conversacion.id ? (
+                    <div className="flex items-center gap-1 px-2">
+                      <span className="max-w-40 text-xs text-muted-foreground">
+                        {t("page.chat.conversations.deleteConfirm")}
+                      </span>
+                      <Button
+                        type="button"
+                        size="xs"
+                        variant="destructive"
+                        onClick={() => confirmarBorrado(conversacion.id)}
+                        disabled={borrarConversacion.isPending}
+                      >
+                        {t("page.chat.conversations.deleteYes")}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="xs"
+                        variant="ghost"
+                        onClick={() => setPorBorrar(null)}
+                        disabled={borrarConversacion.isPending}
+                      >
+                        {t("page.chat.conversations.deleteCancel")}
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="m-1.5 shrink-0 self-center"
+                      aria-label={t("page.chat.conversations.delete", {
+                        titulo: conversacion.titulo,
+                      })}
+                      onClick={() => setPorBorrar(conversacion.id)}
+                    >
+                      <Trash2 aria-hidden="true" />
+                    </Button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
 
       {acciones.length > 0 || pendientes.isError ? (
         <section aria-labelledby={idPropuestas} className="flex flex-col gap-3">
@@ -261,10 +461,18 @@ export const ChatPage = () => {
 
       <section aria-busy={enviando} className="flex flex-col gap-3">
         {mensajes.length === 0 ? (
-          <div className="rounded-lg border border-border bg-card px-6 py-12 shadow-sheet">
-            <MessageSquare aria-hidden="true" className="size-6 text-primary" strokeWidth={1.5} />
-            <p className="mt-3 max-w-prose text-sm text-muted-foreground">{t("page.chat.empty")}</p>
-          </div>
+          cargandoConversacion ? (
+            <p className="text-sm text-muted-foreground">
+              {t("page.chat.conversations.messagesLoading")}
+            </p>
+          ) : (
+            <div className="rounded-lg border border-border bg-card px-6 py-12 shadow-sheet">
+              <MessageSquare aria-hidden="true" className="size-6 text-primary" strokeWidth={1.5} />
+              <p className="mt-3 max-w-prose text-sm text-muted-foreground">
+                {t("page.chat.empty")}
+              </p>
+            </div>
+          )
         ) : (
           <ol className="flex flex-col gap-4">
             {mensajes.map((mensaje) => (
@@ -292,6 +500,28 @@ export const ChatPage = () => {
             ))}
           </ol>
         )}
+
+        {idCargado !== undefined && mensajesServidor.isError ? (
+          <div
+            role="alert"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3.5 py-2.5 text-sm text-destructive"
+          >
+            <span>
+              <span className="font-medium">{t("page.chat.conversations.messagesError")}. </span>
+              {mensajesServidor.error instanceof ApiError
+                ? mensajesServidor.error.mensaje
+                : t("error.genericError")}
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => void mensajesServidor.refetch()}
+            >
+              {t("page.chat.retry")}
+            </Button>
+          </div>
+        ) : null}
 
         {herramienta === null ? null : (
           <p role="status" className="text-xs text-muted-foreground">
@@ -322,7 +552,7 @@ export const ChatPage = () => {
                 size="sm"
                 variant="outline"
                 onClick={reintentar}
-                disabled={enviando}
+                disabled={bloqueado}
               >
                 {t("page.chat.retry")}
               </Button>
@@ -346,14 +576,14 @@ export const ChatPage = () => {
           rows={3}
           value={texto}
           maxLength={LIMITE_MENSAJE_CHAT}
-          disabled={enviando}
+          disabled={bloqueado}
           placeholder={t("page.chat.inputPlaceholder")}
           onChange={(evento) => setTexto(evento.target.value)}
           onKeyDown={manejarTecla}
           className="min-h-20 w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 text-base shadow-xs transition-[color,box-shadow] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm dark:bg-input/30"
         />
         <div className="flex justify-end">
-          <Button type="submit" disabled={enviando || texto.trim() === ""}>
+          <Button type="submit" disabled={bloqueado || texto.trim() === ""}>
             <Send aria-hidden="true" />
             {enviando ? t("page.chat.sending") : t("page.chat.send")}
           </Button>

@@ -7,9 +7,13 @@ import {
   accionesListSchema,
   accionSchema,
   arbolObjetosSchema,
+  type ConversacionesList,
   type CreateObjectBody,
+  conversacionesListSchema,
   type EnlacesEntrantes,
   enlacesEntrantesSchema,
+  type MensajesList,
+  mensajesListSchema,
   type ObjectPayload,
   type ObjetosPage,
   objectPayloadSchema,
@@ -195,6 +199,38 @@ export const useAccionesPendientes = () =>
     queryFn: async (): Promise<AccionesList> =>
       accionesListSchema.parse(await apiFetch("/api/acciones?estado=pendiente")),
   });
+
+export const useConversaciones = () =>
+  useQuery({
+    queryKey: queryKeys.conversaciones,
+    queryFn: async (): Promise<ConversacionesList> =>
+      conversacionesListSchema.parse(await apiFetch("/api/conversaciones")),
+  });
+
+const conversacionMensajesPath = (id: string): string =>
+  `/api/conversaciones/${encodeURIComponent(id)}/mensajes`;
+
+export const useMensajesConversacion = (id: string | undefined) =>
+  useQuery({
+    queryKey: queryKeys.mensajesConversacion(id ?? ""),
+    enabled: id !== undefined,
+    staleTime: 0,
+    queryFn: async (): Promise<MensajesList> =>
+      mensajesListSchema.parse(await apiFetch(conversacionMensajesPath(id ?? ""))),
+  });
+
+export const useBorrarConversacion = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string): Promise<void> =>
+      apiFetch<void>(`/api/conversaciones/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    onSuccess: (_resultado, id) => {
+      queryClient.removeQueries({ queryKey: queryKeys.mensajesConversacion(id) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.conversaciones });
+    },
+  });
+};
 
 const accionPath = (id: string, operacion: "confirmar" | "rechazar"): string =>
   `/api/acciones/${encodeURIComponent(id)}/${operacion}`;
