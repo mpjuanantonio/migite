@@ -15,8 +15,11 @@ import { HTTPException } from "hono/http-exception";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { ServerEnv } from "../env.js";
 import { createRequestId, writeLog } from "../logs.js";
+import { ActionError } from "../services/acciones.js";
 
 export type ErrorCode =
+  | "action_conflict"
+  | "action_not_found"
   | "ambiguous_title"
   | "attribute_type_immutable"
   | "bad_request"
@@ -39,6 +42,8 @@ export type ErrorCode =
   | "validation_error";
 
 const CODE_STATUS: Readonly<Record<ErrorCode, ContentfulStatusCode>> = {
+  action_conflict: 409,
+  action_not_found: 404,
   ambiguous_title: 409,
   attribute_type_immutable: 422,
   bad_request: 400,
@@ -79,6 +84,8 @@ const TYPE_ERROR_CODES: Readonly<Partial<Record<TranslationKey, ErrorCode>>> = {
 };
 
 const CODE_MESSAGES: Readonly<Partial<Record<ErrorCode, TranslationKey>>> = {
+  action_conflict: "error.actionConflict",
+  action_not_found: "error.actionNotFound",
   bad_request: "error.badRequest",
   confirmation_required: "error.confirmationRequired",
   conflict: "error.conflict",
@@ -241,6 +248,16 @@ const describeError = (error: Error, locale: Locale): ApiError => {
       mensaje: withProblems(t(error.key, error.params, locale), error.problems),
       detalle: internalMessage(error),
       problems: [...error.problems],
+      stack: error.stack,
+    };
+  }
+  if (error instanceof ActionError) {
+    return {
+      codigo: error.codigo,
+      status: CODE_STATUS[error.codigo],
+      mensaje: codeMessage(error.codigo, locale),
+      detalle: internalMessage(error),
+      problems: [],
       stack: error.stack,
     };
   }

@@ -1,4 +1,23 @@
 export {
+  type Accion,
+  type AccionesList,
+  type AccionPropuesta,
+  accionEstadoSchema,
+  accionesListSchema,
+  accionPropuestaSchema,
+  accionSchema,
+  type BorrarObjetoPayload,
+  borrarObjetoPayloadSchema,
+  type CrearObjetoPayload,
+  crearObjetoPayloadSchema,
+  type EditarObjetoPayload,
+  ESTADOS_ACCION,
+  type EstadoAccion,
+  editarObjetoPayloadSchema,
+  type TipoAccion,
+  tipoAccionSchema,
+} from "./acciones.js";
+export {
   type ObjetosPage,
   objetosPageSchema,
   type Salud,

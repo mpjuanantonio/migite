@@ -12,6 +12,8 @@ export const es = {
   "agent.systemPrompt.rules.sources":
     "Cuando consultes datos del vault, indica de qué fichero o título procede la información.",
   "app.name": "Migite",
+  "error.actionConflict": "La acción propuesta ya no está pendiente",
+  "error.actionNotFound": "No existe la acción propuesta",
   "error.ambiguousTitle": "título ambiguo «{title}»: corresponde a varios objetos",
   "error.attributeTypeImmutable": "no se puede cambiar el tipo del atributo «{id}»",
   "error.badRequest": "La petición no es válida",

@@ -10,6 +10,8 @@ export const en = {
   "agent.systemPrompt.rules.sources":
     "When you consult vault data, state which file or title the information comes from.",
   "app.name": "Migite",
+  "error.actionConflict": "The proposed action is no longer pending",
+  "error.actionNotFound": "The proposed action does not exist",
   "error.ambiguousTitle": 'ambiguous title "{title}": it matches several objects',
   "error.attributeTypeImmutable": 'the type of attribute "{id}" cannot be changed',
   "error.badRequest": "The request is invalid",

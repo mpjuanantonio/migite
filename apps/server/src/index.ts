@@ -5,6 +5,7 @@ import { serve } from "@hono/node-server";
 import { loadConfig } from "@migite/core";
 import { createApp } from "./app.js";
 import { loadAuthConfig } from "./auth.js";
+import { configureAcciones } from "./routes/acciones.js";
 import { configureBuscar } from "./routes/buscar.js";
 import { configureExport } from "./routes/export.js";
 import { configureHealth } from "./routes/health.js";
@@ -40,6 +41,11 @@ const start = (): void => {
 
   const runtime = startRuntime(config.app, root);
   configureObjetos({
+    db: runtime.db,
+    vaultDir: runtime.vaultDir,
+    timeZone: config.app.timeZone,
+  });
+  configureAcciones({
     db: runtime.db,
     vaultDir: runtime.vaultDir,
     timeZone: config.app.timeZone,
