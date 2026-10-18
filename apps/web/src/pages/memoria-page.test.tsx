@@ -145,6 +145,18 @@ describe("página de memoria del agente", () => {
     expect(screen.queryByText("verde oscuro")).toBeNull();
   });
 
+  it("limita la edición del contenido al tope de 4000 caracteres", async () => {
+    mockApi();
+    const user = userEvent.setup();
+    renderMemoria();
+
+    await screen.findByRole("heading", { level: 2, name: "color favorito" });
+    await user.click(screen.getByRole("button", { name: "Editar «color favorito»" }));
+
+    const editor = screen.getByLabelText("Contenido de «color favorito»");
+    expect(editor).toHaveAttribute("maxlength", "4000");
+  });
+
   it("borra una memoria con confirmación y refresca la lista", async () => {
     mockApi();
     const user = userEvent.setup();

@@ -9,6 +9,7 @@ import { formatFecha } from "@/lib/fecha";
 import { cn } from "@/lib/utils";
 
 const LIMITE_CONTENIDO = 160;
+const LIMITE_TEXTO_MEMORIA = 4000;
 
 const ESTILO_EDITOR =
   "min-h-20 w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 text-base shadow-xs transition-[color,box-shadow] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm dark:bg-input/30";
@@ -73,6 +74,7 @@ const FichaMemoria = ({ memoria }: FichaMemoriaProps) => {
           <textarea
             rows={3}
             value={texto}
+            maxLength={LIMITE_TEXTO_MEMORIA}
             disabled={actualizar.isPending}
             aria-label={t("page.memoria.editLabel", { clave: memoria.clave })}
             onChange={(evento) => setTexto(evento.target.value)}

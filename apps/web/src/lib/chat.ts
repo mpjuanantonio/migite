@@ -38,6 +38,10 @@ export const resumirAccion = (accion: Accion, t: Traductor): string => {
       return t("page.chat.summary.edit", { titulo: payload.cambios.titulo ?? payload.id });
     case "borrar_objeto":
       return t("page.chat.summary.delete", { titulo: payload.id });
+    case "guardar_memoria":
+      return t("page.chat.summary.remember", { clave: payload.clave });
+    case "crear_tipo":
+      return t("page.chat.summary.createType", { nombre: payload.nombre });
     default:
       return t("page.chat.summary.unknown", { tipo: tipoAccion });
   }
