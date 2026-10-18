@@ -12,7 +12,14 @@ import {
   listarMensajes,
   openIndex,
 } from "@migite/index";
-import { type ChatResponse, MockLLMClient, type ToolCall } from "@migite/llm";
+import {
+  type AgentLimits,
+  type ChatChunk,
+  type ChatResponse,
+  type LLMClient,
+  MockLLMClient,
+  type ToolCall,
+} from "@migite/llm";
 import type { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../app.js";
@@ -24,7 +31,7 @@ import {
 } from "../auth.js";
 import type { ServerEnv } from "../env.js";
 import { configureAcciones } from "./acciones.js";
-import { configureChat } from "./chat.js";
+import { type ChatRateLimitOptions, configureChat } from "./chat.js";
 
 const USUARIO = "ana";
 const SECRETO = "secreto-de-test-suficientemente-largo";
@@ -66,15 +73,16 @@ let token: string;
 const headers = (): Record<string, string> => ({ cookie: `${SESSION_COOKIE}=${token}` });
 
 const configure = (
-  client: MockLLMClient,
-  rateLimit?: { readonly maxMensajes?: number; readonly ventanaMs?: number },
+  client: LLMClient,
+  options: { readonly rateLimit?: ChatRateLimitOptions; readonly limits?: AgentLimits } = {},
 ): void => {
   configureChat({
     client,
     db: handle.db,
     vaultDir,
     locale: "es",
-    ...(rateLimit === undefined ? {} : { rateLimit }),
+    ...(options.rateLimit === undefined ? {} : { rateLimit: options.rateLimit }),
+    ...(options.limits === undefined ? {} : { limits: options.limits }),
   });
 };
 
@@ -193,7 +201,7 @@ describe("POST /api/chat/mensajes", () => {
     if (fin?.tipo !== "fin") {
       throw new Error("falta el evento de fin");
     }
-    expect(fin.contenido).toBe("No hay objetos.");
+    expect(fin.contenido).toBe("Consulto el vault.\n\nNo hay objetos.");
     expect(fin.pasos).toBe(2);
     expect(fin.estado).toBe("completado");
     expect(fin.accionesPropuestas.map((accion) => accion.id)).toEqual([pendiente.id]);
@@ -210,7 +218,7 @@ describe("POST /api/chat/mensajes", () => {
       listarMensajes(handle.db, conversacionId).map((mensaje) => [mensaje.rol, mensaje.contenido]),
     ).toEqual([
       ["user", "¿qué tengo?"],
-      ["assistant", "No hay objetos."],
+      ["assistant", "Consulto el vault.\n\nNo hay objetos."],
     ]);
 
     const first = client.calls[0];
@@ -295,13 +303,112 @@ describe("POST /api/chat/mensajes", () => {
     const { eventos } = await readEventos(res);
     expect(eventos).toEqual([{ tipo: "error", mensaje: "proveedor caído" }]);
 
+    expect(listarConversaciones(handle.db)).toEqual([]);
+  });
+
+  it("no duplica el mensaje ni las propuestas al reintentar tras un error", async () => {
+    const pendiente = crearAccion(handle.db, {
+      tipoAccion: "crear_objeto",
+      payload: { titulo: "Pendiente" },
+    });
+    const client = new MockLLMClient({
+      responses: [finalTurn("Primera"), new Error("caído"), finalTurn("Segunda")],
+    });
+    configure(client);
+
+    const primera = await postMensaje({ mensaje: "hola" });
+    const conversacionId = conversacionIdDe((await readEventos(primera)).eventos);
+
+    const fallida = await postMensaje({ conversacionId, mensaje: "sigue" });
+    const { eventos: eventosFallidos } = await readEventos(fallida);
+    expect(eventosFallidos).toEqual([{ tipo: "error", mensaje: "caído" }]);
+
+    const reintento = await postMensaje({ conversacionId, mensaje: "sigue" });
+    const { eventos: eventosReintento } = await readEventos(reintento);
+    const fin = eventosReintento.at(-1);
+    if (fin?.tipo !== "fin") {
+      throw new Error("falta el evento de fin");
+    }
+    expect(fin.accionesPropuestas.map((accion) => accion.id)).toEqual([pendiente.id]);
+
+    expect(
+      listarMensajes(handle.db, conversacionId).map((mensaje) => [mensaje.rol, mensaje.contenido]),
+    ).toEqual([
+      ["user", "hola"],
+      ["assistant", "Primera"],
+      ["user", "sigue"],
+      ["assistant", "Segunda"],
+    ]);
+  });
+
+  it("persiste el parcial y lo devuelve en el fin cuando el stream agota el timeout", async () => {
+    const client: LLMClient = {
+      async chat(): Promise<ChatResponse> {
+        throw new Error("no se esperaba una llamada de chat directo");
+      },
+      async *chatStream(): AsyncIterable<ChatChunk> {
+        yield { contentDelta: "parcial mostrado" };
+        await new Promise((resolver) => setTimeout(resolver, 50));
+        yield { contentDelta: " y resto" };
+        yield { finishReason: "stop" };
+      },
+      async embed(): Promise<number[][]> {
+        return [];
+      },
+    };
+    configure(client, { limits: { timeoutMs: 10 } });
+
+    const res = await postMensaje({ mensaje: "date prisa" });
+
+    expect(res.status).toBe(200);
+    const { eventos } = await readEventos(res);
+    expect(eventos.map((evento) => evento.tipo)).toEqual(["delta", "fin"]);
+    const fin = eventos.at(-1);
+    if (fin?.tipo !== "fin") {
+      throw new Error("falta el evento de fin");
+    }
+    expect(fin.estado).toBe("limite");
+    expect(fin.contenido).toBe("parcial mostrado");
+    expect(
+      listarMensajes(handle.db, conversacionIdDe(eventos)).map((mensaje) => [
+        mensaje.rol,
+        mensaje.contenido,
+      ]),
+    ).toEqual([
+      ["user", "date prisa"],
+      ["assistant", "parcial mostrado"],
+    ]);
+  });
+
+  it("persiste el parcial mostrado si el stream falla a mitad", async () => {
+    const client: LLMClient = {
+      async chat(): Promise<ChatResponse> {
+        throw new Error("no se esperaba una llamada de chat directo");
+      },
+      async *chatStream(): AsyncIterable<ChatChunk> {
+        yield { contentDelta: "parcial" };
+        throw new Error("conexión cortada");
+      },
+      async embed(): Promise<number[][]> {
+        return [];
+      },
+    };
+    configure(client);
+
+    const res = await postMensaje({ mensaje: "hola" });
+
+    expect(res.status).toBe(200);
+    const { eventos } = await readEventos(res);
+    expect(eventos.map((evento) => evento.tipo)).toEqual(["delta", "error"]);
+    expect(eventos[1]).toEqual({ tipo: "error", mensaje: "conexión cortada" });
+
     const [conversacion] = listarConversaciones(handle.db);
     if (conversacion === undefined) {
-      throw new Error("falta la conversación");
+      throw new Error("falta la conversación con el parcial");
     }
-    expect(listarMensajes(handle.db, conversacion.id).map((mensaje) => mensaje.rol)).toEqual([
-      "user",
-    ]);
+    expect(
+      listarMensajes(handle.db, conversacion.id).map((mensaje) => [mensaje.rol, mensaje.contenido]),
+    ).toEqual([["assistant", "parcial"]]);
   });
 
   it("propone recordar un dato y lo usa en el prompt siguiente tras confirmarlo", async () => {
@@ -399,7 +506,7 @@ describe("POST /api/chat/mensajes", () => {
 
   it("answers 429 rate_limited when the session ip exceeds the message budget", async () => {
     const client = new MockLLMClient({ responses: [finalTurn("Uno"), finalTurn("Dos")] });
-    configure(client, { maxMensajes: 2, ventanaMs: 60_000 });
+    configure(client, { rateLimit: { maxMensajes: 2, ventanaMs: 60_000 } });
 
     const primera = await postMensaje({ mensaje: "uno" });
     const segunda = await postMensaje({ mensaje: "dos" });

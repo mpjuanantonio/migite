@@ -7,6 +7,8 @@ import {
 import { defaultLocale, type Locale, t } from "@migite/core";
 import { type IndexDatabase, listarMemorias } from "@migite/index";
 import {
+  type AgentLimits,
+  type AgentRunState,
   type AgentStreamEvent,
   buildSystemPrompt,
   type ChatChunk,
@@ -46,6 +48,7 @@ export type ChatDeps = {
   readonly timeZone?: string;
   readonly locale?: Locale;
   readonly rateLimit?: ChatRateLimitOptions;
+  readonly limits?: AgentLimits;
 };
 
 type RegistroMensajes = {
@@ -168,22 +171,28 @@ chatRouter.post("/mensajes", async (c) => {
   }
 
   const conversations: ConversationsDeps = { db: actual.db };
-  const conversacion = abrirConversacion(conversations, body.conversacionId);
-  const history = historialDeConversacion(conversations, conversacion.id).map((mensaje) => ({
-    role: mensaje.rol,
-    content: mensaje.contenido,
-  }));
-  registrarMensaje(conversations, {
-    conversacionId: conversacion.id,
-    rol: "user",
-    contenido: body.mensaje,
-  });
-  const registry = crearRegistroDelAgente({
+  const existente =
+    body.conversacionId === undefined
+      ? undefined
+      : abrirConversacion(conversations, body.conversacionId);
+  const history =
+    existente === undefined
+      ? []
+      : historialDeConversacion(conversations, existente.id).map((mensaje) => ({
+          role: mensaje.rol,
+          content: mensaje.contenido,
+        }));
+  const accionesDeps = {
     db: actual.db,
     vaultDir: actual.vaultDir,
     ...(actual.timeZone === undefined ? {} : { timeZone: actual.timeZone }),
+  };
+  const registry = crearRegistroDelAgente(accionesDeps);
+  const runtime = createAgentRuntime({
+    client: conTopeDeHerramientas(actual.client),
+    registry,
+    ...(actual.limits === undefined ? {} : { limits: actual.limits }),
   });
-  const runtime = createAgentRuntime({ client: conTopeDeHerramientas(actual.client), registry });
 
   return streamSSE(c, async (stream) => {
     const write = (event: ChatStreamEvent): Promise<void> =>
@@ -195,6 +204,44 @@ chatRouter.post("/mensajes", async (c) => {
       options: { maxTokens: CHAT_MAX_TOKENS },
     });
     const iterator = run[Symbol.asyncIterator]();
+    let conversacionId = existente?.id;
+
+    const asegurarConversacion = (): string => {
+      if (conversacionId === undefined) {
+        conversacionId = abrirConversacion(conversations, undefined).id;
+      }
+      return conversacionId;
+    };
+
+    const persistirTurno = (persistirUsuario: boolean, contenidoAsistente: string): void => {
+      const id = asegurarConversacion();
+      if (persistirUsuario) {
+        registrarMensaje(conversations, {
+          conversacionId: id,
+          rol: "user",
+          contenido: body.mensaje,
+        });
+      }
+      if (contenidoAsistente.trim().length > 0) {
+        registrarMensaje(conversations, {
+          conversacionId: id,
+          rol: "assistant",
+          contenido: contenidoAsistente,
+        });
+      }
+    };
+
+    const escribirFin = (contenido: string, pasos: number, estado: AgentRunState): Promise<void> =>
+      write(
+        chatStreamEventSchema.parse({
+          tipo: "fin",
+          contenido,
+          pasos,
+          estado,
+          conversacionId: asegurarConversacion(),
+          accionesPropuestas: listarAcciones(accionesDeps, "pendiente"),
+        }),
+      );
 
     try {
       let step = await iterator.next();
@@ -208,6 +255,9 @@ chatRouter.post("/mensajes", async (c) => {
 
       const result = step.value;
       if (result.estado === "error") {
+        if (result.content.trim().length > 0) {
+          persistirTurno(false, result.content);
+        }
         await write(
           chatStreamEventSchema.parse({
             tipo: "error",
@@ -217,31 +267,8 @@ chatRouter.post("/mensajes", async (c) => {
         return;
       }
 
-      if (result.content.trim().length > 0) {
-        registrarMensaje(conversations, {
-          conversacionId: conversacion.id,
-          rol: "assistant",
-          contenido: result.content,
-        });
-      }
-
-      await write(
-        chatStreamEventSchema.parse({
-          tipo: "fin",
-          contenido: result.content,
-          pasos: result.steps,
-          estado: result.estado,
-          conversacionId: conversacion.id,
-          accionesPropuestas: listarAcciones(
-            {
-              db: actual.db,
-              vaultDir: actual.vaultDir,
-              ...(actual.timeZone === undefined ? {} : { timeZone: actual.timeZone }),
-            },
-            "pendiente",
-          ),
-        }),
-      );
+      persistirTurno(true, result.content);
+      await escribirFin(result.content, result.steps, result.estado);
     } catch (error) {
       await write(chatStreamEventSchema.parse({ tipo: "error", mensaje: describeError(error) }));
     }
