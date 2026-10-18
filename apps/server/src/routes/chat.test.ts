@@ -348,7 +348,7 @@ describe("POST /api/chat/mensajes", () => {
       },
       async *chatStream(): AsyncIterable<ChatChunk> {
         yield { contentDelta: "parcial mostrado" };
-        await new Promise((resolver) => setTimeout(resolver, 50));
+        await new Promise((resolver) => setTimeout(resolver, 1000));
         yield { contentDelta: " y resto" };
         yield { finishReason: "stop" };
       },
@@ -356,7 +356,7 @@ describe("POST /api/chat/mensajes", () => {
         return [];
       },
     };
-    configure(client, { limits: { timeoutMs: 10 } });
+    configure(client, { limits: { timeoutMs: 100 } });
 
     const res = await postMensaje({ mensaje: "date prisa" });
 

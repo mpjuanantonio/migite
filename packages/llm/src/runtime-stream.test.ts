@@ -167,7 +167,7 @@ describe("AgentRuntime.runStream", () => {
       },
       async *chatStream(): AsyncIterable<ChatChunk> {
         yield { contentDelta: "voy por la mitad" };
-        await new Promise((resolver) => setTimeout(resolver, 50));
+        await new Promise((resolver) => setTimeout(resolver, 1000));
         yield { contentDelta: " y termino" };
         yield { finishReason: "stop" };
       },
@@ -178,7 +178,7 @@ describe("AgentRuntime.runStream", () => {
     const runtime = createAgentRuntime({
       client,
       registry: new ToolRegistry(),
-      limits: { timeoutMs: 10 },
+      limits: { timeoutMs: 100 },
     });
 
     const { events, result } = await drain(
@@ -186,7 +186,7 @@ describe("AgentRuntime.runStream", () => {
     );
 
     expect(result.estado).toBe("limite");
-    expect(result.error).toContain("timeoutMs=10");
+    expect(result.error).toContain("timeoutMs=100");
     expect(result.content).toBe("voy por la mitad");
     expect(events).toEqual([{ type: "delta", texto: "voy por la mitad" }]);
   });
