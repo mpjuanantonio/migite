@@ -5,6 +5,8 @@ export const LIMITE_MENSAJE_CHAT = 4000;
 
 export const LIMITE_HISTORIAL_CHAT = 40;
 
+export const LIMITE_ACCIONES_PROPUESTAS = 20;
+
 export const chatHistorialMensajeSchema = z.strictObject({
   role: z.enum(["user", "assistant"]),
   content: z.string(),
@@ -31,7 +33,7 @@ export const chatStreamEventSchema = z.discriminatedUnion("tipo", [
     contenido: z.string(),
     pasos: z.number().int().nonnegative(),
     estado: chatRunEstadoSchema,
-    accionesPropuestas: z.array(accionSchema),
+    accionesPropuestas: z.array(accionSchema).max(LIMITE_ACCIONES_PROPUESTAS),
     conversacionId: z.string().optional(),
   }),
   z.strictObject({ tipo: z.literal("error"), mensaje: z.string() }),

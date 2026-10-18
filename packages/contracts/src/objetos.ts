@@ -10,6 +10,16 @@ const MAX_WIKILINK_LENGTH = 300;
 
 const wikilinkText = z.string().trim().max(MAX_WIKILINK_LENGTH).regex(WIKILINK_PATTERN);
 
+export const MAX_TITULO_OBJETO = 300;
+
+export const MAX_CUERPO_OBJETO = 200_000;
+
+export const MAX_ATRIBUTOS_OBJETO = 200;
+
+const atributosSchema = z
+  .record(z.string(), z.unknown())
+  .refine((atributos) => Object.keys(atributos).length <= MAX_ATRIBUTOS_OBJETO);
+
 export const degradationReasonSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("unknownType"),
@@ -77,9 +87,9 @@ export type ArbolObjetos = z.infer<typeof arbolObjetosSchema>;
 
 const objectBodyShape = {
   tipo: nonEmptyText.optional(),
-  titulo: nonEmptyText,
-  atributos: z.record(z.string(), z.unknown()).optional(),
-  cuerpo: z.string().optional(),
+  titulo: nonEmptyText.max(MAX_TITULO_OBJETO),
+  atributos: atributosSchema.optional(),
+  cuerpo: z.string().max(MAX_CUERPO_OBJETO).optional(),
   carpeta: z.string().optional(),
 };
 
@@ -95,7 +105,7 @@ export const patchObjectBodySchema = z.strictObject(objectBodyShape).partial();
 export type PatchObjectBody = z.infer<typeof patchObjectBodySchema>;
 
 export const renameObjectBodySchema = z.strictObject({
-  nuevoTitulo: nonEmptyText,
+  nuevoTitulo: nonEmptyText.max(MAX_TITULO_OBJETO),
 });
 
 export type RenameObjectBody = z.infer<typeof renameObjectBodySchema>;

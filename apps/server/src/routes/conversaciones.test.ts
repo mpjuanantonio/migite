@@ -4,6 +4,8 @@ import { join } from "node:path";
 import {
   type Conversacion,
   conversacionesListSchema,
+  LIMITE_MENSAJES_DEFAULT,
+  LIMITE_MENSAJES_MAX,
   type Mensaje,
   mensajesListSchema,
 } from "@migite/contracts";
@@ -55,8 +57,12 @@ const getJson = async <T>(path: string): Promise<T> => {
 const listar = async (): Promise<Conversacion[]> =>
   conversacionesListSchema.parse(await getJson("/api/conversaciones")).conversaciones;
 
-const transcript = async (id: string): Promise<Mensaje[]> =>
-  mensajesListSchema.parse(await getJson(`/api/conversaciones/${id}/mensajes`)).mensajes;
+const transcript = async (id: string, limite?: number): Promise<Mensaje[]> =>
+  mensajesListSchema.parse(
+    await getJson(
+      `/api/conversaciones/${id}/mensajes${limite === undefined ? "" : `?limite=${limite}`}`,
+    ),
+  ).mensajes;
 
 const borrar = (id: string): Promise<Response> =>
   Promise.resolve(
@@ -126,6 +132,52 @@ describe("GET /api/conversaciones/:id/mensajes", () => {
       expect.objectContaining({ rol: "user", contenido: "hola" }),
       expect.objectContaining({ rol: "assistant", contenido: "buenas" }),
     ]);
+  });
+
+  it("returns only the most recent messages up to the limit", async () => {
+    const conversacion = sembrar(
+      "Larga",
+      Array.from({ length: 5 }, (_, index): [Mensaje["rol"], string] => [
+        index % 2 === 0 ? "user" : "assistant",
+        `m${index}`,
+      ]),
+    );
+
+    expect((await transcript(conversacion.id, 2)).map((mensaje) => mensaje.contenido)).toEqual([
+      "m3",
+      "m4",
+    ]);
+  });
+
+  it("applies the default limit of 40 messages", async () => {
+    const conversacion = sembrar(
+      "Muy larga",
+      Array.from({ length: 45 }, (_, index): [Mensaje["rol"], string] => [
+        index % 2 === 0 ? "user" : "assistant",
+        `m${index}`,
+      ]),
+    );
+
+    const mensajes = await transcript(conversacion.id);
+
+    expect(mensajes).toHaveLength(LIMITE_MENSAJES_DEFAULT);
+    expect(mensajes[0]?.contenido).toBe("m5");
+    expect(mensajes.at(-1)?.contenido).toBe("m44");
+  });
+
+  it("accepts the max limit and rejects out-of-range or invalid ones", async () => {
+    const conversacion = sembrar("Frontera", [["user", "hola"]]);
+
+    expect(await transcript(conversacion.id, LIMITE_MENSAJES_MAX)).toHaveLength(1);
+    for (const limite of ["0", String(LIMITE_MENSAJES_MAX + 1), "abc"]) {
+      const res = await app.request(
+        `/api/conversaciones/${conversacion.id}/mensajes?limite=${limite}`,
+        { headers: headers() },
+      );
+
+      expect(res.status).toBe(400);
+      expect((await errorOf(res)).error.codigo).toBe("validation_error");
+    }
   });
 
   it("answers 404 for an unknown conversation", async () => {

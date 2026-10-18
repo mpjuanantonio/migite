@@ -7,6 +7,9 @@ import {
   enlaceEntranteSchema,
   enlacesEntrantesSchema,
   LIMITE_MAX_ARBOL,
+  MAX_ATRIBUTOS_OBJETO,
+  MAX_CUERPO_OBJETO,
+  MAX_TITULO_OBJETO,
   objectPayloadSchema,
   patchObjectBodySchema,
   renameObjectBodySchema,
@@ -168,6 +171,49 @@ describe("createObjectBodySchema", () => {
   it("rejects unknown keys and invalid attributes", () => {
     expect(createObjectBodySchema.safeParse({ titulo: "Nota", extra: true }).success).toBe(false);
     expect(createObjectBodySchema.safeParse({ titulo: "Nota", atributos: [] }).success).toBe(false);
+  });
+
+  it("rejects a titulo longer than the limit", () => {
+    const titulo = "a".repeat(MAX_TITULO_OBJETO);
+
+    expect(createObjectBodySchema.safeParse({ titulo }).success).toBe(true);
+    expect(createObjectBodySchema.safeParse({ titulo: `${titulo}a` }).success).toBe(false);
+    expect(patchObjectBodySchema.safeParse({ titulo: `${titulo}a` }).success).toBe(false);
+    expect(renameObjectBodySchema.safeParse({ nuevoTitulo: `${titulo}a` }).success).toBe(false);
+  });
+
+  it("rejects a cuerpo longer than the limit", () => {
+    expect(
+      createObjectBodySchema.safeParse({ titulo: "Nota", cuerpo: "x".repeat(MAX_CUERPO_OBJETO) })
+        .success,
+    ).toBe(true);
+    expect(
+      createObjectBodySchema.safeParse({
+        titulo: "Nota",
+        cuerpo: "x".repeat(MAX_CUERPO_OBJETO + 1),
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects more attributes than the limit", () => {
+    const atributos = (total: number): Record<string, number> =>
+      Object.fromEntries(Array.from({ length: total }, (_, index) => [`clave${index}`, index]));
+
+    expect(
+      createObjectBodySchema.safeParse({
+        titulo: "Nota",
+        atributos: atributos(MAX_ATRIBUTOS_OBJETO),
+      }).success,
+    ).toBe(true);
+    expect(
+      createObjectBodySchema.safeParse({
+        titulo: "Nota",
+        atributos: atributos(MAX_ATRIBUTOS_OBJETO + 1),
+      }).success,
+    ).toBe(false);
+    expect(
+      patchObjectBodySchema.safeParse({ atributos: atributos(MAX_ATRIBUTOS_OBJETO + 1) }).success,
+    ).toBe(false);
   });
 });
 

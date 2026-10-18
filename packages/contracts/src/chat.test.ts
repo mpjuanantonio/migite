@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { chatMensajeBodySchema, chatStreamEventSchema, LIMITE_MENSAJE_CHAT } from "./chat.js";
+import {
+  chatMensajeBodySchema,
+  chatStreamEventSchema,
+  LIMITE_ACCIONES_PROPUESTAS,
+  LIMITE_MENSAJE_CHAT,
+} from "./chat.js";
 
 describe("chatMensajeBodySchema", () => {
   it("accepts a message with and without a conversation id", () => {
@@ -83,6 +88,27 @@ describe("chatStreamEventSchema", () => {
       tipo: "error",
       mensaje: "falló",
     });
+  });
+
+  it("caps the proposed actions", () => {
+    const fin = (total: number) => ({
+      tipo: "fin",
+      contenido: "listo",
+      pasos: 1,
+      estado: "completado",
+      accionesPropuestas: Array.from({ length: total }, (_, index) => ({
+        id: `01JACCION${String(index).padStart(17, "0")}`,
+        tipoAccion: "crear_objeto",
+        payload: { titulo: `Nota ${index}` },
+        estado: "pendiente",
+        creada: "2026-10-16T10:00:00.000+02:00",
+      })),
+    });
+
+    expect(chatStreamEventSchema.safeParse(fin(LIMITE_ACCIONES_PROPUESTAS)).success).toBe(true);
+    expect(chatStreamEventSchema.safeParse(fin(LIMITE_ACCIONES_PROPUESTAS + 1)).success).toBe(
+      false,
+    );
   });
 
   it("rejects unknown types and malformed payloads", () => {

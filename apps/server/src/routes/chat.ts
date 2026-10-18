@@ -3,6 +3,7 @@ import {
   type ChatStreamEvent,
   chatMensajeBodySchema,
   chatStreamEventSchema,
+  LIMITE_ACCIONES_PROPUESTAS,
 } from "@migite/contracts";
 import { defaultLocale, type Locale, t } from "@migite/core";
 import { type IndexDatabase, listarMemorias } from "@migite/index";
@@ -56,27 +57,20 @@ type RegistroMensajes = {
   expiraEn: number;
 };
 
-const createRateLimiter = (options: ChatRateLimitOptions = {}) => {
+export const createRateLimiter = (options: ChatRateLimitOptions = {}) => {
   const maxMensajes = options.maxMensajes ?? MAX_MENSAJES_POR_MINUTO;
   const ventanaMs = options.ventanaMs ?? VENTANA_RATE_LIMIT_MS;
   const registros = new Map<string, RegistroMensajes>();
 
-  const vigente = (ip: string, ahora: number): RegistroMensajes | undefined => {
-    const registro = registros.get(ip);
-    if (registro === undefined) {
-      return undefined;
-    }
-    if (registro.expiraEn <= ahora) {
-      registros.delete(ip);
-      return undefined;
-    }
-    return registro;
-  };
-
   return {
     permitir: (ip: string): boolean => {
       const ahora = Date.now();
-      const registro = vigente(ip, ahora);
+      for (const [registrada, registro] of registros) {
+        if (registro.expiraEn <= ahora) {
+          registros.delete(registrada);
+        }
+      }
+      const registro = registros.get(ip);
       if (registro === undefined) {
         registros.set(ip, { mensajes: 1, expiraEn: ahora + ventanaMs });
         return true;
@@ -87,6 +81,7 @@ const createRateLimiter = (options: ChatRateLimitOptions = {}) => {
       registro.mensajes += 1;
       return true;
     },
+    tamano: (): number => registros.size,
   };
 };
 
@@ -155,9 +150,7 @@ const conTopeDeHerramientas = (client: LLMClient): LLMClient => ({
 export const chatRouter = new Hono<ServerEnv>();
 
 chatRouter.post("/mensajes", async (c) => {
-  const body = chatMensajeBodySchema.parse(await readJson(c));
-  const actual = currentDeps();
-  const locale = resolveLocale(c.req.header("accept-language"), actual.locale ?? defaultLocale);
+  const locale = resolveLocale(c.req.header("accept-language"), deps?.locale ?? defaultLocale);
   if (!limiter.permitir(clientIp(c))) {
     return c.json(
       {
@@ -169,6 +162,8 @@ chatRouter.post("/mensajes", async (c) => {
       429,
     );
   }
+  const body = chatMensajeBodySchema.parse(await readJson(c));
+  const actual = currentDeps();
 
   const conversations: ConversationsDeps = { db: actual.db };
   const existente =
@@ -239,7 +234,10 @@ chatRouter.post("/mensajes", async (c) => {
           pasos,
           estado,
           conversacionId: asegurarConversacion(),
-          accionesPropuestas: listarAcciones(accionesDeps, "pendiente"),
+          accionesPropuestas: listarAcciones(accionesDeps, "pendiente").slice(
+            0,
+            LIMITE_ACCIONES_PROPUESTAS,
+          ),
         }),
       );
 

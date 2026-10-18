@@ -1,7 +1,11 @@
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type ChatStreamEvent, chatStreamEventSchema } from "@migite/contracts";
+import {
+  type ChatStreamEvent,
+  chatStreamEventSchema,
+  LIMITE_ACCIONES_PROPUESTAS,
+} from "@migite/contracts";
 import { bootstrapVault, isUlid } from "@migite/core";
 import {
   actualizarEstadoAccion,
@@ -21,7 +25,7 @@ import {
   type ToolCall,
 } from "@migite/llm";
 import type { Hono } from "hono";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app.js";
 import {
   type AuthOptions,
@@ -31,7 +35,7 @@ import {
 } from "../auth.js";
 import type { ServerEnv } from "../env.js";
 import { configureAcciones } from "./acciones.js";
-import { type ChatRateLimitOptions, configureChat } from "./chat.js";
+import { type ChatRateLimitOptions, configureChat, createRateLimiter } from "./chat.js";
 
 const USUARIO = "ana";
 const SECRETO = "secreto-de-test-suficientemente-largo";
@@ -522,5 +526,69 @@ describe("POST /api/chat/mensajes", () => {
     expect(bloqueada.status).toBe(429);
     expect((await errorOf(bloqueada)).error.codigo).toBe("rate_limited");
     expect(client.calls).toHaveLength(2);
+  });
+
+  it("consume presupuesto aunque el body sea inválido", async () => {
+    const client = new MockLLMClient({ responses: [finalTurn("Hola")] });
+    configure(client, { rateLimit: { maxMensajes: 1, ventanaMs: 60_000 } });
+
+    const invalido = await postMensaje({});
+    const valido = await postMensaje({ mensaje: "hola" });
+
+    expect(invalido.status).toBe(400);
+    expect((await errorOf(invalido)).error.codigo).toBe("validation_error");
+    expect(valido.status).toBe(429);
+    expect((await errorOf(valido)).error.codigo).toBe("rate_limited");
+    expect(client.calls).toHaveLength(0);
+  });
+
+  it("devuelve solo las 20 propuestas pendientes más recientes", async () => {
+    const creadas: string[] = [];
+    vi.useFakeTimers();
+    try {
+      for (let index = 0; index < LIMITE_ACCIONES_PROPUESTAS + 5; index += 1) {
+        const accion = crearAccion(handle.db, {
+          tipoAccion: "crear_objeto",
+          payload: { titulo: `Pendiente ${index}` },
+        });
+        creadas.push(accion.id);
+        vi.advanceTimersByTime(1);
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+    const client = new MockLLMClient({ responses: [finalTurn("Hecho")] });
+    configure(client);
+
+    const res = await postMensaje({ mensaje: "¿qué hay pendiente?" });
+
+    expect(res.status).toBe(200);
+    const { eventos } = await readEventos(res);
+    const fin = eventos.at(-1);
+    if (fin?.tipo !== "fin") {
+      throw new Error("falta el evento de fin");
+    }
+    expect(fin.accionesPropuestas.map((accion) => accion.id)).toEqual(
+      creadas.slice(-LIMITE_ACCIONES_PROPUESTAS).reverse(),
+    );
+  });
+});
+
+describe("createRateLimiter", () => {
+  it("barre las ips que no vuelven dentro de la ventana", () => {
+    const limiter = createRateLimiter({ maxMensajes: 1, ventanaMs: 0 });
+
+    expect(limiter.permitir("10.0.0.1")).toBe(true);
+    expect(limiter.permitir("10.0.0.2")).toBe(true);
+    expect(limiter.tamano()).toBe(1);
+  });
+
+  it("mantiene el cupo por ip dentro de la ventana", () => {
+    const limiter = createRateLimiter({ maxMensajes: 2, ventanaMs: 60_000 });
+
+    expect(limiter.permitir("10.0.0.1")).toBe(true);
+    expect(limiter.permitir("10.0.0.1")).toBe(true);
+    expect(limiter.permitir("10.0.0.1")).toBe(false);
+    expect(limiter.tamano()).toBe(1);
   });
 });

@@ -27,8 +27,18 @@ export const mensajeSchema = z.strictObject({
 
 export type Mensaje = z.infer<typeof mensajeSchema>;
 
+export const LIMITE_MENSAJES_DEFAULT = 40;
+
+export const LIMITE_MENSAJES_MAX = 200;
+
+export const mensajesQuerySchema = z.object({
+  limite: z.coerce.number().int().min(1).max(LIMITE_MENSAJES_MAX).default(LIMITE_MENSAJES_DEFAULT),
+});
+
+export type MensajesQuery = z.infer<typeof mensajesQuerySchema>;
+
 export const mensajesListSchema = z.strictObject({
-  mensajes: z.array(mensajeSchema),
+  mensajes: z.array(mensajeSchema).max(LIMITE_MENSAJES_MAX),
 });
 
 export type MensajesList = z.infer<typeof mensajesListSchema>;

@@ -30,8 +30,6 @@ export const DELIMITADOR_DATOS_VAULT_INICIO = "<datos_vault>";
 
 export const DELIMITADOR_DATOS_VAULT_FIN = "</datos_vault>";
 
-// Espejo del delimitador de @migite/llm (no reexportado): los campos de texto del vault
-// viajan marcados como datos para que el modelo no los interprete como instrucciones.
 const datoDeVault = (valor: string): string =>
   `${DELIMITADOR_DATOS_VAULT_INICIO}${valor}${DELIMITADOR_DATOS_VAULT_FIN}`;
 
