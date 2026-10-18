@@ -1,6 +1,6 @@
 import { describeError } from "./errors.js";
 import { envolverDatosVault } from "./prompt.js";
-import type { ToolRegistry } from "./tools.js";
+import type { ToolExecution, ToolRegistry } from "./tools.js";
 import type {
   ChatChunk,
   ChatMessage,
@@ -131,6 +131,18 @@ const unirContenido = (acumulado: string, nuevo: string): string => {
   return `${acumulado}\n\n${nuevo}`;
 };
 
+const argumentosIlegibles = new WeakSet<Record<string, unknown>>();
+
+export const marcarArgumentosIlegibles = (
+  args: Record<string, unknown>,
+): Record<string, unknown> => {
+  argumentosIlegibles.add(args);
+  return args;
+};
+
+export const esArgumentosIlegibles = (args: Record<string, unknown>): boolean =>
+  argumentosIlegibles.has(args);
+
 const esResultadoEstructurado = (content: string): boolean => {
   try {
     const parsed: unknown = JSON.parse(content);
@@ -140,8 +152,6 @@ const esResultadoEstructurado = (content: string): boolean => {
   }
 };
 
-// Punto único: el texto libre de una herramienta se marca como datos del usuario; los
-// resultados JSON ya delimitan sus propios campos de usuario (ver herramientas de lectura).
 const contenidoDeHerramienta = (content: string): string =>
   esResultadoEstructurado(content) ? content : envolverDatosVault(content);
 
@@ -185,13 +195,25 @@ const mergeToolCallDelta = (current: PartialToolCall, delta: ToolCallDelta): Par
 });
 
 const parseToolArguments = (raw: string): Record<string, unknown> => {
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : {};
-  } catch {
+  if (raw.trim() === "") {
     return {};
   }
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : marcarArgumentosIlegibles({});
+  } catch {
+    return marcarArgumentosIlegibles({});
+  }
 };
+
+const errorArgumentosIlegibles = (call: ToolCall): ToolExecution => ({
+  toolCallId: call.id,
+  name: call.name,
+  content: `argumentos ilegibles o truncados para la herramienta "${call.name}"`,
+  isError: true,
+});
 
 const closeIterator = (iterator: AsyncIterator<ChatChunk>): void => {
   const result = iterator.return?.();
@@ -372,10 +394,9 @@ const createAgentLoop = (options: AgentRuntimeOptions, streaming: boolean): Agen
         events.push(start);
         yield start;
 
-        const toolOutcome = await withDeadline(
-          options.registry.execute(toolCall),
-          remainingForTool,
-        );
+        const toolOutcome = esArgumentosIlegibles(toolCall.arguments)
+          ? { expired: false as const, value: errorArgumentosIlegibles(toolCall) }
+          : await withDeadline(options.registry.execute(toolCall), remainingForTool);
         if (toolOutcome.expired) {
           return finish("limite", timeoutMessage(timeoutMs));
         }

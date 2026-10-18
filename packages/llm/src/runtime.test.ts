@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { MockLLMClient } from "./mock.js";
 import { envolverDatosVault } from "./prompt.js";
-import { createAgentRuntime, DEFAULT_AGENT_LIMITS } from "./runtime.js";
+import { createAgentRuntime, DEFAULT_AGENT_LIMITS, marcarArgumentosIlegibles } from "./runtime.js";
 import { ToolRegistry } from "./tools.js";
 import type { ChatRequest, ChatResponse, ChatUsage, ToolCall } from "./types.js";
 
@@ -127,6 +127,32 @@ describe("createAgentRuntime", () => {
     const toolMessage = chatRequestAt(client, 1).messages.at(-1);
     expect(toolMessage?.role).toBe("tool");
     expect(toolMessage?.content).toMatch(/argumentos inválidos/);
+    expect(result.events.at(1)).toEqual({
+      type: "toolEnd",
+      toolCallId: "call-leer_objeto",
+      name: "leer_objeto",
+      isError: true,
+    });
+  });
+
+  it("devuelve un error explícito por argumentos ilegibles y no ejecuta la herramienta", async () => {
+    const executed: string[] = [];
+    const client = new MockLLMClient({
+      responses: [
+        toolTurn([toolCall("leer_objeto", marcarArgumentosIlegibles({}))]),
+        finalTurn("Corregido"),
+      ],
+    });
+    const runtime = createAgentRuntime({ client, registry: createRegistry(executed) });
+
+    const result = await runtime.run({ history: [], userMessage: "lee mal" });
+
+    expect(result.estado).toBe("completado");
+    expect(result.content).toBe("Corregido");
+    expect(executed).toEqual([]);
+    const toolMessage = chatRequestAt(client, 1).messages.at(-1);
+    expect(toolMessage?.role).toBe("tool");
+    expect(toolMessage?.content).toContain("argumentos ilegibles o truncados");
     expect(result.events.at(1)).toEqual({
       type: "toolEnd",
       toolCallId: "call-leer_objeto",

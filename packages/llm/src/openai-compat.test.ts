@@ -2,6 +2,7 @@ import type { LlmConfig } from "@migite/core";
 import { describe, expect, it } from "vitest";
 import { LlmError } from "./errors.js";
 import { createOpenAICompatClient, type FetchLike } from "./openai-compat.js";
+import { esArgumentosIlegibles } from "./runtime.js";
 import type { ChatChunk, ChatRequest } from "./types.js";
 
 const configA: LlmConfig = {
@@ -182,7 +183,7 @@ describe("createOpenAICompatClient", () => {
   });
 
   it.each(['{"consulta":', "texto plano", "42"])(
-    "usa arguments vacío si los arguments del proveedor no son un objeto JSON válido (%s)",
+    "marca como ilegibles los arguments del proveedor que no son un objeto JSON válido (%s)",
     async (rawArguments) => {
       const client = clientWith(async () =>
         jsonResponse({
@@ -206,7 +207,9 @@ describe("createOpenAICompatClient", () => {
 
       const response = await client.chat("chat", chatRequest);
 
-      expect(response.message.toolCalls).toEqual([{ id: "call-1", name: "buscar", arguments: {} }]);
+      const [toolCall] = response.message.toolCalls;
+      expect(toolCall).toEqual({ id: "call-1", name: "buscar", arguments: {} });
+      expect(esArgumentosIlegibles(toolCall?.arguments ?? {})).toBe(true);
       expect(response.finishReason).toBe("tool_calls");
     },
   );

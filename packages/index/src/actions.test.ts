@@ -58,6 +58,33 @@ describe("crearAccion", () => {
 
     expect(() => create("crear_objeto", circular)).toThrow(IndexError);
   });
+
+  it("reuses an identical pending proposal instead of duplicating it", () => {
+    const first = create("crear_objeto", { titulo: "Nota nueva", atributos: { z: 2, a: 1 } });
+    const second = create("crear_objeto", { atributos: { a: 1, z: 2 }, titulo: "Nota nueva" });
+
+    expect(second.id).toBe(first.id);
+    expect(second.creada).toBe(first.creada);
+    expect(listarAcciones(handle.db)).toEqual([first]);
+  });
+
+  it("creates a new proposal when the previous one is no longer pending", () => {
+    const first = create("crear_objeto", { titulo: "Nota nueva" });
+    actualizarEstadoAccion(handle.db, first.id, { estado: "rechazada" });
+
+    const second = create("crear_objeto", { titulo: "Nota nueva" });
+
+    expect(second.id).not.toBe(first.id);
+    expect(listarAcciones(handle.db)).toHaveLength(2);
+  });
+
+  it("creates a new proposal when the type or the payload differs", () => {
+    const first = create("crear_objeto", { titulo: "Nota nueva" });
+    const otroPayload = create("crear_objeto", { titulo: "Otra nota" });
+    const otroTipo = create("borrar_objeto", { titulo: "Nota nueva" });
+
+    expect(new Set([first.id, otroPayload.id, otroTipo.id]).size).toBe(3);
+  });
 });
 
 describe("listarAcciones / obtenerAccion", () => {

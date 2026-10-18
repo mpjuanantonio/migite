@@ -177,6 +177,20 @@ describe("crear_objeto", () => {
     });
   });
 
+  it("reutiliza la propuesta pendiente si el agente reintenta la misma llamada", async () => {
+    const args = {
+      tipo: "tarea",
+      titulo: "Preparar informe",
+      atributos: { estado: "pendiente" },
+    };
+
+    const first = await proponer("crear_objeto", args);
+    const second = await proponer("crear_objeto", args);
+
+    expect(second.accion_propuesta.id).toBe(first.accion_propuesta.id);
+    expect(listarAcciones(handle.db)).toHaveLength(1);
+  });
+
   it("rechaza crear sin título con un error legible y sin crear la acción", async () => {
     const antes = snapshotVault(vaultDir);
 

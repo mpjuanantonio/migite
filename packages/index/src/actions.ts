@@ -85,6 +85,29 @@ const deserialize = (text: string, id: string, field: string): unknown => {
   }
 };
 
+const stableStringify = (value: unknown): string => {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(",")}]`;
+  }
+  if (typeof value === "object" && value !== null) {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+};
+
+const canonicalPayloadKey = (text: string): string | undefined => {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return stableStringify(parsed);
+  } catch {
+    return undefined;
+  }
+};
+
 const toRecord = (row: AccionRow): AccionRecord => {
   if (!isAccionEstado(row.estado)) {
     throw new IndexError(`La acción "${row.id}" tiene un estado desconocido: "${row.estado}".`);
@@ -109,11 +132,25 @@ export const crearAccion = (db: IndexDatabase, input: CrearAccionInput): AccionR
   }
   const id = newUlid();
   const creada = new Date().toISOString();
+  const payloadTexto = serialize(input.payload, id, "payload");
+  const clave = canonicalPayloadKey(payloadTexto);
+  const pendientes =
+    clave === undefined
+      ? []
+      : db
+          .select()
+          .from(acciones)
+          .where(and(eq(acciones.tipoAccion, tipoAccion), eq(acciones.estado, "pendiente")))
+          .all();
+  const existente = pendientes.find((row) => canonicalPayloadKey(row.payload) === clave);
+  if (existente !== undefined) {
+    return toRecord(existente);
+  }
   db.insert(acciones)
     .values({
       id,
       tipoAccion,
-      payload: serialize(input.payload, id, "payload"),
+      payload: payloadTexto,
       estado: "pendiente",
       detalle: null,
       resultado: null,

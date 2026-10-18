@@ -300,4 +300,46 @@ describe("AgentRuntime.runStream", () => {
       name: "leer_objeto",
     });
   });
+
+  it("trata los argumentos truncados del stream como error explícito y no ejecuta la herramienta", async () => {
+    const executed: string[] = [];
+    const requests: ChatRequest[] = [];
+    let turn = 0;
+    const client: LLMClient = {
+      async chat(): Promise<ChatResponse> {
+        throw new Error("no se esperaba una llamada de chat directo");
+      },
+      async *chatStream(_role: LLMRole, request: ChatRequest): AsyncIterable<ChatChunk> {
+        requests.push(request);
+        if (turn === 0) {
+          turn += 1;
+          yield { toolCallDeltas: [{ index: 0, id: "call-1", name: "leer_objeto" }] };
+          yield { toolCallDeltas: [{ index: 0, argumentsDelta: '{"id":"n1' }] };
+          yield { finishReason: "tool_calls" };
+          return;
+        }
+        yield { contentDelta: "Fin" };
+        yield { finishReason: "stop" };
+      },
+      async embed(): Promise<number[][]> {
+        return [];
+      },
+    };
+    const runtime = createAgentRuntime({ client, registry: createRegistry(executed) });
+
+    const { events, result } = await drain(
+      runtime.runStream({ history: [], userMessage: "lee n1" }),
+    );
+
+    expect(executed).toEqual([]);
+    expect(result.estado).toBe("completado");
+    expect(result.content).toBe("Fin");
+    expect(result.toolCallsEjecutados).toHaveLength(1);
+    expect(events).toEqual([
+      { type: "toolStart", toolCallId: "call-1", name: "leer_objeto" },
+      { type: "toolEnd", toolCallId: "call-1", name: "leer_objeto", isError: true },
+      { type: "delta", texto: "Fin" },
+    ]);
+    expect(requests[1]?.messages.at(-1)?.content).toContain("argumentos ilegibles o truncados");
+  });
 });

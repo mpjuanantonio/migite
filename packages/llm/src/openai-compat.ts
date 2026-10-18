@@ -1,6 +1,7 @@
 import type { LlmConfig } from "@migite/core";
 import { LlmError } from "./errors.js";
 import { type ResolvedRoleModel, resolveRoleModel } from "./roles.js";
+import { marcarArgumentosIlegibles } from "./runtime.js";
 import type {
   ChatChunk,
   ChatMessage,
@@ -108,9 +109,9 @@ const parseToolArguments = (raw: unknown): Record<string, unknown> => {
   }
   try {
     const parsed: unknown = JSON.parse(raw);
-    return isRecord(parsed) ? { ...parsed } : {};
+    return isRecord(parsed) ? { ...parsed } : marcarArgumentosIlegibles({});
   } catch {
-    return {};
+    return marcarArgumentosIlegibles({});
   }
 };
 
