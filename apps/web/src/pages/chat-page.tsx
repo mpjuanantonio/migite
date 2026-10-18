@@ -280,13 +280,19 @@ export const ChatPage = () => {
     if (ultimoEnvio === null || enviando || cargandoConversacion) {
       return;
     }
+    const peticion: PeticionChat = {
+      mensaje: ultimoEnvio.mensaje,
+      ...(conversacionId === undefined ? {} : { conversacionId }),
+    };
+    setUltimoEnvio(peticion);
     const idAsistente = siguienteId();
     setMensajes((previos) => {
       const ultimo = previos[previos.length - 1];
-      const base = ultimo?.rol === "assistant" ? previos.slice(0, -1) : previos;
+      const vacio = ultimo?.rol === "assistant" && ultimo.contenido.trim() === "";
+      const base = vacio ? previos.slice(0, -1) : previos;
       return [...base, { id: idAsistente, rol: "assistant", contenido: "" }];
     });
-    void ejecutar(ultimoEnvio, idAsistente);
+    void ejecutar(peticion, idAsistente);
   };
 
   const manejarTecla = (evento: KeyboardEvent<HTMLTextAreaElement>): void => {

@@ -353,6 +353,58 @@ describe("página del chat", () => {
     await cerrar(segundo);
   });
 
+  it("conserva el texto parcial tras un error y no duplica el mensaje al reintentar", async () => {
+    const segundo = crearSse();
+    let intentos = 0;
+    mockApi({
+      chat: () => {
+        intentos += 1;
+        return intentos === 1
+          ? sseCerrado([
+              { tipo: "delta", texto: "A medias" },
+              { tipo: "error", mensaje: "El agente falló" },
+              {
+                tipo: "fin",
+                contenido: "A medias",
+                pasos: 1,
+                estado: "error",
+                accionesPropuestas: [],
+                conversacionId: "C1",
+              },
+            ])
+          : segundo.response;
+      },
+    });
+    const user = userEvent.setup();
+    renderChat();
+
+    await user.type(await cajaDeTexto(), "Hola");
+    await user.keyboard("{Enter}");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("El agente falló");
+    expect(screen.getByText("A medias")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("textbox")).toBeEnabled());
+
+    await user.click(screen.getByRole("button", { name: "Reintentar" }));
+    await waitFor(() => expect(cuerposChat).toHaveLength(2));
+    expect(cuerposChat).toEqual([{ mensaje: "Hola" }, { mensaje: "Hola", conversacionId: "C1" }]);
+    expect(screen.getAllByText("Hola")).toHaveLength(1);
+    expect(screen.getByText("A medias")).toBeInTheDocument();
+
+    await emitir(segundo, { tipo: "delta", texto: "Respuesta" });
+    await emitir(segundo, {
+      tipo: "fin",
+      contenido: "Respuesta",
+      pasos: 1,
+      estado: "completado",
+      accionesPropuestas: [],
+    });
+    await cerrar(segundo);
+
+    expect(screen.getByText("A medias")).toBeInTheDocument();
+    expect(screen.getByText("Respuesta")).toBeInTheDocument();
+  });
+
   it("reutiliza el conversacionId del fin y no envía historial", async () => {
     const primera = crearSse();
     const segunda = crearSse();

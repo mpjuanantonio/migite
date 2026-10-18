@@ -399,15 +399,20 @@ describe("POST /api/chat/mensajes", () => {
 
     expect(res.status).toBe(200);
     const { eventos } = await readEventos(res);
-    expect(eventos.map((evento) => evento.tipo)).toEqual(["delta", "error"]);
+    expect(eventos.map((evento) => evento.tipo)).toEqual(["delta", "error", "fin"]);
     expect(eventos[1]).toEqual({ tipo: "error", mensaje: "conexión cortada" });
-
-    const [conversacion] = listarConversaciones(handle.db);
-    if (conversacion === undefined) {
-      throw new Error("falta la conversación con el parcial");
+    const fin = eventos.at(-1);
+    if (fin?.tipo !== "fin") {
+      throw new Error("falta el evento de fin");
     }
+    expect(fin.estado).toBe("error");
+    expect(fin.contenido).toBe("parcial");
+
     expect(
-      listarMensajes(handle.db, conversacion.id).map((mensaje) => [mensaje.rol, mensaje.contenido]),
+      listarMensajes(handle.db, conversacionIdDe(eventos)).map((mensaje) => [
+        mensaje.rol,
+        mensaje.contenido,
+      ]),
     ).toEqual([["assistant", "parcial"]]);
   });
 

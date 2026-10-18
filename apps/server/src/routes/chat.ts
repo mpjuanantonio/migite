@@ -255,7 +255,8 @@ chatRouter.post("/mensajes", async (c) => {
 
       const result = step.value;
       if (result.estado === "error") {
-        if (result.content.trim().length > 0) {
+        const parcial = result.content.trim().length > 0;
+        if (parcial) {
           persistirTurno(false, result.content);
         }
         await write(
@@ -264,6 +265,9 @@ chatRouter.post("/mensajes", async (c) => {
             mensaje: result.error ?? t("error.internalError", undefined, locale),
           }),
         );
+        if (parcial) {
+          await escribirFin(result.content, result.steps, "error");
+        }
         return;
       }
 
