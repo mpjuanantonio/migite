@@ -82,7 +82,7 @@ describe("AgentRuntime.runStream", () => {
       { type: "delta", texto: "Listo: el contenido es A." },
     ]);
     expect(result.estado).toBe("completado");
-    expect(result.content).toBe("Listo: el contenido es A.");
+    expect(result.content).toBe("Voy a leer n1.\n\nListo: el contenido es A.");
     expect(result.steps).toBe(2);
     expect(result.finishReason).toBe("stop");
     expect(result.events).toEqual([
@@ -152,11 +152,66 @@ describe("AgentRuntime.runStream", () => {
     expect(result.estado).toBe("limite");
     expect(result.steps).toBe(2);
     expect(result.error).toContain("maxSteps=2");
+    expect(result.content).toBe("parcial 0\n\nparcial 1");
     expect(events.filter((event) => event.type === "delta")).toEqual([
       { type: "delta", texto: "parcial 0" },
       { type: "delta", texto: "parcial 1" },
     ]);
     expect(client.calls).toHaveLength(2);
+  });
+
+  it("conserva el texto parcial emitido si el stream se agota por timeout", async () => {
+    const client: LLMClient = {
+      async chat(): Promise<ChatResponse> {
+        throw new Error("no se esperaba una llamada de chat directo");
+      },
+      async *chatStream(): AsyncIterable<ChatChunk> {
+        yield { contentDelta: "voy por la mitad" };
+        await new Promise((resolver) => setTimeout(resolver, 50));
+        yield { contentDelta: " y termino" };
+        yield { finishReason: "stop" };
+      },
+      async embed(): Promise<number[][]> {
+        return [];
+      },
+    };
+    const runtime = createAgentRuntime({
+      client,
+      registry: new ToolRegistry(),
+      limits: { timeoutMs: 10 },
+    });
+
+    const { events, result } = await drain(
+      runtime.runStream({ history: [], userMessage: "date prisa" }),
+    );
+
+    expect(result.estado).toBe("limite");
+    expect(result.error).toContain("timeoutMs=10");
+    expect(result.content).toBe("voy por la mitad");
+    expect(events).toEqual([{ type: "delta", texto: "voy por la mitad" }]);
+  });
+
+  it("conserva el texto parcial emitido si el stream falla a mitad", async () => {
+    const client: LLMClient = {
+      async chat(): Promise<ChatResponse> {
+        throw new Error("no se esperaba una llamada de chat directo");
+      },
+      async *chatStream(): AsyncIterable<ChatChunk> {
+        yield { contentDelta: "parcial" };
+        throw new Error("conexión cortada");
+      },
+      async embed(): Promise<number[][]> {
+        return [];
+      },
+    };
+    const runtime = createAgentRuntime({ client, registry: new ToolRegistry() });
+
+    const { events, result } = await drain(runtime.runStream({ history: [], userMessage: "hola" }));
+
+    expect(result.estado).toBe("error");
+    expect(result.error).toBe("conexión cortada");
+    expect(result.content).toBe("parcial");
+    expect(events).toEqual([{ type: "delta", texto: "parcial" }]);
   });
 
   it("corta con estado limite si el stream tarda más que timeoutMs", async () => {

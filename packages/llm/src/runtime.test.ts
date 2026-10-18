@@ -257,9 +257,40 @@ describe("createAgentRuntime", () => {
     expect(result.estado).toBe("limite");
     expect(result.steps).toBe(2);
     expect(result.toolCallsEjecutados).toHaveLength(2);
-    expect(result.content).toBe("parcial 1");
+    expect(result.content).toBe("parcial 0\n\nparcial 1");
     expect(result.error).toContain("maxSteps=2");
     expect(client.calls).toHaveLength(2);
+  });
+
+  it("acumula el contenido de los turnos intermedios con la respuesta final", async () => {
+    const client = new MockLLMClient({
+      responses: [
+        toolTurn([toolCall("leer_objeto", { id: "n1" })], "Voy a leer n1."),
+        finalTurn("Listo: el contenido es A."),
+      ],
+    });
+    const runtime = createAgentRuntime({ client, registry: createRegistry([]) });
+
+    const result = await runtime.run({ history: [], userMessage: "lee n1" });
+
+    expect(result.estado).toBe("completado");
+    expect(result.content).toBe("Voy a leer n1.\n\nListo: el contenido es A.");
+  });
+
+  it("conserva el contenido acumulado si el LLM falla en un turno posterior", async () => {
+    const client = new MockLLMClient({
+      responses: [
+        toolTurn([toolCall("leer_objeto", { id: "n1" })], "Voy a leer n1."),
+        new Error("proveedor caído"),
+      ],
+    });
+    const runtime = createAgentRuntime({ client, registry: createRegistry([]) });
+
+    const result = await runtime.run({ history: [], userMessage: "lee n1" });
+
+    expect(result.estado).toBe("error");
+    expect(result.error).toBe("proveedor caído");
+    expect(result.content).toBe("Voy a leer n1.");
   });
 
   it("usa maxSteps por defecto y no lanza excepciones al agotarlo", async () => {

@@ -121,6 +121,16 @@ const truncate = (text: string, limit: number): string => {
   return `${text.slice(0, safeLimit)}…[truncado: ${omitted} caracteres omitidos]`;
 };
 
+const unirContenido = (acumulado: string, nuevo: string): string => {
+  if (nuevo === "") {
+    return acumulado;
+  }
+  if (acumulado === "") {
+    return nuevo;
+  }
+  return `${acumulado}\n\n${nuevo}`;
+};
+
 const esResultadoEstructurado = (content: string): boolean => {
   try {
     const parsed: unknown = JSON.parse(content);
@@ -138,14 +148,17 @@ const contenidoDeHerramienta = (content: string): string =>
 const timeoutMessage = (timeoutMs: number): string =>
   `tiempo de espera agotado (timeoutMs=${timeoutMs})`;
 
-type TurnOutcome = DeadlineOutcome<ChatResponse>;
+type TurnOutcome =
+  | { readonly tipo: "ok"; readonly value: ChatResponse }
+  | { readonly tipo: "limite"; readonly contenido: string }
+  | { readonly tipo: "error"; readonly contenido: string; readonly error: unknown };
 
 type StreamTurn = (
   request: ChatRequest,
   deadlineAt: number,
 ) => AsyncGenerator<AgentDeltaEvent, TurnOutcome>;
 
-const chatOutcome = (
+const chatOutcome = async (
   client: LLMClient,
   role: LLMRole,
   request: ChatRequest,
@@ -153,9 +166,10 @@ const chatOutcome = (
 ): Promise<TurnOutcome> => {
   const remaining = deadlineAt - Date.now();
   if (remaining <= 0) {
-    return Promise.resolve({ expired: true });
+    return { tipo: "limite", contenido: "" };
   }
-  return withDeadline(client.chat(role, request), remaining);
+  const outcome = await withDeadline(client.chat(role, request), remaining);
+  return outcome.expired ? { tipo: "limite", contenido: "" } : { tipo: "ok", value: outcome.value };
 };
 
 type PartialToolCall = {
@@ -195,37 +209,42 @@ const accumulateStream = async function* (
   let usage: ChatUsage | undefined;
   const pending = new Map<number, PartialToolCall>();
 
-  while (true) {
-    const remaining = deadlineAt - Date.now();
-    if (remaining <= 0) {
-      closeIterator(iterator);
-      return { expired: true };
-    }
+  try {
+    while (true) {
+      const remaining = deadlineAt - Date.now();
+      if (remaining <= 0) {
+        closeIterator(iterator);
+        return { tipo: "limite", contenido: content };
+      }
 
-    const outcome = await withDeadline(iterator.next(), remaining);
-    if (outcome.expired) {
-      closeIterator(iterator);
-      return { expired: true };
-    }
-    if (outcome.value.done) {
-      break;
-    }
+      const outcome = await withDeadline(iterator.next(), remaining);
+      if (outcome.expired) {
+        closeIterator(iterator);
+        return { tipo: "limite", contenido: content };
+      }
+      if (outcome.value.done) {
+        break;
+      }
 
-    const chunk = outcome.value.value;
-    if (chunk.contentDelta !== undefined && chunk.contentDelta !== "") {
-      content += chunk.contentDelta;
-      yield { type: "delta", texto: chunk.contentDelta };
+      const chunk = outcome.value.value;
+      if (chunk.contentDelta !== undefined && chunk.contentDelta !== "") {
+        content += chunk.contentDelta;
+        yield { type: "delta", texto: chunk.contentDelta };
+      }
+      for (const delta of chunk.toolCallDeltas ?? []) {
+        const current = pending.get(delta.index) ?? { id: "", name: "", arguments: "" };
+        pending.set(delta.index, mergeToolCallDelta(current, delta));
+      }
+      if (chunk.finishReason !== undefined) {
+        finishReason = chunk.finishReason;
+      }
+      if (chunk.usage !== undefined) {
+        usage = chunk.usage;
+      }
     }
-    for (const delta of chunk.toolCallDeltas ?? []) {
-      const current = pending.get(delta.index) ?? { id: "", name: "", arguments: "" };
-      pending.set(delta.index, mergeToolCallDelta(current, delta));
-    }
-    if (chunk.finishReason !== undefined) {
-      finishReason = chunk.finishReason;
-    }
-    if (chunk.usage !== undefined) {
-      usage = chunk.usage;
-    }
+  } catch (error) {
+    closeIterator(iterator);
+    return { tipo: "error", contenido: content, error };
   }
 
   const toolCalls: ToolCall[] = [...pending.entries()]
@@ -237,7 +256,7 @@ const accumulateStream = async function* (
     }));
 
   return {
-    expired: false,
+    tipo: "ok",
     value: {
       message: { content, toolCalls },
       finishReason: finishReason ?? "stop",
@@ -315,14 +334,19 @@ const createAgentLoop = (options: AgentRuntimeOptions, streaming: boolean): Agen
         return finish("error", describeError(error));
       }
 
-      if (outcome.expired) {
+      if (outcome.tipo === "limite") {
+        content = unirContenido(content, outcome.contenido);
         return finish("limite", timeoutMessage(timeoutMs));
+      }
+      if (outcome.tipo === "error") {
+        content = unirContenido(content, outcome.contenido);
+        return finish("error", describeError(outcome.error));
       }
 
       const response = outcome.value;
       finishReason = response.finishReason;
       usage = addUsage(usage, response.usage);
-      content = response.message.content;
+      content = unirContenido(content, response.message.content);
 
       if (response.message.toolCalls.length === 0) {
         return finish("completado");
