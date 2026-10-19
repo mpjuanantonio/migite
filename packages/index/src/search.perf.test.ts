@@ -3,8 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { bootstrapVault, newUlid, writeObjectFile } from "@migite/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { EMBEDDINGS_MODEL_META_KEY, encodeEmbeddingVector } from "./embeddings.js";
+import { searchKnowledge } from "./hybrid-search.js";
 import { buildIndex } from "./indexer.js";
 import { type IndexHandle, openIndex } from "./open.js";
+import { embeddings, fragmentos, meta } from "./schema.js";
 import { searchObjects } from "./search.js";
 
 const NOTE_COUNT = 2000;
@@ -72,6 +75,29 @@ beforeAll(() => {
 
   handle = openIndex({ dbPath: join(directory, "index.db") });
   buildIndex(handle.db, { vaultDir, timeZone: "UTC" });
+
+  const allFragments = handle.db.select({ id: fragmentos.id }).from(fragmentos).all();
+  handle.db.transaction((tx) => {
+    tx.insert(meta)
+      .values({ clave: EMBEDDINGS_MODEL_META_KEY, valor: "perf-model" })
+      .onConflictDoUpdate({ target: meta.clave, set: { valor: "perf-model" } })
+      .run();
+    for (let i = 0; i < allFragments.length; i += 1) {
+      const frag = allFragments[i];
+      if (frag === undefined) {
+        continue;
+      }
+      const vec = encodeEmbeddingVector([
+        ((i % 7) + 1) * 0.1,
+        (((i + 3) % 11) + 1) * 0.1,
+        (((i + 5) % 13) + 1) * 0.1,
+        (((i + 7) % 17) + 1) * 0.1,
+      ]);
+      tx.insert(embeddings)
+        .values({ fragmentoId: frag.id, modelo: "perf-model", vector: vec })
+        .run();
+    }
+  });
 }, 120_000);
 
 afterAll(() => {
@@ -84,6 +110,25 @@ describe("searchObjects a escala", () => {
     const durations = TERMS.map((term) => {
       const startedAt = performance.now();
       const results = searchObjects(handle.db, { query: term, limit: 100 });
+      const elapsed = performance.now() - startedAt;
+      expect(results.length).toBeGreaterThan(0);
+      return elapsed;
+    });
+    const worst = p95(durations);
+
+    expect(worst).toBeLessThan(200);
+  });
+
+  it("responde consultas híbridas (FTS5 + vectores + RRF) sobre 2000 notas en menos de 200 ms", () => {
+    const queryVector = [0.4, 0.3, 0.2, 0.1];
+    const durations = TERMS.map((term) => {
+      const startedAt = performance.now();
+      const results = searchKnowledge(handle.db, {
+        query: term,
+        queryVector,
+        model: "perf-model",
+        limit: 20,
+      });
       const elapsed = performance.now() - startedAt;
       expect(results.length).toBeGreaterThan(0);
       return elapsed;

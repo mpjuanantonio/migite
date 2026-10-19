@@ -69,20 +69,20 @@ type SearchRow = ObjectRow & {
 
 const NON_TERM_CHARS = /[^\p{L}\p{N}_]+/gu;
 
-const normalizeLimit = (limit: number | undefined, fallback: number): number => {
+export const normalizeLimit = (limit: number | undefined, fallback: number): number => {
   if (limit === undefined || !Number.isSafeInteger(limit) || limit <= 0) {
     return fallback;
   }
   return Math.min(limit, MAX_SEARCH_LIMIT);
 };
 
-const normalizeOffset = (offset: number | undefined): number =>
+export const normalizeOffset = (offset: number | undefined): number =>
   offset === undefined || !Number.isSafeInteger(offset) || offset < 0 ? 0 : offset;
 
 const escapeLike = (value: string): string =>
   value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
 
-const queryTerms = (query: string): string[] =>
+export const queryTerms = (query: string): string[] =>
   query
     .slice(0, MAX_QUERY_LENGTH)
     .normalize("NFKC")
@@ -154,7 +154,7 @@ const rangeAttributeConditions = (
   return conditions;
 };
 
-const filterConditions = (filters: ObjectFilters | undefined): SQL[] => {
+export const filterConditions = (filters: ObjectFilters | undefined): SQL[] => {
   if (filters === undefined) {
     return [];
   }
@@ -196,7 +196,7 @@ const filterConditions = (filters: ObjectFilters | undefined): SQL[] => {
   return conditions;
 };
 
-const whereClause = (conditions: SQL[]): SQL =>
+export const whereClause = (conditions: SQL[]): SQL =>
   conditions.length === 0 ? sql`1 = 1` : sql.join(conditions, sql` AND `);
 
 const OBJECT_COLUMNS = sql`o.id, o.tipo_id, o.titulo, o.ruta, o.actualizado`;

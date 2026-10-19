@@ -39,6 +39,17 @@ export {
   syncEmbeddings,
 } from "./embeddings.js";
 export {
+  cosineSimilarity,
+  DEFAULT_CANDIDATE_MULTIPLIER,
+  DEFAULT_RRF_K,
+  type HybridSearchResult,
+  type SearchKnowledgeHybridOptions,
+  type SearchKnowledgeOptions,
+  searchHybridObjects,
+  searchKnowledge,
+  searchKnowledgeHybrid,
+} from "./hybrid-search.js";
+export {
   type ApplyObjectEventOptions,
   applyObjectEvent,
   type BuildIndexOptions,
