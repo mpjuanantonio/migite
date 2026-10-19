@@ -354,6 +354,139 @@ describe("buscar_conocimiento", () => {
       `«Cierre anual» § Contabilidad y facturas (proyectos/cierre-anual.md) — id ${FINANZAS}`,
     );
   });
+
+  it("responde sobre casos del Golden Set devolviendo la cita con sección «Título» § Encabezado", async () => {
+    const SEGURIDAD_ID = "01JSEGUR000000000000000000";
+    const BACKUPS_ID = "01JBACKP000000000000000000";
+    const ADR_ID = "01JADR11000000000000000000";
+
+    writeFixture({
+      id: SEGURIDAD_ID,
+      tipo: "nota",
+      titulo: "Seguridad y autenticación HTTP",
+      carpeta: "arquitectura",
+      archivo: "seguridad-http.md",
+      creado: "2026-10-01T09:00:00.000+02:00",
+      actualizado: "2026-10-07T09:00:00.000+02:00",
+      etiquetas: ["seguridad"],
+      cuerpo: [
+        "# Almacenamiento de credenciales con Argon2",
+        "Las claves se protegen con hashing Argon2id y sesión por cookies HttpOnly.",
+        "",
+        "# Protección CSRF en mutaciones",
+        "Validación de cabeceras Origin y Referer en rutas POST, PUT y DELETE.",
+      ].join("\n"),
+    });
+    writeFixture({
+      id: BACKUPS_ID,
+      tipo: "nota",
+      titulo: "Política de copias de seguridad",
+      carpeta: "operaciones",
+      archivo: "backups.md",
+      creado: "2026-10-01T09:00:00.000+02:00",
+      actualizado: "2026-10-07T09:00:00.000+02:00",
+      etiquetas: ["operaciones"],
+      cuerpo: [
+        "# Backups con age",
+        "Snapshots cifrados con clave pública age.",
+        "",
+        "# Retención y rotación de snapshots",
+        "Conservamos siete copias diarias, cuatro semanales y seis mensuales.",
+      ].join("\n"),
+    });
+    writeFixture({
+      id: ADR_ID,
+      tipo: "nota",
+      titulo: "ADR-011 Recuperación híbrida y RRF",
+      carpeta: "arquitectura",
+      archivo: "adr-011.md",
+      creado: "2026-10-01T09:00:00.000+02:00",
+      actualizado: "2026-10-07T09:00:00.000+02:00",
+      etiquetas: ["adr", "ia"],
+      cuerpo: [
+        "# Contexto",
+        "Limitaciones de la búsqueda puramente léxica.",
+        "",
+        "# Decisión: Embeddings en SQLite y fusión RRF",
+        "En el ADR-011 combinamos FTS5 y vectores Float32Array con Reciprocal Rank Fusion.",
+      ].join("\n"),
+    });
+    buildIndex(handle.db, { vaultDir });
+
+    const goldenRegistry = new ToolRegistry();
+    registrarHerramientasDeLectura(goldenRegistry, {
+      db: handle.db,
+      vaultDir,
+      embeddingProvider: {
+        model: "golden-read-tool-16d",
+        embed: async (texts) =>
+          texts.map((text) => {
+            const vec = new Array<number>(16).fill(0);
+            if (/contraseñ|argon2|credenciales/i.test(text)) vec[0] = 1;
+            if (/backup retention policy|retenci[oó]n y rotaci[oó]n/i.test(text)) vec[1] = 1;
+            if (/adr-011|almacenamiento de vectores|embeddings en sqlite/i.test(text)) vec[2] = 1;
+            return vec;
+          }),
+      },
+    });
+
+    const resAuth = busquedaSchema.parse(
+      JSON.parse(
+        (
+          await goldenRegistry.execute({
+            id: "call-g01",
+            name: "buscar_conocimiento",
+            arguments: { query: "¿Qué decidimos sobre cómo guardar las contraseñas?" },
+          })
+        ).content,
+      ) as unknown,
+    );
+    expect(resAuth.resultados[0]?.id).toBe(SEGURIDAD_ID);
+    expect(resAuth.resultados[0]?.seccion).toBe(
+      delimitar("Almacenamiento de credenciales con Argon2"),
+    );
+    expect(resAuth.resultados[0]?.fuente).toBe(
+      `«Seguridad y autenticación HTTP» § Almacenamiento de credenciales con Argon2 (arquitectura/seguridad-http.md) — id ${SEGURIDAD_ID}`,
+    );
+
+    const resRetention = busquedaSchema.parse(
+      JSON.parse(
+        (
+          await goldenRegistry.execute({
+            id: "call-g04",
+            name: "buscar_conocimiento",
+            arguments: { query: "What is the backup retention policy?" },
+          })
+        ).content,
+      ) as unknown,
+    );
+    expect(resRetention.resultados[0]?.id).toBe(BACKUPS_ID);
+    expect(resRetention.resultados[0]?.seccion).toBe(
+      delimitar("Retención y rotación de snapshots"),
+    );
+    expect(resRetention.resultados[0]?.fuente).toBe(
+      `«Política de copias de seguridad» § Retención y rotación de snapshots (operaciones/backups.md) — id ${BACKUPS_ID}`,
+    );
+
+    const resAdr = busquedaSchema.parse(
+      JSON.parse(
+        (
+          await goldenRegistry.execute({
+            id: "call-g08",
+            name: "buscar_conocimiento",
+            arguments: { query: "ADR-011 RRF", filtros: { tag: "adr" } },
+          })
+        ).content,
+      ) as unknown,
+    );
+    expect(resAdr.resultados[0]?.id).toBe(ADR_ID);
+    expect(resAdr.resultados[0]?.seccion).toBe(
+      delimitar("Decisión: Embeddings en SQLite y fusión RRF"),
+    );
+    expect(resAdr.resultados[0]?.fuente).toBe(
+      `«ADR-011 Recuperación híbrida y RRF» § Decisión: Embeddings en SQLite y fusión RRF (arquitectura/adr-011.md) — id ${ADR_ID}`,
+    );
+  });
 });
 
 describe("obtener_objeto", () => {
