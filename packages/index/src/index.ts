@@ -28,6 +28,17 @@ export {
   TITULO_CONVERSACION_MAX,
 } from "./conversations.js";
 export {
+  DEFAULT_EMBED_BATCH_SIZE,
+  decodeEmbeddingVector,
+  EMBEDDINGS_MODEL_META_KEY,
+  type EmbeddingProvider,
+  encodeEmbeddingVector,
+  formatFragmentForEmbedding,
+  type SyncEmbeddingsOptions,
+  type SyncEmbeddingsResult,
+  syncEmbeddings,
+} from "./embeddings.js";
+export {
   type ApplyObjectEventOptions,
   applyObjectEvent,
   type BuildIndexOptions,
