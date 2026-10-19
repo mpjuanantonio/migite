@@ -27,7 +27,7 @@ import {
   reconcileIndex,
 } from "./indexer.js";
 import { type IndexHandle, openIndex } from "./open.js";
-import { objetos } from "./schema.js";
+import { embeddings, fragmentos, objetos } from "./schema.js";
 
 const coreMocks = vi.hoisted(() => ({
   listObjectsCalls: 0,
@@ -631,5 +631,108 @@ describe("indexObject", () => {
     indexObject(handle.db, read.object);
 
     expect(objectRows()[0]?.hash).toBe(fileHash(created.path));
+  });
+
+  it("populates fragmentos across indexObject, buildIndex, reconcileIndex and applyObjectEvent, preserving unchanged embeddings and cascading on delete", () => {
+    const nota = repo.createObject({
+      title: "Nota con secciones",
+      type: "nota",
+      body: "Intro inicial\n\n# Sección A\nContenido A fijo.\n\n# Sección B\nContenido B original.\n",
+    });
+    const readNota = repo.readObject(nota.id);
+    if (!readNota.ok) {
+      throw new Error("expected readable object");
+    }
+
+    indexObject(handle.db, readNota.object);
+
+    const initialFragments = handle.db
+      .select()
+      .from(fragmentos)
+      .where(eq(fragmentos.objetoId, nota.id))
+      .all()
+      .sort((a, b) => a.orden - b.orden);
+
+    expect(initialFragments).toHaveLength(3);
+    expect(
+      initialFragments.map((f) => ({ encabezado: f.encabezado, texto: f.texto, orden: f.orden })),
+    ).toEqual([
+      { encabezado: null, texto: "Intro inicial", orden: 0 },
+      { encabezado: "Sección A", texto: "Contenido A fijo.", orden: 1 },
+      { encabezado: "Sección B", texto: "Contenido B original.", orden: 2 },
+    ]);
+
+    for (const frag of initialFragments) {
+      handle.db
+        .insert(embeddings)
+        .values({
+          fragmentoId: frag.id,
+          modelo: "test-model",
+          vector: Buffer.from(new Float32Array([1, 0]).buffer),
+        })
+        .run();
+    }
+
+    repo.updateObject(nota.id, {
+      body: "Intro inicial\n\n# Sección A\nContenido A fijo.\n\n# Sección B\nContenido B modificado.\n",
+    });
+    applyObjectEvent(
+      handle.db,
+      { type: "ObjectUpdated", objectId: nota.id, path: nota.path },
+      { vaultDir },
+    );
+
+    const updatedFragments = handle.db
+      .select()
+      .from(fragmentos)
+      .where(eq(fragmentos.objetoId, nota.id))
+      .all()
+      .sort((a, b) => a.orden - b.orden);
+
+    expect(updatedFragments).toHaveLength(3);
+    expect(updatedFragments[0]?.id).toBe(initialFragments[0]?.id);
+    expect(updatedFragments[1]?.id).toBe(initialFragments[1]?.id);
+    expect(updatedFragments[2]?.id).not.toBe(initialFragments[2]?.id);
+    expect(updatedFragments[2]?.texto).toBe("Contenido B modificado.");
+
+    const preservedEmbeddings = handle.db.select().from(embeddings).all();
+    expect(preservedEmbeddings.map((e) => e.fragmentoId).sort()).toEqual(
+      [initialFragments[0]?.id ?? "", initialFragments[1]?.id ?? ""].sort(),
+    );
+
+    const renamed = repo.renameObject(nota.id, "Nota renombrada");
+    const reconcileSummary = reconcileIndex(handle.db, { vaultDir });
+    expect(reconcileSummary).toEqual({ created: 0, updated: 1, deleted: 0 });
+
+    const afterRenameEmbeddings = handle.db.select().from(embeddings).all();
+    expect(afterRenameEmbeddings.map((e) => e.fragmentoId).sort()).toEqual(
+      [initialFragments[0]?.id ?? "", initialFragments[1]?.id ?? ""].sort(),
+    );
+
+    repo.deleteObject(nota.id);
+    applyObjectEvent(
+      handle.db,
+      { type: "ObjectDeleted", objectId: nota.id, path: renamed.object.path },
+      { vaultDir },
+    );
+
+    expect(handle.db.select().from(fragmentos).all()).toEqual([]);
+    expect(handle.db.select().from(embeddings).all()).toEqual([]);
+
+    const tareaSinCuerpo = repo.createObject({ title: "Tarea sin cuerpo", type: "nota" });
+    buildIndex(handle.db, { vaultDir });
+    const rebuiltFragments = handle.db
+      .select()
+      .from(fragmentos)
+      .where(eq(fragmentos.objetoId, tareaSinCuerpo.id))
+      .all();
+    expect(rebuiltFragments).toEqual([
+      expect.objectContaining({
+        objetoId: tareaSinCuerpo.id,
+        encabezado: null,
+        texto: "Tarea sin cuerpo",
+        orden: 0,
+      }),
+    ]);
   });
 });

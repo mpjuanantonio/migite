@@ -3,6 +3,7 @@ import { lstatSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   type AttributeDefinition,
+  chunkMarkdownBySections,
   createObjectRepository,
   type DomainEvent,
   type FieldType,
@@ -16,11 +17,11 @@ import {
   writeObjectFile,
 } from "@migite/core";
 import type { RunResult } from "better-sqlite3";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, notInArray, sql } from "drizzle-orm";
 import type { BaseSQLiteDatabase } from "drizzle-orm/sqlite-core";
 import type { IndexDatabase } from "./open.js";
 import type * as schemaTypes from "./schema.js";
-import { atributos, enlaces, type LinkContext, objetos } from "./schema.js";
+import { atributos, enlaces, fragmentos, type LinkContext, objetos } from "./schema.js";
 
 type ProjectionDatabase = BaseSQLiteDatabase<"sync", RunResult, typeof schemaTypes>;
 
@@ -371,6 +372,53 @@ const projectFts = (db: ProjectionDatabase, object: ObjectRecord): void => {
   );
 };
 
+const projectFragments = (
+  db: ProjectionDatabase,
+  object: ObjectRecord,
+  fullRebuild: boolean,
+): void => {
+  const chunks = chunkMarkdownBySections(object.body, object.title);
+  const occurrenceByHash = new Map<string, number>();
+  const rows = chunks.map((chunk) => {
+    const contentHash = sha256(`${chunk.heading ?? ""}\n${chunk.text}`).slice(0, 16);
+    const occurrence = occurrenceByHash.get(contentHash) ?? 0;
+    occurrenceByHash.set(contentHash, occurrence + 1);
+    return {
+      id: `${object.id}:${contentHash}:${occurrence}`,
+      objetoId: object.id,
+      encabezado: chunk.heading,
+      texto: chunk.text,
+      orden: chunk.order,
+    };
+  });
+
+  if (!fullRebuild) {
+    if (rows.length === 0) {
+      db.delete(fragmentos).where(eq(fragmentos.objetoId, object.id)).run();
+      return;
+    }
+    const keepIds = rows.map((row) => row.id);
+    db.delete(fragmentos)
+      .where(and(eq(fragmentos.objetoId, object.id), notInArray(fragmentos.id, keepIds)))
+      .run();
+  }
+
+  for (const row of rows) {
+    db.insert(fragmentos)
+      .values(row)
+      .onConflictDoUpdate({
+        target: fragmentos.id,
+        set: {
+          objetoId: row.objetoId,
+          encabezado: row.encabezado,
+          texto: row.texto,
+          orden: row.orden,
+        },
+      })
+      .run();
+  }
+};
+
 const projectObject = (
   db: ProjectionDatabase,
   object: ObjectRecord,
@@ -383,6 +431,7 @@ const projectObject = (
   projectAttributes(db, object, options.definition);
   projectLinks(db, object, options.resolveTitle);
   projectFts(db, object);
+  projectFragments(db, object, fullRebuild);
 };
 
 export const indexObject = (
@@ -442,6 +491,7 @@ export const buildIndex = (db: IndexDatabase, options: BuildIndexOptions): numbe
     tx.run(sql`DELETE FROM fts_objetos`);
     tx.delete(enlaces).run();
     tx.delete(atributos).run();
+    tx.delete(fragmentos).run();
     tx.delete(objetos).run();
     for (const entry of entries) {
       upsertObjectRow(tx, entry.object, sha256(entry.fileText));
