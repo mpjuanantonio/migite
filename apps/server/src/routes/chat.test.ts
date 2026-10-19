@@ -6,9 +6,10 @@ import {
   chatStreamEventSchema,
   LIMITE_ACCIONES_PROPUESTAS,
 } from "@migite/contracts";
-import { bootstrapVault, isUlid } from "@migite/core";
+import { bootstrapVault, createObjectRepository, isUlid } from "@migite/core";
 import {
   actualizarEstadoAccion,
+  buildIndex,
   crearAccion,
   type IndexHandle,
   listarConversaciones,
@@ -570,6 +571,60 @@ describe("POST /api/chat/mensajes", () => {
     }
     expect(fin.accionesPropuestas.map((accion) => accion.id)).toEqual(
       creadas.slice(-LIMITE_ACCIONES_PROPUESTAS).reverse(),
+    );
+  });
+
+  it("usa client.embed en buscar_conocimiento y devuelve la cita con sección al modelo", async () => {
+    const repo = createObjectRepository({ vaultDir, timeZone: "UTC" });
+    const nota = repo.createObject({
+      title: "Guía de despliegue",
+      type: "nota",
+      body: "# Requisitos\nNode 24.\n\n# Copias de seguridad\nRespaldo diario cifrado del directorio del vault.\n",
+    });
+    buildIndex(handle.db, { vaultDir });
+
+    const baseClient = new MockLLMClient({
+      responses: [
+        toolTurn([toolCall("buscar_conocimiento", { query: "backups" }, "call-buscar-sem")]),
+        finalTurn("Según «Guía de despliegue» § Copias de seguridad, hay respaldo diario."),
+      ],
+    });
+    const client: LLMClient = {
+      chat: (role, req) => baseClient.chat(role, req),
+      chatStream: (role, req) => baseClient.chatStream(role, req),
+      embed: async (_role, texts) =>
+        texts.map((text) => {
+          const lower = text.toLowerCase();
+          if (lower.includes("backups") || lower.includes("copias de seguridad")) {
+            return [1, 0, 0];
+          }
+          return [0, 1, 0];
+        }),
+    };
+    configureChat({
+      client,
+      db: handle.db,
+      vaultDir,
+      locale: "es",
+      embeddingsModel: "openai:text-embedding-3-small",
+    });
+
+    const res = await postMensaje({ mensaje: "¿cómo funcionan los backups?" });
+    expect(res.status).toBe(200);
+    const { eventos } = await readEventos(res);
+    const fin = eventos.at(-1);
+    if (fin?.tipo !== "fin") {
+      throw new Error("falta el evento de fin");
+    }
+    expect(fin.contenido).toContain("«Guía de despliegue» § Copias de seguridad");
+
+    const secondCall = baseClient.calls[1];
+    if (secondCall === undefined || secondCall.method !== "chatStream") {
+      throw new Error("se esperaba segunda llamada chatStream");
+    }
+    const toolMsg = secondCall.request.messages.find((m) => m.role === "tool");
+    expect(toolMsg?.content).toContain(
+      `«Guía de despliegue» § Copias de seguridad (${nota.path}) — id ${nota.id}`,
     );
   });
 });

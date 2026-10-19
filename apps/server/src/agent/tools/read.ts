@@ -6,10 +6,11 @@ import {
   type TypeDefinition,
 } from "@migite/core";
 import {
+  type EmbeddingProvider,
   type IndexDatabase,
   listObjectsIndexed,
   type ObjectFilters,
-  searchObjects,
+  searchKnowledgeHybrid,
 } from "@migite/index";
 import type { JsonObject, JsonValue, ToolRegistry } from "@migite/llm";
 import { z } from "zod";
@@ -18,6 +19,7 @@ export type HerramientasLecturaDeps = {
   readonly db: IndexDatabase;
   readonly vaultDir: string;
   readonly timeZone?: string;
+  readonly embeddingProvider?: EmbeddingProvider;
 };
 
 export const LIMITE_BUSQUEDA_CONOCIMIENTO = 10;
@@ -73,7 +75,13 @@ const cita = (row: {
   readonly id: string;
   readonly titulo: string;
   readonly ruta: string;
-}): string => `«${row.titulo}» (${row.ruta}) — id ${row.id}`;
+  readonly encabezado?: string | null;
+}): string => {
+  const seccion = row.encabezado?.trim() ?? "";
+  return seccion === ""
+    ? `«${row.titulo}» (${row.ruta}) — id ${row.id}`
+    : `«${row.titulo}» § ${seccion} (${row.ruta}) — id ${row.id}`;
+};
 
 const filtrosSchema = z.object({
   tipo: z.string().trim().min(1).optional(),
@@ -124,11 +132,17 @@ export const registrarHerramientasDeLectura = (
       ...(deps.timeZone === undefined ? {} : { timeZone: deps.timeZone }),
     });
 
-  const buscar = ({ query, filtros }: z.output<typeof buscarConocimientoSchema>): JsonValue => {
-    const rows = searchObjects(deps.db, {
+  const buscar = async ({
+    query,
+    filtros,
+  }: z.output<typeof buscarConocimientoSchema>): Promise<JsonValue> => {
+    const rows = await searchKnowledgeHybrid(deps.db, {
       query,
       ...(filtros === undefined ? {} : { filters: filtros }),
       limit: LIMITE_BUSQUEDA_CONOCIMIENTO,
+      ...(deps.embeddingProvider === undefined
+        ? {}
+        : { embeddingProvider: deps.embeddingProvider }),
     });
     return {
       resultados: rows.map((row) => ({
@@ -137,6 +151,9 @@ export const registrarHerramientasDeLectura = (
         titulo: datoDeVault(row.titulo),
         ruta: datoDeVault(row.ruta),
         actualizado: row.actualizado,
+        ...(row.encabezado === undefined || row.encabezado === null
+          ? {}
+          : { seccion: datoDeVault(row.encabezado) }),
         ...(row.snippet === undefined ? {} : { fragmento: datoDeVault(row.snippet) }),
         fuente: cita(row),
       })),

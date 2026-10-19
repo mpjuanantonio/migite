@@ -6,7 +6,7 @@ import {
   LIMITE_ACCIONES_PROPUESTAS,
 } from "@migite/contracts";
 import { defaultLocale, type Locale, t } from "@migite/core";
-import { type IndexDatabase, listarMemorias } from "@migite/index";
+import { type EmbeddingProvider, type IndexDatabase, listarMemorias } from "@migite/index";
 import {
   type AgentLimits,
   type AgentRunState,
@@ -50,6 +50,7 @@ export type ChatDeps = {
   readonly locale?: Locale;
   readonly rateLimit?: ChatRateLimitOptions;
   readonly limits?: AgentLimits;
+  readonly embeddingsModel?: string;
 };
 
 type RegistroMensajes = {
@@ -177,10 +178,15 @@ chatRouter.post("/mensajes", async (c) => {
           role: mensaje.rol,
           content: mensaje.contenido,
         }));
+  const embeddingProvider: EmbeddingProvider = {
+    model: actual.embeddingsModel ?? "embeddings",
+    embed: (texts) => actual.client.embed("embeddings", texts),
+  };
   const accionesDeps = {
     db: actual.db,
     vaultDir: actual.vaultDir,
     ...(actual.timeZone === undefined ? {} : { timeZone: actual.timeZone }),
+    embeddingProvider,
   };
   const registry = crearRegistroDelAgente(accionesDeps);
   const runtime = createAgentRuntime({

@@ -60,6 +60,7 @@ const start = (): void => {
     vaultDir: runtime.vaultDir,
     timeZone: config.app.timeZone,
     locale: config.app.locale,
+    embeddingsModel: `${config.llm.roles.embeddings.provider}:${config.llm.roles.embeddings.model}`,
   });
   configureConversaciones({ db: runtime.db });
   configureMemorias({ db: runtime.db });

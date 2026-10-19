@@ -99,6 +99,7 @@ const resultadoBusquedaSchema = z.object({
   titulo: z.string(),
   ruta: z.string(),
   actualizado: z.string(),
+  seccion: z.string().optional(),
   fragmento: z.string().optional(),
   fuente: z.string(),
 });
@@ -279,6 +280,79 @@ describe("buscar_conocimiento", () => {
     expect(execution.isError).toBe(true);
     expect(execution.content).toContain("argumentos inválidos");
     expect(execution.content).toContain("query");
+  });
+
+  it("recupera fragmentos por significado semántico, incluye la sección en la cita y degrada a FTS5 si embed falla", async () => {
+    const FINANZAS = "01JFINANZ00000000000000000";
+    writeFixture({
+      id: FINANZAS,
+      tipo: "nota",
+      titulo: "Cierre anual",
+      carpeta: "proyectos",
+      archivo: "cierre-anual.md",
+      creado: "2026-10-01T09:00:00.000+02:00",
+      actualizado: "2026-10-06T09:00:00.000+02:00",
+      etiquetas: ["trabajo"],
+      cuerpo:
+        "# Preliminar\nNotas generales.\n\n# Contabilidad y facturas\nLiquidación de gastos operativos del trimestre.\n",
+    });
+    buildIndex(handle.db, { vaultDir });
+
+    const semanticRegistry = new ToolRegistry();
+    registrarHerramientasDeLectura(semanticRegistry, {
+      db: handle.db,
+      vaultDir,
+      embeddingProvider: {
+        model: "test-embed-v1",
+        embed: async (texts) =>
+          texts.map((text) => {
+            const lower = text.toLowerCase();
+            if (lower.includes("inversiones") || lower.includes("contabilidad")) {
+              return [1, 0, 0];
+            }
+            return [0, 1, 0];
+          }),
+      },
+    });
+
+    const execSemantic = await semanticRegistry.execute({
+      id: "call-sem",
+      name: "buscar_conocimiento",
+      arguments: { query: "inversiones" },
+    });
+    expect(execSemantic.isError).toBe(false);
+    const parsedSemantic = busquedaSchema.parse(JSON.parse(execSemantic.content) as unknown);
+    expect(parsedSemantic.resultados[0]?.id).toBe(FINANZAS);
+    expect(parsedSemantic.resultados[0]?.seccion).toBe(delimitar("Contabilidad y facturas"));
+    expect(parsedSemantic.resultados[0]?.fuente).toBe(
+      `«Cierre anual» § Contabilidad y facturas (proyectos/cierre-anual.md) — id ${FINANZAS}`,
+    );
+
+    const brokenRegistry = new ToolRegistry();
+    registrarHerramientasDeLectura(brokenRegistry, {
+      db: handle.db,
+      vaultDir,
+      embeddingProvider: {
+        model: "broken-embed",
+        embed: async () => {
+          throw new Error("API key missing");
+        },
+      },
+    });
+
+    const execFallback = await brokenRegistry.execute({
+      id: "call-fallback",
+      name: "buscar_conocimiento",
+      arguments: { query: "Liquidación" },
+    });
+    expect(execFallback.isError).toBe(false);
+    const parsedFallback = busquedaSchema.parse(JSON.parse(execFallback.content) as unknown);
+    expect(parsedFallback.resultados).toHaveLength(1);
+    expect(parsedFallback.resultados[0]?.id).toBe(FINANZAS);
+    expect(parsedFallback.resultados[0]?.seccion).toBe(delimitar("Contabilidad y facturas"));
+    expect(parsedFallback.resultados[0]?.fuente).toBe(
+      `«Cierre anual» § Contabilidad y facturas (proyectos/cierre-anual.md) — id ${FINANZAS}`,
+    );
   });
 });
 
