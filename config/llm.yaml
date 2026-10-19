@@ -1,9 +1,12 @@
 providers:
+  - id: google
+    baseUrl: https://generativelanguage.googleapis.com/v1beta/openai
+    apiKeyEnv: GEMINI_API_KEY
   - id: opencode
-    baseUrl: https://opencode.ai/zen/v1
-    apiKeyEnv: OPENCODE_API_KEY
+    baseUrl: https://opencode.ai/inference/go/openai/v1
+    apiKeyEnv: OPENACODE_API_KEY
 roles:
-  chat: { provider: opencode, model: mimo-v2.6-flash-free }
-  retrieve: { provider: opencode, model: mimo-v2.6-flash-free }
-  summarize: { provider: opencode, model: mimo-v2.6-flash-free }
-  embeddings: { provider: opencode, model: text-embedding-3-small }
+  chat: { provider: google, model: gemini-3.8-flash }
+  retrieve: { provider: google, model: gemini-3.8-flash }
+  summarize: { provider: google, model: gemini-3.8-flash }
+  embeddings: { provider: google, model: gemini-embedding-001 }

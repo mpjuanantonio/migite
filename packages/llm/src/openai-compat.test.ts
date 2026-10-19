@@ -140,6 +140,40 @@ describe("createOpenAICompatClient", () => {
     expect(JSON.parse(String(calls[1]?.init.body))).toMatchObject({ model: "modelo-b" });
     expect(JSON.parse(String(calls[2]?.init.body))).toEqual({ model: "embed-b", input: ["uno"] });
     expect(calls.every((call) => call.init.method === "POST")).toBe(true);
+    expect(
+      calls.every((call) => new Headers(call.init.headers).get("user-agent") === "migite/0.1.0"),
+    ).toBe(true);
+  });
+
+  it("envía user-agent y x-opencode-session estable por defecto o explícito por petición", async () => {
+    const headersSeen: Headers[] = [];
+    const client = clientWith(async (_url, init) => {
+      headersSeen.push(new Headers(init.headers));
+      if (_url.endsWith("/chat/completions") && JSON.parse(String(init.body)).stream === true) {
+        return streamResponse([
+          sseEvent({ choices: [{ delta: { content: "hola" }, finish_reason: "stop" }] }),
+          "data: [DONE]\r\n\r\n",
+        ]);
+      }
+      return jsonResponse(chatResponseBody);
+    });
+
+    await client.chat("chat", chatRequest);
+    await client.chat("chat", chatRequest);
+    await client.chat("chat", { ...chatRequest, sessionId: "conv-123" });
+    await collect(client.chatStream("chat", { ...chatRequest, sessionId: "conv-456" }));
+
+    expect(headersSeen.map((h) => h.get("user-agent"))).toEqual([
+      "migite/0.1.0",
+      "migite/0.1.0",
+      "migite/0.1.0",
+      "migite/0.1.0",
+    ]);
+    const defaultSession = headersSeen[0]?.get("x-opencode-session");
+    expect(defaultSession).toBeTruthy();
+    expect(headersSeen[1]?.get("x-opencode-session")).toBe(defaultSession);
+    expect(headersSeen[2]?.get("x-opencode-session")).toBe("conv-123");
+    expect(headersSeen[3]?.get("x-opencode-session")).toBe("conv-456");
   });
 
   it("parsea la respuesta de chat con contenido, uso y motivo de fin", async () => {
@@ -442,6 +476,134 @@ describe("createOpenAICompatClient", () => {
       },
     ]);
     expect(body).toMatchObject({ stream: true, model: "modelo-a" });
+  });
+
+  it("acepta múltiples tool_calls en eventos SSE separados sin index, ignora id/name vacíos y preserva extra_content", async () => {
+    let sentBody: Record<string, unknown> = {};
+    const client = clientWith(async (_url, init) => {
+      const parsed = JSON.parse(String(init.body)) as Record<string, unknown>;
+      sentBody = parsed;
+      if (parsed.stream === true) {
+        return streamResponse([
+          sseEvent({
+            choices: [
+              {
+                delta: {
+                  role: "assistant",
+                  tool_calls: [
+                    {
+                      id: "call_gemini_1",
+                      type: "function",
+                      function: { name: "listar_tipos", arguments: "{}" },
+                      extra_content: { google: { thought_signature: "sig-123" } },
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+          sseEvent({
+            choices: [
+              {
+                delta: {
+                  tool_calls: [
+                    {
+                      id: "call_gemini_2",
+                      type: "function",
+                      function: { name: "buscar", arguments: '{"q":"a"}' },
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+          sseEvent({
+            choices: [
+              {
+                delta: {
+                  tool_calls: [
+                    {
+                      index: 1,
+                      id: "",
+                      type: "function",
+                      function: { name: "", arguments: "" },
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+          sseEvent({ choices: [{ delta: {}, finish_reason: "stop" }] }),
+          "data: [DONE]\r\n\r\n",
+        ]);
+      }
+      return jsonResponse(chatResponseBody);
+    });
+
+    const chunks = await collect(client.chatStream("chat", chatRequest));
+    expect(chunks).toEqual([
+      {
+        toolCallDeltas: [
+          {
+            index: 0,
+            id: "call_gemini_1",
+            name: "listar_tipos",
+            argumentsDelta: "{}",
+            extraContent: { google: { thought_signature: "sig-123" } },
+          },
+        ],
+      },
+      {
+        toolCallDeltas: [
+          {
+            index: 1,
+            id: "call_gemini_2",
+            name: "buscar",
+            argumentsDelta: '{"q":"a"}',
+          },
+        ],
+      },
+      {
+        toolCallDeltas: [
+          {
+            index: 1,
+            argumentsDelta: "",
+          },
+        ],
+      },
+      { finishReason: "stop" },
+    ]);
+
+    await client.chat("chat", {
+      messages: [
+        {
+          role: "assistant",
+          content: "",
+          toolCalls: [
+            {
+              id: "call_gemini_1",
+              name: "listar_tipos",
+              arguments: {},
+              extraContent: { google: { thought_signature: "sig-123" } },
+            },
+          ],
+        },
+      ],
+    });
+    expect(sentBody.messages).toEqual([
+      {
+        role: "assistant",
+        content: "",
+        tool_calls: [
+          {
+            id: "call_gemini_1",
+            type: "function",
+            function: { name: "listar_tipos", arguments: "{}" },
+            extra_content: { google: { thought_signature: "sig-123" } },
+          },
+        ],
+      },
+    ]);
   });
 
   it("reensambla eventos SSE partidos entre lecturas e ignora comentarios", async () => {

@@ -33,6 +33,7 @@ export interface AgentRunRequest {
   readonly history: readonly ChatMessage[];
   readonly userMessage: string;
   readonly options?: ChatOptions;
+  readonly sessionId?: string;
 }
 
 export type AgentEvent =
@@ -186,13 +187,40 @@ type PartialToolCall = {
   readonly id: string;
   readonly name: string;
   readonly arguments: string;
+  readonly extraContent?: Record<string, unknown>;
 };
 
-const mergeToolCallDelta = (current: PartialToolCall, delta: ToolCallDelta): PartialToolCall => ({
-  id: delta.id ?? current.id,
-  name: delta.name ?? current.name,
-  arguments: current.arguments + (delta.argumentsDelta ?? ""),
-});
+const mergeToolCallDelta = (current: PartialToolCall, delta: ToolCallDelta): PartialToolCall => {
+  const extraContent = delta.extraContent ?? current.extraContent;
+  return {
+    id: delta.id !== undefined && delta.id !== "" ? delta.id : current.id,
+    name: delta.name !== undefined && delta.name !== "" ? delta.name : current.name,
+    arguments: current.arguments + (delta.argumentsDelta ?? ""),
+    ...(extraContent === undefined ? {} : { extraContent }),
+  };
+};
+
+const resolvePendingSlot = (
+  pending: ReadonlyMap<number, PartialToolCall>,
+  delta: ToolCallDelta,
+): number => {
+  if (delta.id !== undefined && delta.id !== "") {
+    for (const [slot, entry] of pending.entries()) {
+      if (entry.id === delta.id) {
+        return slot;
+      }
+    }
+    const atIndex = pending.get(delta.index);
+    if (atIndex !== undefined && atIndex.id !== "" && atIndex.id !== delta.id) {
+      let freeSlot = pending.size;
+      while (pending.has(freeSlot)) {
+        freeSlot += 1;
+      }
+      return freeSlot;
+    }
+  }
+  return delta.index;
+};
 
 const parseToolArguments = (raw: string): Record<string, unknown> => {
   if (raw.trim() === "") {
@@ -254,8 +282,9 @@ const accumulateStream = async function* (
         yield { type: "delta", texto: chunk.contentDelta };
       }
       for (const delta of chunk.toolCallDeltas ?? []) {
-        const current = pending.get(delta.index) ?? { id: "", name: "", arguments: "" };
-        pending.set(delta.index, mergeToolCallDelta(current, delta));
+        const slot = resolvePendingSlot(pending, delta);
+        const current = pending.get(slot) ?? { id: "", name: "", arguments: "" };
+        pending.set(slot, mergeToolCallDelta(current, delta));
       }
       if (chunk.finishReason !== undefined) {
         finishReason = chunk.finishReason;
@@ -271,10 +300,11 @@ const accumulateStream = async function* (
 
   const toolCalls: ToolCall[] = [...pending.entries()]
     .sort(([left], [right]) => left - right)
-    .map(([, call]) => ({
-      id: call.id,
+    .map(([, call], index) => ({
+      id: call.id !== "" ? call.id : `tool-call-${index}`,
       name: call.name,
       arguments: parseToolArguments(call.arguments),
+      ...(call.extraContent === undefined ? {} : { extraContent: call.extraContent }),
     }));
 
   return {
@@ -344,6 +374,7 @@ const createAgentLoop = (options: AgentRuntimeOptions, streaming: boolean): Agen
         messages: [...messages],
         ...(definitions.length === 0 ? {} : { tools: definitions }),
         ...(request.options === undefined ? {} : { options: request.options }),
+        ...(request.sessionId === undefined ? {} : { sessionId: request.sessionId }),
       };
       let outcome: TurnOutcome;
       try {

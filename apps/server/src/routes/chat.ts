@@ -197,6 +197,7 @@ chatRouter.post("/mensajes", async (c) => {
       history,
       userMessage: body.mensaje,
       options: { maxTokens: CHAT_MAX_TOKENS },
+      ...(existente === undefined ? {} : { sessionId: existente.id }),
     });
     const iterator = run[Symbol.asyncIterator]();
     let conversacionId = existente?.id;

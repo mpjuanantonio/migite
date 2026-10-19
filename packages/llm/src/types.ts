@@ -18,6 +18,7 @@ export interface ToolCall {
   readonly id: string;
   readonly name: string;
   readonly arguments: Record<string, unknown>;
+  readonly extraContent?: Record<string, unknown>;
 }
 
 export interface ChatMessage {
@@ -48,6 +49,7 @@ export interface ChatRequest {
   readonly tools?: readonly ToolDefinition[];
   readonly toolChoice?: ToolChoice;
   readonly options?: ChatOptions;
+  readonly sessionId?: string;
 }
 
 export type FinishReason = "stop" | "length" | "tool_calls" | "content_filter";
@@ -74,6 +76,7 @@ export interface ToolCallDelta {
   readonly id?: string;
   readonly name?: string;
   readonly argumentsDelta?: string;
+  readonly extraContent?: Record<string, unknown>;
 }
 
 export interface ChatChunk {

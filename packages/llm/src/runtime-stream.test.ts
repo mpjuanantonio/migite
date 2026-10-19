@@ -342,4 +342,82 @@ describe("AgentRuntime.runStream", () => {
     ]);
     expect(requests[1]?.messages.at(-1)?.content).toContain("argumentos ilegibles o truncados");
   });
+
+  it("separa tool calls con mismo index=0 cuando traen distinto id, ignora id/name vacíos y propaga extraContent", async () => {
+    const executed: string[] = [];
+    const requests: ChatRequest[] = [];
+    let turn = 0;
+    const client: LLMClient = {
+      async chat(): Promise<ChatResponse> {
+        throw new Error("no se esperaba una llamada de chat directo");
+      },
+      async *chatStream(_role: LLMRole, request: ChatRequest): AsyncIterable<ChatChunk> {
+        requests.push(request);
+        if (turn === 0) {
+          turn += 1;
+          yield {
+            toolCallDeltas: [
+              {
+                index: 0,
+                id: "call-1",
+                name: "leer_objeto",
+                argumentsDelta: '{"id":',
+                extraContent: { google: { thought_signature: "sig-1" } },
+              },
+            ],
+          };
+          yield {
+            toolCallDeltas: [{ index: 0, id: "", name: "", argumentsDelta: '"n1"}' }],
+          };
+          yield {
+            toolCallDeltas: [
+              {
+                index: 0,
+                id: "call-2",
+                name: "leer_objeto",
+                argumentsDelta: '{"id":"n2"}',
+                extraContent: { google: { thought_signature: "sig-2" } },
+              },
+            ],
+          };
+          yield { finishReason: "tool_calls" };
+          return;
+        }
+        yield { contentDelta: "Ambos leídos" };
+        yield { finishReason: "stop" };
+      },
+      async embed(): Promise<number[][]> {
+        return [];
+      },
+    };
+    const runtime = createAgentRuntime({ client, registry: createRegistry(executed) });
+
+    const { result } = await drain(
+      runtime.runStream({ history: [], userMessage: "lee n1 y n2", sessionId: "conv-stream" }),
+    );
+
+    expect(executed).toEqual(["n1", "n2"]);
+    expect(result.estado).toBe("completado");
+    expect(result.toolCallsEjecutados).toEqual([
+      {
+        id: "call-1",
+        name: "leer_objeto",
+        arguments: { id: "n1" },
+        extraContent: { google: { thought_signature: "sig-1" } },
+      },
+      {
+        id: "call-2",
+        name: "leer_objeto",
+        arguments: { id: "n2" },
+        extraContent: { google: { thought_signature: "sig-2" } },
+      },
+    ]);
+    expect(requests[0]?.sessionId).toBe("conv-stream");
+    expect(requests[1]?.sessionId).toBe("conv-stream");
+    expect(requests[1]?.messages[1]).toEqual({
+      role: "assistant",
+      content: "",
+      toolCalls: result.toolCallsEjecutados,
+    });
+  });
 });

@@ -55,6 +55,7 @@ export class MockLLMClient implements LLMClient {
             id: toolCall.id,
             name: toolCall.name,
             argumentsDelta: JSON.stringify(toolCall.arguments),
+            ...(toolCall.extraContent === undefined ? {} : { extraContent: toolCall.extraContent }),
           },
         ],
       };

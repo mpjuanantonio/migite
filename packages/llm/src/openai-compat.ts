@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { LlmConfig } from "@migite/core";
 import { LlmError } from "./errors.js";
 import { type ResolvedRoleModel, resolveRoleModel } from "./roles.js";
@@ -141,6 +142,7 @@ const toWireMessage = (message: ChatMessage): Record<string, unknown> => {
       id: toolCall.id,
       type: "function",
       function: { name: toolCall.name, arguments: JSON.stringify(toolCall.arguments) },
+      ...(toolCall.extraContent === undefined ? {} : { extra_content: toolCall.extraContent }),
     }));
   }
   return wire;
@@ -193,10 +195,12 @@ const buildChatBody = (
 const parseToolCall = (entry: unknown, index: number): ToolCall => {
   const record = asRecord(entry);
   const fn = asRecord(record.function);
+  const extraContent = isRecord(record.extra_content) ? { ...record.extra_content } : undefined;
   return {
-    id: typeof record.id === "string" ? record.id : `tool-call-${index}`,
+    id: typeof record.id === "string" && record.id !== "" ? record.id : `tool-call-${index}`,
     name: typeof fn.name === "string" ? fn.name : "",
     arguments: parseToolArguments(fn.arguments),
+    ...(extraContent === undefined ? {} : { extraContent }),
   };
 };
 
@@ -226,29 +230,72 @@ const parseChatResponse = (raw: unknown): ChatResponse => {
   };
 };
 
-const parseToolCallDeltas = (value: unknown): ToolCallDelta[] => {
+interface StreamToolCallIndexState {
+  readonly byId: Map<string, number>;
+  nextIndex: number;
+}
+
+const createStreamToolCallIndexState = (): StreamToolCallIndexState => ({
+  byId: new Map<string, number>(),
+  nextIndex: 0,
+});
+
+const resolveToolCallDeltaIndex = (
+  explicitIndex: number | undefined,
+  id: string | undefined,
+  position: number,
+  state: StreamToolCallIndexState,
+): number => {
+  if (explicitIndex !== undefined) {
+    if (id !== undefined) {
+      state.byId.set(id, explicitIndex);
+    }
+    state.nextIndex = Math.max(state.nextIndex, explicitIndex + 1);
+    return explicitIndex;
+  }
+  if (id !== undefined) {
+    const existing = state.byId.get(id);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const allocated = state.nextIndex;
+    state.nextIndex += 1;
+    state.byId.set(id, allocated);
+    return allocated;
+  }
+  return position;
+};
+
+const parseToolCallDeltas = (
+  value: unknown,
+  indexState: StreamToolCallIndexState,
+): ToolCallDelta[] => {
   if (!Array.isArray(value)) {
     return [];
   }
   const deltas: ToolCallDelta[] = [];
-  for (const entry of value) {
+  for (const [position, entry] of value.entries()) {
     const record = asRecord(entry);
     const fn = asRecord(record.function);
-    const index = asNumber(record.index);
-    if (index === undefined) {
-      continue;
-    }
+    const id = typeof record.id === "string" && record.id !== "" ? record.id : undefined;
+    const name = typeof fn.name === "string" && fn.name !== "" ? fn.name : undefined;
+    const index = resolveToolCallDeltaIndex(asNumber(record.index), id, position, indexState);
+    const extraContent = isRecord(record.extra_content) ? { ...record.extra_content } : undefined;
     deltas.push({
       index,
-      ...(typeof record.id === "string" ? { id: record.id } : {}),
-      ...(typeof fn.name === "string" ? { name: fn.name } : {}),
+      ...(id === undefined ? {} : { id }),
+      ...(name === undefined ? {} : { name }),
       ...(typeof fn.arguments === "string" ? { argumentsDelta: fn.arguments } : {}),
+      ...(extraContent === undefined ? {} : { extraContent }),
     });
   }
   return deltas;
 };
 
-const parseStreamChunk = (raw: unknown): ChatChunk | undefined => {
+const parseStreamChunk = (
+  raw: unknown,
+  indexState: StreamToolCallIndexState,
+): ChatChunk | undefined => {
   const root = asRecord(raw);
   const choices = Array.isArray(root.choices) ? root.choices : [];
   const choice = asRecord(choices[0]);
@@ -256,7 +303,7 @@ const parseStreamChunk = (raw: unknown): ChatChunk | undefined => {
 
   const contentDelta =
     typeof delta.content === "string" && delta.content !== "" ? delta.content : undefined;
-  const toolCallDeltas = parseToolCallDeltas(delta.tool_calls);
+  const toolCallDeltas = parseToolCallDeltas(delta.tool_calls, indexState);
   const finishReason =
     typeof choice.finish_reason === "string" ? mapFinishReason(choice.finish_reason) : undefined;
   const usage = parseUsage(root.usage);
@@ -299,7 +346,8 @@ const extractProviderMessage = (body: string): string => {
   }
   try {
     const parsed: unknown = JSON.parse(trimmed);
-    const error = asRecord(asRecord(parsed).error);
+    const root = Array.isArray(parsed) ? asRecord(parsed[0]) : asRecord(parsed);
+    const error = asRecord(root.error);
     if (typeof error.message === "string" && error.message !== "") {
       return error.message;
     }
@@ -375,11 +423,13 @@ export const createOpenAICompatClient = (
   const fetchFn: FetchLike = deps.fetch ?? fetch;
   const env = deps.env ?? process.env;
   const timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const defaultSessionId = randomUUID();
 
   const send = async (
     resolved: ResolvedRoleModel,
     path: string,
     body: Record<string, unknown>,
+    sessionId?: string,
   ): Promise<RequestSession> => {
     assertSecureBaseUrl(resolved.providerId, resolved.baseUrl);
 
@@ -411,6 +461,8 @@ export const createOpenAICompatClient = (
         headers: {
           "content-type": "application/json",
           authorization: `Bearer ${apiKey}`,
+          "user-agent": "migite/0.1.0",
+          "x-opencode-session": sessionId ?? defaultSessionId,
         },
         body: JSON.stringify(body),
         signal: controller.signal,
@@ -469,6 +521,7 @@ export const createOpenAICompatClient = (
         resolved,
         "/chat/completions",
         buildChatBody(resolved.model, request, false),
+        request.sessionId,
       );
       try {
         return parseChatResponse(await readJson(session.response, session.url));
@@ -488,12 +541,14 @@ export const createOpenAICompatClient = (
         resolved,
         "/chat/completions",
         buildChatBody(resolved.model, request, true),
+        request.sessionId,
       );
       if (session.response.body === null) {
         session.finish();
         throw new LlmError(`el proveedor no devolvió un cuerpo de streaming en ${session.url}`);
       }
 
+      const indexState = createStreamToolCallIndexState();
       try {
         for await (const data of readSseEvents(session.response.body)) {
           let raw: unknown;
@@ -504,7 +559,7 @@ export const createOpenAICompatClient = (
               `evento SSE con JSON inválido del proveedor en ${session.url}: ${redact(data.slice(0, 200), session.apiKey)}`,
             );
           }
-          const chunk = parseStreamChunk(raw);
+          const chunk = parseStreamChunk(raw, indexState);
           if (chunk !== undefined) {
             yield chunk;
           }
