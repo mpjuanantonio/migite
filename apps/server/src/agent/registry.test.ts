@@ -143,7 +143,9 @@ describe("crearRegistroDelAgente", () => {
     const busqueda = parseContent(messages[0]) as {
       resultados: { fuente: string; fragmento?: string }[];
     };
-    expect(busqueda.resultados[0]?.fuente).toBe(`«Beta» (proyectos/beta.md) — id ${BETA}`);
+    expect(busqueda.resultados[0]?.fuente).toBe(
+      `<datos_vault>«Beta» (proyectos/beta.md) — id ${BETA}</datos_vault>`,
+    );
     expect(busqueda.resultados[0]?.fragmento).toContain("presupuesto");
     const objeto = parseContent(messages[1]) as { id: string; cuerpo: string };
     expect(objeto.id).toBe(BETA);

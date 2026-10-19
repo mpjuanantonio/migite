@@ -22,11 +22,6 @@ type ConceptRule = {
   readonly patterns: readonly RegExp[];
 };
 
-/**
- * Definición de los ejes conceptuales en un espacio determinista de 16 dimensiones.
- * Cada concepto proyecta sinónimos, paráfrasis y términos bilingües (ES/EN) sobre
- * una coordenada firmada (dimensión 0..15, signo +1 o -1) sin llamadas de red.
- */
 const CONCEPT_RULES: readonly ConceptRule[] = [
   {
     name: "auth_passwords",
@@ -321,7 +316,6 @@ const computeMetrics = (
 };
 
 const seedGoldenVault = (repo: ObjectRepository): void => {
-  // 1. Nota técnica de seguridad HTTP (2 secciones)
   repo.createObject({
     title: "Seguridad y autenticación HTTP",
     type: "nota",
@@ -336,7 +330,6 @@ const seedGoldenVault = (repo: ObjectRepository): void => {
     ].join("\n"),
   });
 
-  // 2. Nota de operaciones de backups (2 secciones)
   repo.createObject({
     title: "Política de copias de seguridad",
     type: "nota",
@@ -351,7 +344,6 @@ const seedGoldenVault = (repo: ObjectRepository): void => {
     ].join("\n"),
   });
 
-  // 3. Nota de modelo de datos del Vault (2 secciones)
   repo.createObject({
     title: "Modelo de datos del Vault",
     type: "nota",
@@ -366,7 +358,6 @@ const seedGoldenVault = (repo: ObjectRepository): void => {
     ].join("\n"),
   });
 
-  // 4. Nota de motor SQLite (2 secciones)
   repo.createObject({
     title: "Motor de indexación SQLite",
     type: "nota",
@@ -381,7 +372,6 @@ const seedGoldenVault = (repo: ObjectRepository): void => {
     ].join("\n"),
   });
 
-  // 5. ADR-011 sobre RAG híbrido (2 secciones)
   repo.createObject({
     title: "ADR-011 Recuperación híbrida y RRF",
     type: "nota",
@@ -396,7 +386,6 @@ const seedGoldenVault = (repo: ObjectRepository): void => {
     ].join("\n"),
   });
 
-  // 6. Nota sobre costes y proveedores de IA (2 secciones)
   repo.createObject({
     title: "Control de costes y proveedores de IA",
     type: "nota",
@@ -411,7 +400,6 @@ const seedGoldenVault = (repo: ObjectRepository): void => {
     ].join("\n"),
   });
 
-  // 7. Nota sobre seguridad del agente conversacional (2 secciones)
   repo.createObject({
     title: "Seguridad del Agente Conversacional",
     type: "nota",
@@ -426,7 +414,6 @@ const seedGoldenVault = (repo: ObjectRepository): void => {
     ].join("\n"),
   });
 
-  // 8. Guía de despliegue en VPS (2 secciones)
   repo.createObject({
     title: "Guía de despliegue en VPS",
     type: "nota",
@@ -441,7 +428,6 @@ const seedGoldenVault = (repo: ObjectRepository): void => {
     ].join("\n"),
   });
 
-  // 9. Runbook en inglés de Disaster Recovery (2 secciones)
   repo.createObject({
     title: "Backup Disaster Recovery Runbook",
     type: "nota",
@@ -456,7 +442,6 @@ const seedGoldenVault = (repo: ObjectRepository): void => {
     ].join("\n"),
   });
 
-  // 10. Proyecto principal Migite 0.1 (2 secciones)
   repo.createObject({
     title: "Migite 0.1",
     type: "proyecto",
@@ -471,7 +456,6 @@ const seedGoldenVault = (repo: ObjectRepository): void => {
     ].join("\n"),
   });
 
-  // 11. Proyecto secundario de correo
   repo.createObject({
     title: "Migración de servidor de correo",
     type: "proyecto",
@@ -480,7 +464,6 @@ const seedGoldenVault = (repo: ObjectRepository): void => {
     body: "# Plan de cambio DNS\nConfiguración de registros MX, SPF, DKIM y DMARC para el dominio propio.",
   });
 
-  // 12. Tarea de renovación TLS
   repo.createObject({
     title: "Renovar certificados TLS del nodo central",
     type: "tarea",
@@ -493,7 +476,6 @@ const seedGoldenVault = (repo: ObjectRepository): void => {
     body: "Comprobar el timer de Let's Encrypt y recargar Caddy antes del vencimiento del certificado X.509 en noviembre.",
   });
 
-  // 13. Tarea de auditoría POSIX
   repo.createObject({
     title: "Auditar permisos de carpetas compartidas",
     type: "tarea",
@@ -502,7 +484,6 @@ const seedGoldenVault = (repo: ObjectRepository): void => {
     body: "Revisar permisos POSIX 0600 en ficheros y 0700 en directorios del vault en el servidor de producción.",
   });
 
-  // 14. Recordatorio de impuestos trimestrales
   repo.createObject({
     title: "Presentar declaración trimestral IVA modelo 303",
     type: "recordatorio",
@@ -515,7 +496,6 @@ const seedGoldenVault = (repo: ObjectRepository): void => {
     body: "Descargar el libro registro de facturas emitidas y presentar la autoliquidación del modelo 303 en la Agencia Tributaria.",
   });
 
-  // 15. Evento de revisión de arquitectura
   repo.createObject({
     title: "Revisión de arquitectura del hito M6",
     type: "evento",
@@ -534,7 +514,6 @@ const seedGoldenVault = (repo: ObjectRepository): void => {
     ].join("\n"),
   });
 
-  // 16. Nota de lecturas (contiene términos léxicos "lanzamiento" y "versión" repetidos como distractor léxico para G-20)
   repo.createObject({
     title: "Notas de lectura sobre sistemas locales",
     type: "nota",
@@ -748,7 +727,6 @@ describe("Golden Set de evaluación RAG híbrido (T6.5 / RNF-015)", () => {
     const lexicalMetrics = computeMetrics(GOLDEN_CASES, lexicalResultsByCase);
     const hybridMetrics = computeMetrics(GOLDEN_CASES, hybridResultsByCase);
 
-    // Métricas exactas del baseline solo léxico (5 aciertos en top-1, 1 acierto en top-2 para G-20)
     expect(lexicalMetrics).toEqual({
       hitAt1Object: 0.25,
       hitAt3Object: 0.3,
@@ -758,7 +736,6 @@ describe("Golden Set de evaluación RAG híbrido (T6.5 / RNF-015)", () => {
       mrrSection: 0.275,
     });
 
-    // Métricas exactas del modo híbrido RRF (20/20 en top-1 tanto en objeto como en sección)
     expect(hybridMetrics).toEqual({
       hitAt1Object: 1,
       hitAt3Object: 1,
@@ -768,19 +745,16 @@ describe("Golden Set de evaluación RAG híbrido (T6.5 / RNF-015)", () => {
       mrrSection: 1,
     });
 
-    // 1. El modo híbrido supera estrictamente al modo solo léxico en Hit@1 y MRR (objeto y sección)
     expect(hybridMetrics.hitAt1Object).toBeGreaterThan(lexicalMetrics.hitAt1Object);
     expect(hybridMetrics.mrrObject).toBeGreaterThan(lexicalMetrics.mrrObject);
     expect(hybridMetrics.hitAt1Section).toBeGreaterThan(lexicalMetrics.hitAt1Section);
     expect(hybridMetrics.mrrSection).toBeGreaterThan(lexicalMetrics.mrrSection);
 
-    // 2. Umbrales de calidad del Golden Set para recuperación híbrida
     expect(hybridMetrics.hitAt1Object).toBeGreaterThanOrEqual(0.9);
     expect(hybridMetrics.hitAt3Object).toBe(1);
     expect(hybridMetrics.hitAt1Section).toBeGreaterThanOrEqual(0.9);
     expect(hybridMetrics.hitAt3Section).toBe(1);
 
-    // 3. Verificación caso por caso de la sección esperada en el top-1 para citas precisas
     for (const goldenCase of GOLDEN_CASES) {
       const top1 = hybridResultsByCase.get(goldenCase.id)?.[0];
       expect(top1, `Caso ${goldenCase.id} debería devolver al menos un resultado`).toBeDefined();

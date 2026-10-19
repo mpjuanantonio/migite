@@ -624,7 +624,7 @@ describe("POST /api/chat/mensajes", () => {
     }
     const toolMsg = secondCall.request.messages.find((m) => m.role === "tool");
     expect(toolMsg?.content).toContain(
-      `«Guía de despliegue» § Copias de seguridad (${nota.path}) — id ${nota.id}`,
+      `<datos_vault>«Guía de despliegue» § Copias de seguridad (${nota.path}) — id ${nota.id}</datos_vault>`,
     );
   });
 });

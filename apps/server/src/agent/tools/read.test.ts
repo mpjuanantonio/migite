@@ -233,7 +233,7 @@ describe("buscar_conocimiento", () => {
     expect(resultado?.fragmento).toContain("presupuesto");
     expect(resultado?.fragmento?.startsWith(DELIMITADOR_DATOS_VAULT_INICIO)).toBe(true);
     expect(resultado?.fragmento?.endsWith(DELIMITADOR_DATOS_VAULT_FIN)).toBe(true);
-    expect(resultado?.fuente).toBe(`«Beta» (proyectos/beta.md) — id ${BETA}`);
+    expect(resultado?.fuente).toBe(delimitar(`«Beta» (proyectos/beta.md) — id ${BETA}`));
   });
 
   it("aplica filtros opcionales por tipo, carpeta y etiqueta", async () => {
@@ -325,7 +325,9 @@ describe("buscar_conocimiento", () => {
     expect(parsedSemantic.resultados[0]?.id).toBe(FINANZAS);
     expect(parsedSemantic.resultados[0]?.seccion).toBe(delimitar("Contabilidad y facturas"));
     expect(parsedSemantic.resultados[0]?.fuente).toBe(
-      `«Cierre anual» § Contabilidad y facturas (proyectos/cierre-anual.md) — id ${FINANZAS}`,
+      delimitar(
+        `«Cierre anual» § Contabilidad y facturas (proyectos/cierre-anual.md) — id ${FINANZAS}`,
+      ),
     );
 
     const brokenRegistry = new ToolRegistry();
@@ -351,7 +353,9 @@ describe("buscar_conocimiento", () => {
     expect(parsedFallback.resultados[0]?.id).toBe(FINANZAS);
     expect(parsedFallback.resultados[0]?.seccion).toBe(delimitar("Contabilidad y facturas"));
     expect(parsedFallback.resultados[0]?.fuente).toBe(
-      `«Cierre anual» § Contabilidad y facturas (proyectos/cierre-anual.md) — id ${FINANZAS}`,
+      delimitar(
+        `«Cierre anual» § Contabilidad y facturas (proyectos/cierre-anual.md) — id ${FINANZAS}`,
+      ),
     );
   });
 
@@ -446,7 +450,9 @@ describe("buscar_conocimiento", () => {
       delimitar("Almacenamiento de credenciales con Argon2"),
     );
     expect(resAuth.resultados[0]?.fuente).toBe(
-      `«Seguridad y autenticación HTTP» § Almacenamiento de credenciales con Argon2 (arquitectura/seguridad-http.md) — id ${SEGURIDAD_ID}`,
+      delimitar(
+        `«Seguridad y autenticación HTTP» § Almacenamiento de credenciales con Argon2 (arquitectura/seguridad-http.md) — id ${SEGURIDAD_ID}`,
+      ),
     );
 
     const resRetention = busquedaSchema.parse(
@@ -465,7 +471,9 @@ describe("buscar_conocimiento", () => {
       delimitar("Retención y rotación de snapshots"),
     );
     expect(resRetention.resultados[0]?.fuente).toBe(
-      `«Política de copias de seguridad» § Retención y rotación de snapshots (operaciones/backups.md) — id ${BACKUPS_ID}`,
+      delimitar(
+        `«Política de copias de seguridad» § Retención y rotación de snapshots (operaciones/backups.md) — id ${BACKUPS_ID}`,
+      ),
     );
 
     const resAdr = busquedaSchema.parse(
@@ -484,7 +492,9 @@ describe("buscar_conocimiento", () => {
       delimitar("Decisión: Embeddings en SQLite y fusión RRF"),
     );
     expect(resAdr.resultados[0]?.fuente).toBe(
-      `«ADR-011 Recuperación híbrida y RRF» § Decisión: Embeddings en SQLite y fusión RRF (arquitectura/adr-011.md) — id ${ADR_ID}`,
+      delimitar(
+        `«ADR-011 Recuperación híbrida y RRF» § Decisión: Embeddings en SQLite y fusión RRF (arquitectura/adr-011.md) — id ${ADR_ID}`,
+      ),
     );
   });
 });

@@ -206,10 +206,7 @@ const collectLexicalCandidates = (
   return results.map((result, idx) => {
     const objectFragments = fragmentsByObject.get(result.id) ?? [];
     const { fragment, matchedTerms } = selectBestFragment(objectFragments, normalizedTerms);
-    const snippet =
-      matchedTerms > 0 && fragment !== undefined
-        ? (result.snippet ?? fragment.texto)
-        : (result.snippet ?? fragment?.texto);
+    const snippet = result.snippet ?? fragment?.texto;
     return {
       result: snippet === undefined ? result : { ...result, snippet },
       rank: idx + 1,

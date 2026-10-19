@@ -90,7 +90,7 @@ describe("syncEmbeddings", () => {
     expect(result).toEqual({
       model: "text-embedding-3-small",
       embedded: 3,
-      PurgedOrModelChanged: true,
+      purgedOrModelChanged: true,
     });
     expect(calls).toHaveLength(2);
     expect(calls[0]).toEqual(["Uno\n\nTexto uno.", "Dos\n\nTexto dos."]);
@@ -128,7 +128,7 @@ describe("syncEmbeddings", () => {
     expect(second).toEqual({
       model: "embed-v1",
       embedded: 0,
-      PurgedOrModelChanged: false,
+      purgedOrModelChanged: false,
     });
     expect(calls).toHaveLength(1);
   });
@@ -159,7 +159,7 @@ describe("syncEmbeddings", () => {
     expect(updateSync).toEqual({
       model: "embed-v1",
       embedded: 1,
-      PurgedOrModelChanged: false,
+      purgedOrModelChanged: false,
     });
     expect(calls).toHaveLength(2);
     expect(calls[1]).toEqual(["Cambiante\n\nVersión actualizada."]);
@@ -183,7 +183,7 @@ describe("syncEmbeddings", () => {
     expect(result).toEqual({
       model: "model-new",
       embedded: 2,
-      PurgedOrModelChanged: true,
+      purgedOrModelChanged: true,
     });
 
     const storedMeta = handle.db

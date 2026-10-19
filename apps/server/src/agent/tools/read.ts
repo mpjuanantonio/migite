@@ -155,7 +155,7 @@ export const registrarHerramientasDeLectura = (
           ? {}
           : { seccion: datoDeVault(row.encabezado) }),
         ...(row.snippet === undefined ? {} : { fragmento: datoDeVault(row.snippet) }),
-        fuente: cita(row),
+        fuente: datoDeVault(cita(row)),
       })),
       ...(rows.length === 0 ? { mensaje: `sin resultados para «${query}»` } : {}),
     };

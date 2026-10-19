@@ -18,7 +18,7 @@ export type SyncEmbeddingsOptions = {
 export type SyncEmbeddingsResult = {
   readonly model: string;
   readonly embedded: number;
-  readonly PurgedOrModelChanged: boolean;
+  readonly purgedOrModelChanged: boolean;
 };
 
 export const encodeEmbeddingVector = (vector: readonly number[]): Buffer => {
@@ -78,9 +78,9 @@ export const syncEmbeddings = async (
     .where(eq(meta.clave, EMBEDDINGS_MODEL_META_KEY))
     .get()?.valor;
 
-  const PurgedOrModelChanged = storedModel !== model;
+  const purgedOrModelChanged = storedModel !== model;
 
-  if (PurgedOrModelChanged) {
+  if (purgedOrModelChanged) {
     db.transaction((tx) => {
       tx.delete(embeddings).where(ne(embeddings.modelo, model)).run();
       tx.insert(meta)
@@ -119,7 +119,7 @@ export const syncEmbeddings = async (
     return {
       model,
       embedded: 0,
-      PurgedOrModelChanged,
+      purgedOrModelChanged,
     };
   }
 
@@ -164,6 +164,6 @@ export const syncEmbeddings = async (
   return {
     model,
     embedded,
-    PurgedOrModelChanged,
+    purgedOrModelChanged,
   };
 };
