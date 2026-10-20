@@ -1,5 +1,9 @@
 import {
+  type ArbolObjetos,
+  type ArbolObjetosParams,
   type CreateObjectBody,
+  type EnlacesEntrantes,
+  LIMITE_MAX_ARBOL,
   type ObjectPayload,
   objectPayloadSchema,
   type PatchObjectBody,
@@ -13,6 +17,7 @@ import {
   type ReadObjectResult,
 } from "@migite/core";
 import {
+  DEFAULT_LIST_LIMIT as INDEX_PAGE_SIZE,
   type IndexDatabase,
   type IndexedObject,
   listObjectsIndexed,
@@ -115,6 +120,27 @@ export const getObjeto = (deps: ObjetosDeps, ref: string): ObjectPayload => {
   return result.ok ? toPayload(result.object) : toDegradedPayload(ref, result);
 };
 
+export const getEnlacesEntrantes = (deps: ObjetosDeps, ref: string): EnlacesEntrantes => {
+  const repository = createRepository(deps);
+  const titulos = new Map(repository.listObjects().map((objeto) => [objeto.id, objeto.title]));
+  const vistos = new Set<string>();
+  const entrantes: EnlacesEntrantes["entrantes"] = [];
+  for (const enlace of repository.findIncomingLinks(ref)) {
+    const clave = `${enlace.objectId}\u0000${enlace.context}`;
+    if (vistos.has(clave)) {
+      continue;
+    }
+    vistos.add(clave);
+    entrantes.push({
+      id: enlace.objectId,
+      titulo: titulos.get(enlace.objectId) ?? enlace.objectId,
+      ruta: enlace.path,
+      contexto: enlace.context,
+    });
+  }
+  return { entrantes };
+};
+
 export type RenameReportPayload = {
   readonly objeto: ObjectPayload;
   readonly informe: {
@@ -134,9 +160,20 @@ export const createObjeto = (deps: ObjetosDeps, input: CreateObjectBody): Object
       type: input.tipo,
       body: input.cuerpo,
       attributes: input.atributos,
+      links: input.enlaces,
       folder: input.carpeta,
     }),
   );
+
+const mergePatchAttributes = (
+  attributes: Readonly<Record<string, unknown>>,
+): Record<string, unknown> => {
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(attributes)) {
+    result[key] = value === null ? undefined : value;
+  }
+  return result;
+};
 
 export const patchObjeto = (
   deps: ObjetosDeps,
@@ -168,7 +205,8 @@ export const patchObjeto = (
     repository.updateObject(effectiveRef, {
       title: changes.titulo,
       body: changes.cuerpo,
-      attributes: changes.atributos,
+      attributes:
+        changes.atributos === undefined ? undefined : mergePatchAttributes(changes.atributos),
     }),
   );
 };
@@ -237,4 +275,43 @@ export const listObjetos = (
     objetos,
     siguienteCursor: hasMore ? encodeCursor(offset + page.length) : null,
   };
+};
+
+const porRuta = (
+  a: { readonly ruta: string; readonly id: string },
+  b: { readonly ruta: string; readonly id: string },
+): number => {
+  if (a.ruta !== b.ruta) {
+    return a.ruta < b.ruta ? -1 : 1;
+  }
+  if (a.id === b.id) {
+    return 0;
+  }
+  return a.id < b.id ? -1 : 1;
+};
+
+export const listArbolObjetos = (deps: ObjetosDeps, params: ArbolObjetosParams): ArbolObjetos => {
+  const filters: ObjectFilters = params.tipo === undefined ? {} : { tipo: params.tipo };
+  const rows: IndexedObject[] = [];
+  while (rows.length < LIMITE_MAX_ARBOL) {
+    const size = Math.min(INDEX_PAGE_SIZE, LIMITE_MAX_ARBOL - rows.length);
+    const page = listObjectsIndexed(deps.db, { filters, limit: size, offset: rows.length });
+    rows.push(...page);
+    if (page.length < size) {
+      break;
+    }
+  }
+  const limite = params.limite ?? LIMITE_MAX_ARBOL;
+  const nodos = rows
+    .map((row) => ({
+      id: row.id,
+      tipo: row.tipo,
+      titulo: row.titulo,
+      ruta: row.ruta,
+      carpeta: folderOf(row.ruta),
+      actualizado: row.actualizado,
+    }))
+    .sort(porRuta)
+    .slice(0, limite);
+  return { nodos };
 };

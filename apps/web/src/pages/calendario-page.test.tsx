@@ -59,6 +59,7 @@ const evento = (
 
 type OpcionesMock = {
   readonly falloPatch?: boolean;
+  readonly ajustarPatch?: (atributos: Record<string, unknown>) => Record<string, unknown>;
 };
 
 const mockApi = (eventos: readonly ObjectPayload[] = [], opciones: OpcionesMock = {}): void => {
@@ -112,9 +113,10 @@ const mockApi = (eventos: readonly ObjectPayload[] = [], opciones: OpcionesMock 
       if (previo === undefined) {
         return errorResponse("not_found", "No existe la ficha", 404);
       }
+      const guardados = opciones.ajustarPatch?.(atributos) ?? atributos;
       const actualizado: ObjectPayload = {
         ...previo,
-        atributos: { ...previo.atributos, ...atributos },
+        atributos: { ...previo.atributos, ...guardados },
       };
       actuales[indice] = actualizado;
       return jsonResponse(actualizado);
@@ -126,6 +128,10 @@ const mockApi = (eventos: readonly ObjectPayload[] = [], opciones: OpcionesMock 
       return encontrado === undefined
         ? errorResponse("not_found", "No existe la ficha", 404)
         : jsonResponse(encontrado);
+    }
+
+    if (url.pathname === "/api/tipos" && method === "GET") {
+      return jsonResponse({ tipos: [] });
     }
 
     return errorResponse("not_found", "No existe la ruta", 404);
@@ -625,6 +631,32 @@ describe("mover eventos arrastrando", () => {
     expect(
       within(celdaDe(claveDia(diaEnMes(20)))).getByRole("link", { name: /Festivo local/ }),
     ).toBeInTheDocument();
+  });
+
+  it("muestra la posición que devuelve el servidor al confirmar el movimiento", async () => {
+    mockApi([evento("C1", "Con hora", diaEnMes(5, 10, 0), { fin: diaEnMes(5, 11, 0) })], {
+      ajustarPatch: (atributos) => ({
+        ...atributos,
+        inicio: new Date(new Date(String(atributos.inicio)).getTime() + 86_400_000).toISOString(),
+      }),
+    });
+    renderCalendario();
+
+    const chip = await screen.findByRole("link", { name: /Con hora/ });
+    const dt = dataTransfer();
+    fireEvent.dragStart(chip, { dataTransfer: dt });
+    fireEvent.drop(celdaDe(claveDia(diaEnMes(12))), { dataTransfer: dt });
+
+    await waitFor(() => expect(parches).toHaveLength(1));
+    const servidor = diaEnMes(13, 10, 0);
+    await waitFor(() => {
+      expect(
+        within(celdaDe(claveDia(servidor))).getByRole("link", { name: /Con hora/ }),
+      ).toBeInTheDocument();
+    });
+    expect(
+      within(celdaDe(claveDia(diaEnMes(12)))).queryByRole("link", { name: /Con hora/ }),
+    ).toBeNull();
   });
 
   it("no guarda cambios si se suelta en el mismo sitio", async () => {

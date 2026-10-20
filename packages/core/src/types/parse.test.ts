@@ -137,6 +137,51 @@ describe("parseTypeYaml", () => {
       expect(value.id).toBe("libro");
     });
 
+    it("parses a complete presentacion block", () => {
+      const value = parseOk(`id: libro
+nombre: Libro
+atributos: []
+presentacion:
+  seccion: notas
+  carpeta: Libros
+  visible: false
+`);
+
+      expect(value.presentacion).toEqual({ seccion: "notas", carpeta: "Libros", visible: false });
+    });
+
+    it("parses a partial presentacion block and leaves missing fields absent", () => {
+      const value = parseOk(`id: libro
+nombre: Libro
+atributos: []
+presentacion:
+  carpeta: Libros
+`);
+
+      expect(value.presentacion).toEqual({ carpeta: "Libros" });
+      expect(value.presentacion).not.toHaveProperty("seccion");
+    });
+
+    it("leaves presentacion absent when the block is missing", () => {
+      const value = parseOk("id: libro\nnombre: Libro\natributos: []\n");
+
+      expect(value).not.toHaveProperty("presentacion");
+    });
+
+    it("ignores an invalid presentacion block without breaking the type", () => {
+      const value = parseOk(`id: libro
+nombre: Libro
+atributos: []
+presentacion:
+  seccion: biblioteca
+  carpeta: ""
+  visible: quizas
+`);
+
+      expect(value.id).toBe("libro");
+      expect(value).not.toHaveProperty("presentacion");
+    });
+
     it("keeps the first definition of a duplicated attribute id", () => {
       const value = parseOk(`id: libro
 nombre: Libro

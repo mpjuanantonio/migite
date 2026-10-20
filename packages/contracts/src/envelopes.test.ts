@@ -62,14 +62,24 @@ describe("tiposListSchema", () => {
 });
 
 describe("sesionStatusSchema", () => {
-  it("accepts both session states", () => {
+  it("accepts both session states with and without the setup flag", () => {
+    expect(sesionStatusSchema.parse({ autenticado: true, setupRequerido: false })).toEqual({
+      autenticado: true,
+      setupRequerido: false,
+    });
+    expect(sesionStatusSchema.parse({ autenticado: false, setupRequerido: true })).toEqual({
+      autenticado: false,
+      setupRequerido: true,
+    });
     expect(sesionStatusSchema.parse({ autenticado: true })).toEqual({ autenticado: true });
-    expect(sesionStatusSchema.parse({ autenticado: false })).toEqual({ autenticado: false });
   });
 
   it("rejects a missing or non-boolean flag", () => {
     expect(sesionStatusSchema.safeParse({}).success).toBe(false);
     expect(sesionStatusSchema.safeParse({ autenticado: "si" }).success).toBe(false);
+    expect(sesionStatusSchema.safeParse({ autenticado: true, setupRequerido: "no" }).success).toBe(
+      false,
+    );
   });
 });
 

@@ -3,6 +3,8 @@ import {
   attributePayloadSchema,
   attributeRoleWireSchema,
   fieldTypeWireSchema,
+  presentacionPayloadSchema,
+  presentacionSeccionSchema,
   tipoPayloadSchema,
 } from "./tipos.js";
 
@@ -107,6 +109,76 @@ describe("attributePayloadSchema", () => {
   });
 });
 
+describe("cotas de attributePayloadSchema", () => {
+  const atributo = (extra: Record<string, unknown>) => ({
+    id: "etiquetas",
+    nombre: "Etiquetas",
+    tipo: "seleccion",
+    obligatorio: false,
+    ...extra,
+  });
+
+  it("acepta hasta 100 opciones y rechaza 101", () => {
+    const cien = Array.from({ length: 100 }, (_, index) => `opcion-${index}`);
+
+    expect(attributePayloadSchema.safeParse(atributo({ opciones: cien })).success).toBe(true);
+    expect(
+      attributePayloadSchema.safeParse(atributo({ opciones: [...cien, "extra"] })).success,
+    ).toBe(false);
+  });
+
+  it("acepta hasta 32 referencias y rechaza 33", () => {
+    const treintaYDos = Array.from({ length: 32 }, (_, index) => `tipo-${index}`);
+
+    expect(
+      attributePayloadSchema.safeParse(atributo({ tipo: "referencia", referencia_a: treintaYDos }))
+        .success,
+    ).toBe(true);
+    expect(
+      attributePayloadSchema.safeParse(
+        atributo({ tipo: "referencia", referencia_a: [...treintaYDos, "extra"] }),
+      ).success,
+    ).toBe(false);
+  });
+});
+
+describe("cotas de presentacionPayloadSchema", () => {
+  it("acepta una carpeta de 200 caracteres y rechaza 201", () => {
+    expect(presentacionPayloadSchema.safeParse({ carpeta: "a".repeat(200) }).success).toBe(true);
+    expect(presentacionPayloadSchema.safeParse({ carpeta: "a".repeat(201) }).success).toBe(false);
+  });
+});
+
+describe("presentacionSeccionSchema", () => {
+  it("accepts the documented sections", () => {
+    expect(presentacionSeccionSchema.parse("notas")).toBe("notas");
+    expect(presentacionSeccionSchema.parse("productividad")).toBe("productividad");
+  });
+
+  it("rejects unknown sections", () => {
+    expect(presentacionSeccionSchema.safeParse("biblioteca").success).toBe(false);
+  });
+});
+
+describe("presentacionPayloadSchema", () => {
+  it("accepts a full block", () => {
+    const presentacion = { seccion: "notas", carpeta: "Libros", visible: false };
+
+    expect(presentacionPayloadSchema.parse(presentacion)).toEqual(presentacion);
+  });
+
+  it("accepts a partial block", () => {
+    expect(presentacionPayloadSchema.parse({ visible: true })).toEqual({ visible: true });
+  });
+
+  it("rejects invalid sections, empty folders and non-boolean visibility", () => {
+    expect(presentacionPayloadSchema.safeParse({ seccion: "biblioteca" }).success).toBe(false);
+    expect(presentacionPayloadSchema.safeParse({ carpeta: "   " }).success).toBe(false);
+    expect(presentacionPayloadSchema.safeParse({ visible: "si" }).success).toBe(false);
+    expect(presentacionPayloadSchema.safeParse({ extra: 1 }).success).toBe(false);
+  });
+});
+
 describe("tipoPayloadSchema", () => {
   it("accepts a type with attributes", () => {
     const tipo = {
@@ -133,6 +205,28 @@ describe("tipoPayloadSchema", () => {
     expect(
       tipoPayloadSchema.parse({ id: "nota", nombre: "Nota", atributos: [] }).descripcion,
     ).toBeUndefined();
+  });
+
+  it("accepts a type with a presentacion block", () => {
+    const tipo = {
+      id: "libro",
+      nombre: "Libro",
+      atributos: [],
+      presentacion: { seccion: "notas", carpeta: "Libros", visible: true },
+    };
+
+    expect(tipoPayloadSchema.parse(tipo)).toEqual(tipo);
+  });
+
+  it("rejects an invalid presentacion block", () => {
+    expect(
+      tipoPayloadSchema.safeParse({
+        id: "libro",
+        nombre: "Libro",
+        atributos: [],
+        presentacion: { seccion: "biblioteca" },
+      }).success,
+    ).toBe(false);
   });
 
   it("rejects invalid attributes and payloads", () => {

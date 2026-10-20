@@ -15,7 +15,12 @@ import { buildIndex, type IndexHandle, openIndex } from "@migite/index";
 import type { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../app.js";
-import { type AuthOptions, createSessionToken, SESSION_COOKIE } from "../auth.js";
+import {
+  type AuthOptions,
+  createSessionToken,
+  createStaticSessionStore,
+  SESSION_COOKIE,
+} from "../auth.js";
 import type { ServerEnv } from "../env.js";
 import { configureBuscar } from "./buscar.js";
 import { configureObjetos } from "./objetos.js";
@@ -36,6 +41,8 @@ const LIBRO: TipoPayload = {
   ],
 };
 
+const PRESENTACION = { seccion: "notas", carpeta: "Libros", visible: false } as const;
+
 const OBJETO = "01JLIBRO0000000000000000000";
 
 type TiposBody = {
@@ -47,10 +54,11 @@ type ErrorBody = {
 };
 
 const auth: AuthOptions = {
-  usuario: USUARIO,
-  passwordHash: "$argon2id$test",
-  secretoSesion: SECRETO,
-  store: { generacion: () => 0, invalidar: () => 1 },
+  store: createStaticSessionStore({
+    usuario: USUARIO,
+    passwordHash: "$argon2id$test",
+    secretoSesion: SECRETO,
+  }),
 };
 
 let root: string;
@@ -157,6 +165,31 @@ describe("POST /api/tipos", () => {
     expect(list.tipos.find((tipo) => tipo.id === "libro")).toEqual(LIBRO);
   });
 
+  it("creates a custom type with presentacion and returns it in the list", async () => {
+    const payload: TipoPayload = { ...LIBRO, presentacion: { ...PRESENTACION } };
+
+    const res = await sendJson("POST", "/api/tipos", payload);
+
+    expect(res.status).toBe(201);
+    const created = tipoPayloadSchema.parse(await res.json());
+    expect(created).toEqual(payload);
+    expect(readFileSync(join(tiposDir, "libro.yaml"), "utf8")).toContain("presentacion:");
+
+    const list = await getJson<TiposBody>("/api/tipos");
+    expect(list.tipos.find((tipo) => tipo.id === "libro")).toEqual(payload);
+  });
+
+  it("rejects an invalid presentacion with validation_error", async () => {
+    const res = await sendJson("POST", "/api/tipos", {
+      ...LIBRO,
+      presentacion: { seccion: "biblioteca" },
+    });
+
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as ErrorBody).error.codigo).toBe("validation_error");
+    expect(existsSync(join(tiposDir, "libro.yaml"))).toBe(false);
+  });
+
   it("rejects reserved ids with type_not_editable", async () => {
     const res = await sendJson("POST", "/api/tipos", {
       id: "nota",
@@ -216,6 +249,27 @@ describe("PATCH /api/tipos/:id", () => {
 
     const list = await getJson<TiposBody>("/api/tipos");
     expect(list.tipos.find((tipo) => tipo.id === "libro")).toEqual(updated);
+  });
+
+  it("updates presentacion and keeps it when a later patch omits it", async () => {
+    expect((await sendJson("POST", "/api/tipos", LIBRO)).status).toBe(201);
+
+    const res = await sendJson("PATCH", "/api/tipos/libro", {
+      presentacion: { seccion: "productividad", carpeta: "Biblioteca" },
+    });
+
+    expect(res.status).toBe(200);
+    const updated = tipoPayloadSchema.parse(await res.json());
+    expect(updated.presentacion).toEqual({ seccion: "productividad", carpeta: "Biblioteca" });
+
+    const rename = await sendJson("PATCH", "/api/tipos/libro", { nombre: "Libro de lectura" });
+    expect(rename.status).toBe(200);
+    const kept = tipoPayloadSchema.parse(await rename.json());
+    expect(kept.nombre).toBe("Libro de lectura");
+    expect(kept.presentacion).toEqual({ seccion: "productividad", carpeta: "Biblioteca" });
+
+    const list = await getJson<TiposBody>("/api/tipos");
+    expect(list.tipos.find((tipo) => tipo.id === "libro")).toEqual(kept);
   });
 
   it("rejects changing the type of an existing attribute and keeps the file intact", async () => {

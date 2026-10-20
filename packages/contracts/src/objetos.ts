@@ -2,6 +2,24 @@ import { z } from "zod";
 
 const nonEmptyText = z.string().trim().min(1);
 
+const WIKILINK_PATTERN = /^\[\[[^[\]\r\n\p{Cc}]+\]\]$/u;
+
+const MAX_OBJECT_LINKS = 100;
+
+const MAX_WIKILINK_LENGTH = 300;
+
+const wikilinkText = z.string().trim().max(MAX_WIKILINK_LENGTH).regex(WIKILINK_PATTERN);
+
+export const MAX_TITULO_OBJETO = 300;
+
+export const MAX_CUERPO_OBJETO = 200_000;
+
+export const MAX_ATRIBUTOS_OBJETO = 200;
+
+const atributosSchema = z
+  .record(z.string(), z.unknown())
+  .refine((atributos) => Object.keys(atributos).length <= MAX_ATRIBUTOS_OBJETO);
+
 export const degradationReasonSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("unknownType"),
@@ -41,15 +59,44 @@ export const objectPayloadSchema = z.object({
 
 export type ObjectPayload = z.infer<typeof objectPayloadSchema>;
 
+export const LIMITE_MAX_ARBOL = 2000;
+
+export const arbolObjetosParamsSchema = z.object({
+  tipo: nonEmptyText.optional(),
+  limite: z.coerce.number().int().min(1).max(LIMITE_MAX_ARBOL).optional(),
+});
+
+export type ArbolObjetosParams = z.infer<typeof arbolObjetosParamsSchema>;
+
+export const arbolObjetoNodeSchema = z.object({
+  id: z.string(),
+  tipo: z.string(),
+  titulo: z.string(),
+  ruta: z.string(),
+  carpeta: z.string(),
+  actualizado: z.string(),
+});
+
+export type ArbolObjetoNode = z.infer<typeof arbolObjetoNodeSchema>;
+
+export const arbolObjetosSchema = z.object({
+  nodos: z.array(arbolObjetoNodeSchema),
+});
+
+export type ArbolObjetos = z.infer<typeof arbolObjetosSchema>;
+
 const objectBodyShape = {
   tipo: nonEmptyText.optional(),
-  titulo: nonEmptyText,
-  atributos: z.record(z.string(), z.unknown()).optional(),
-  cuerpo: z.string().optional(),
+  titulo: nonEmptyText.max(MAX_TITULO_OBJETO),
+  atributos: atributosSchema.optional(),
+  cuerpo: z.string().max(MAX_CUERPO_OBJETO).optional(),
   carpeta: z.string().optional(),
 };
 
-export const createObjectBodySchema = z.strictObject(objectBodyShape);
+export const createObjectBodySchema = z.strictObject({
+  ...objectBodyShape,
+  enlaces: z.array(wikilinkText).max(MAX_OBJECT_LINKS).optional(),
+});
 
 export type CreateObjectBody = z.infer<typeof createObjectBodySchema>;
 
@@ -58,10 +105,25 @@ export const patchObjectBodySchema = z.strictObject(objectBodyShape).partial();
 export type PatchObjectBody = z.infer<typeof patchObjectBodySchema>;
 
 export const renameObjectBodySchema = z.strictObject({
-  nuevoTitulo: nonEmptyText,
+  nuevoTitulo: nonEmptyText.max(MAX_TITULO_OBJETO),
 });
 
 export type RenameObjectBody = z.infer<typeof renameObjectBodySchema>;
+
+export const enlaceEntranteSchema = z.object({
+  id: z.string(),
+  titulo: z.string(),
+  ruta: z.string(),
+  contexto: z.enum(["body", "frontmatter"]),
+});
+
+export type EnlaceEntrante = z.infer<typeof enlaceEntranteSchema>;
+
+export const enlacesEntrantesSchema = z.object({
+  entrantes: z.array(enlaceEntranteSchema),
+});
+
+export type EnlacesEntrantes = z.infer<typeof enlacesEntrantesSchema>;
 
 export const renameReportSchema = z.object({
   objeto: objectPayloadSchema,

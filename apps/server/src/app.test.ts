@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
-import type { AuthOptions } from "./auth.js";
+import { type AuthOptions, createStaticSessionStore } from "./auth.js";
 
 const auth: AuthOptions = {
-  usuario: "tester",
-  passwordHash: "$argon2id$test",
-  secretoSesion: "secreto-de-test-suficientemente-largo",
-  store: { generacion: () => 0, invalidar: () => 1 },
+  store: createStaticSessionStore({
+    usuario: "tester",
+    passwordHash: "$argon2id$test",
+    secretoSesion: "secreto-de-test-suficientemente-largo",
+  }),
 };
 
 describe("GET /api/health", () => {

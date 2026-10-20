@@ -15,18 +15,25 @@ import { HTTPException } from "hono/http-exception";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { ServerEnv } from "../env.js";
 import { createRequestId, writeLog } from "../logs.js";
+import { ActionError } from "../services/acciones.js";
+import { ConversationError } from "../services/conversations.js";
+import { MemoriaError } from "../services/memories.js";
 
 export type ErrorCode =
+  | "action_conflict"
+  | "action_not_found"
   | "ambiguous_title"
   | "attribute_type_immutable"
   | "bad_request"
   | "config_error"
   | "confirmation_required"
   | "conflict"
+  | "conversation_not_found"
   | "forbidden"
   | "index_error"
   | "internal_error"
   | "invalid_object_write"
+  | "memory_not_found"
   | "missing_required_attribute"
   | "not_found"
   | "object_not_found"
@@ -39,16 +46,20 @@ export type ErrorCode =
   | "validation_error";
 
 const CODE_STATUS: Readonly<Record<ErrorCode, ContentfulStatusCode>> = {
+  action_conflict: 409,
+  action_not_found: 404,
   ambiguous_title: 409,
   attribute_type_immutable: 422,
   bad_request: 400,
   config_error: 500,
   confirmation_required: 409,
   conflict: 409,
+  conversation_not_found: 404,
   forbidden: 403,
   index_error: 500,
   internal_error: 500,
   invalid_object_write: 422,
+  memory_not_found: 404,
   missing_required_attribute: 422,
   not_found: 404,
   object_not_found: 404,
@@ -79,12 +90,16 @@ const TYPE_ERROR_CODES: Readonly<Partial<Record<TranslationKey, ErrorCode>>> = {
 };
 
 const CODE_MESSAGES: Readonly<Partial<Record<ErrorCode, TranslationKey>>> = {
+  action_conflict: "error.actionConflict",
+  action_not_found: "error.actionNotFound",
   bad_request: "error.badRequest",
   confirmation_required: "error.confirmationRequired",
   conflict: "error.conflict",
+  conversation_not_found: "error.notFound",
   forbidden: "error.forbidden",
   index_error: "error.indexError",
   internal_error: "error.internalError",
+  memory_not_found: "error.memoryNotFound",
   not_found: "error.notFound",
   rate_limited: "error.rateLimited",
   unauthorized: "error.unauthorized",
@@ -241,6 +256,36 @@ const describeError = (error: Error, locale: Locale): ApiError => {
       mensaje: withProblems(t(error.key, error.params, locale), error.problems),
       detalle: internalMessage(error),
       problems: [...error.problems],
+      stack: error.stack,
+    };
+  }
+  if (error instanceof ActionError) {
+    return {
+      codigo: error.codigo,
+      status: CODE_STATUS[error.codigo],
+      mensaje: codeMessage(error.codigo, locale),
+      detalle: internalMessage(error),
+      problems: [],
+      stack: error.stack,
+    };
+  }
+  if (error instanceof ConversationError) {
+    return {
+      codigo: error.codigo,
+      status: CODE_STATUS[error.codigo],
+      mensaje: codeMessage(error.codigo, locale),
+      detalle: internalMessage(error),
+      problems: [],
+      stack: error.stack,
+    };
+  }
+  if (error instanceof MemoriaError) {
+    return {
+      codigo: error.codigo,
+      status: CODE_STATUS[error.codigo],
+      mensaje: codeMessage(error.codigo, locale),
+      detalle: internalMessage(error),
+      problems: [],
       stack: error.stack,
     };
   }

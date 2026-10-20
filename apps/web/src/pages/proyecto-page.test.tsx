@@ -1,0 +1,317 @@
+import type { CreateObjectBody, ObjectPayload, TipoPayload } from "@migite/contracts";
+import { QueryClient } from "@tanstack/react-query";
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
+import { errorResponse, jsonResponse, renderApp, sesionResponse } from "@/test/render-app";
+
+let fetchMock: Mock<typeof fetch>;
+let listados: URL[];
+let creaciones: CreateObjectBody[];
+let parches: {
+  readonly id: string;
+  readonly body: { readonly atributos?: Record<string, unknown> };
+}[];
+
+const tipoNota: TipoPayload = { id: "nota", nombre: "Nota", atributos: [] };
+
+const tipoTarea: TipoPayload = {
+  id: "tarea",
+  nombre: "Tarea",
+  atributos: [
+    {
+      id: "estado",
+      nombre: "Estado",
+      tipo: "seleccion",
+      rol: "estado",
+      obligatorio: true,
+      opciones: ["pendiente", "en curso", "hecha"],
+    },
+  ],
+};
+
+const TIPOS_SISTEMA: readonly TipoPayload[] = [tipoNota, tipoTarea];
+
+type OpcionesObjeto = {
+  readonly estado?: string;
+  readonly cuerpo?: string;
+};
+
+const objeto = (
+  tipo: string,
+  id: string,
+  titulo: string,
+  opciones: OpcionesObjeto = {},
+): ObjectPayload => {
+  const { estado, cuerpo = "" } = opciones;
+  return {
+    id,
+    tipo,
+    titulo,
+    ruta: `${tipo}s/${id}.md`,
+    carpeta: `${tipo}s`,
+    creado: "2026-10-01T10:00:00.000Z",
+    actualizado: "2026-10-04T10:00:00.000Z",
+    atributos: estado === undefined ? {} : { estado },
+    cuerpo,
+    enlaces: [],
+    degraded: [],
+  };
+};
+
+type MockApiOptions = {
+  readonly proyecto?: ObjectPayload;
+  readonly asociados?: Partial<Record<string, readonly ObjectPayload[]>>;
+  readonly tipos?: readonly TipoPayload[];
+};
+
+const mockApi = (options: MockApiOptions = {}): void => {
+  let principal =
+    options.proyecto ??
+    objeto("proyecto", "P1", "Mi proyecto", {
+      estado: "activo",
+      cuerpo: "## Objetivo\n\nTerminar la app",
+    });
+  const asociados: Record<string, ObjectPayload[]> = {};
+  for (const [tipo, lista] of Object.entries(options.asociados ?? {})) {
+    if (lista !== undefined) {
+      asociados[tipo] = [...lista];
+    }
+  }
+
+  fetchMock.mockImplementation(async (input, init) => {
+    const url = new URL(String(input), "http://localhost");
+    const method = init?.method ?? "GET";
+
+    if (url.pathname === "/api/sesion") {
+      return sesionResponse(true);
+    }
+
+    if (url.pathname === "/api/tipos" && method === "GET") {
+      return jsonResponse({ tipos: options.tipos ?? TIPOS_SISTEMA });
+    }
+
+    if (url.pathname === "/api/objetos" && method === "POST") {
+      const body = JSON.parse(String(init?.body ?? "{}")) as CreateObjectBody;
+      creaciones.push(body);
+      const tipo = body.tipo ?? "nota";
+      const creado = objeto(tipo, "NUEVO", body.titulo, {
+        ...(typeof body.atributos?.estado === "string" ? { estado: body.atributos.estado } : {}),
+      });
+      asociados[tipo] = [creado, ...(asociados[tipo] ?? [])];
+      return jsonResponse(creado, 201);
+    }
+
+    if (url.pathname === `/api/objetos/${principal.id}` && method === "PATCH") {
+      const body = JSON.parse(String(init?.body ?? "{}")) as {
+        atributos?: Record<string, unknown>;
+      };
+      parches.push({ id: principal.id, body });
+      principal = {
+        ...principal,
+        atributos: { ...principal.atributos, ...(body.atributos ?? {}) },
+        actualizado: new Date().toISOString(),
+      };
+      return jsonResponse(principal);
+    }
+
+    if (url.pathname === "/api/objetos") {
+      listados.push(url);
+      const tipo = url.searchParams.get("tipo") ?? "";
+      return jsonResponse({ objetos: asociados[tipo] ?? [], siguienteCursor: null });
+    }
+
+    if (url.pathname.startsWith("/api/objetos/") && method === "GET") {
+      const id = decodeURIComponent(url.pathname.slice("/api/objetos/".length));
+      const todos: ObjectPayload[] = [principal, ...Object.values(asociados).flat()];
+      const encontrado = todos.find((item) => item.id === id);
+      return encontrado === undefined
+        ? errorResponse("not_found", "No existe la ficha", 404)
+        : jsonResponse(encontrado);
+    }
+
+    return errorResponse("not_found", "No existe la ruta", 404);
+  });
+};
+
+const renderProyecto = (id = "P1") =>
+  renderApp(`/proyectos/${id}`, new QueryClient({ defaultOptions: { queries: { retry: false } } }));
+
+beforeEach(() => {
+  localStorage.clear();
+  listados = [];
+  creaciones = [];
+  parches = [];
+  fetchMock = vi.fn<typeof fetch>();
+  vi.stubGlobal("fetch", fetchMock);
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe("vista de proyecto", () => {
+  it("muestra nombre, descripción, estado y enlace a la ficha completa", async () => {
+    mockApi();
+    renderProyecto();
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Mi proyecto" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "Objetivo" })).toBeInTheDocument();
+    expect(screen.getByText("Terminar la app")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Editar ficha completa" })).toHaveAttribute(
+      "href",
+      "/objetos/P1",
+    );
+    expect(screen.getByRole("combobox", { name: "Estado del proyecto" })).toHaveValue("activo");
+  });
+
+  it("consulta los grupos con enlazadoA y muestra títulos, contadores y estados", async () => {
+    mockApi({
+      asociados: {
+        nota: [objeto("nota", "N1", "Apuntes del proyecto"), objeto("nota", "N2", "Referencias")],
+        tarea: [objeto("tarea", "T1", "Preparar despliegue", { estado: "pendiente" })],
+        evento: [objeto("evento", "E1", "Reunión semanal")],
+        recordatorio: [objeto("recordatorio", "R1", "Avisar al equipo", { estado: "vencido" })],
+      },
+    });
+    const { router } = renderProyecto();
+    const user = userEvent.setup();
+
+    await screen.findByRole("link", { name: "Apuntes del proyecto" });
+
+    for (const tipo of ["nota", "tarea", "evento", "recordatorio"]) {
+      const consulta = listados.find((url) => url.searchParams.get("tipo") === tipo);
+      expect(consulta?.searchParams.get("enlazadoA")).toBe("P1");
+      expect(consulta?.searchParams.get("limite")).toBe("50");
+    }
+
+    expect(
+      within(screen.getByRole("region", { name: "Notas" })).getByText("2"),
+    ).toBeInTheDocument();
+    const tareas = screen.getByRole("region", { name: "Tareas" });
+    expect(within(tareas).getByText("1")).toBeInTheDocument();
+    expect(within(tareas).getByText("pendiente")).toBeInTheDocument();
+    const recordatorios = screen.getByRole("region", { name: "Recordatorios" });
+    expect(
+      within(recordatorios).getByRole("link", { name: "Avisar al equipo" }),
+    ).toBeInTheDocument();
+    expect(within(recordatorios).queryByText("vencido")).toBeNull();
+    const eventos = screen.getByRole("region", { name: "Eventos" });
+    expect(within(eventos).getByRole("link", { name: "Reunión semanal" })).toBeInTheDocument();
+    expect(within(eventos).queryByText("pendiente")).toBeNull();
+
+    await user.click(screen.getByRole("link", { name: "Apuntes del proyecto" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/objetos/N1"));
+  });
+
+  it("cambia el estado del proyecto con PATCH", async () => {
+    mockApi();
+    renderProyecto();
+    const user = userEvent.setup();
+
+    await screen.findByRole("heading", { level: 1, name: "Mi proyecto" });
+    const selector = screen.getByRole("combobox", { name: "Estado del proyecto" });
+    await user.selectOptions(selector, "hecho");
+
+    await waitFor(() => expect(parches).toHaveLength(1));
+    expect(parches[0]).toEqual({ id: "P1", body: { atributos: { estado: "hecho" } } });
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", { name: "Estado del proyecto" })).toHaveValue("hecho"),
+    );
+  });
+
+  it("muestra la pista de wikilink cuando no hay elementos asociados", async () => {
+    mockApi();
+    renderProyecto();
+
+    expect(await screen.findByText(/\[\[Mi proyecto\]\]/)).toBeInTheDocument();
+    expect(screen.getAllByText("Ninguno asociado.")).toHaveLength(4);
+  });
+
+  it("crea una tarea enlazada al proyecto desde el botón del grupo", async () => {
+    mockApi({
+      asociados: {
+        tarea: [objeto("tarea", "T1", "Preparar despliegue", { estado: "pendiente" })],
+      },
+    });
+    const user = userEvent.setup();
+    renderProyecto();
+
+    const tareas = await screen.findByRole("region", { name: "Tareas" });
+    await user.click(within(tareas).getByRole("button", { name: "Añadir a Tareas" }));
+
+    const dialogo = within(await screen.findByRole("dialog"));
+    expect(dialogo.queryByLabelText("Tipo")).toBeNull();
+    const estado = dialogo.getByLabelText(/^Estado/);
+    expect(estado).toHaveValue("pendiente");
+    expect(within(estado).queryByRole("option", { name: "hecha" })).toBeNull();
+
+    await user.type(dialogo.getByLabelText("Título"), "Revisar presupuesto");
+    await user.click(dialogo.getByRole("button", { name: "Crear objeto" }));
+
+    await waitFor(() => {
+      expect(creaciones).toHaveLength(1);
+      expect(creaciones[0]).toEqual({
+        tipo: "tarea",
+        titulo: "Revisar presupuesto",
+        atributos: { estado: "pendiente" },
+        enlaces: ["[[Mi proyecto]]"],
+      });
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(
+      await within(screen.getByRole("region", { name: "Tareas" })).findByRole("link", {
+        name: "Revisar presupuesto",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("crea una nota enlazada al proyecto desde el botón del grupo", async () => {
+    mockApi();
+    const user = userEvent.setup();
+    renderProyecto();
+
+    const notas = await screen.findByRole("region", { name: "Notas" });
+    await user.click(within(notas).getByRole("button", { name: "Añadir a Notas" }));
+
+    const dialogo = within(await screen.findByRole("dialog"));
+    expect(dialogo.queryByLabelText("Tipo")).toBeNull();
+
+    await user.type(dialogo.getByLabelText("Título"), "Ideas sueltas");
+    await user.click(dialogo.getByRole("button", { name: "Crear objeto" }));
+
+    await waitFor(() => {
+      expect(creaciones).toHaveLength(1);
+      expect(creaciones[0]).toEqual({
+        tipo: "nota",
+        titulo: "Ideas sueltas",
+        enlaces: ["[[Mi proyecto]]"],
+      });
+    });
+    expect(
+      await within(screen.getByRole("region", { name: "Notas" })).findByRole("link", {
+        name: "Ideas sueltas",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("omite el enlace inicial cuando el título del proyecto no es seguro para un wikilink", async () => {
+    mockApi({ proyecto: objeto("proyecto", "P1", "Proyecto [beta]", { estado: "activo" }) });
+    const user = userEvent.setup();
+    renderProyecto();
+
+    const notas = await screen.findByRole("region", { name: "Notas" });
+    await user.click(within(notas).getByRole("button", { name: "Añadir a Notas" }));
+
+    const dialogo = within(await screen.findByRole("dialog"));
+    await user.type(dialogo.getByLabelText("Título"), "Ideas sueltas");
+    await user.click(dialogo.getByRole("button", { name: "Crear objeto" }));
+
+    await waitFor(() => {
+      expect(creaciones).toHaveLength(1);
+      expect(creaciones[0]?.enlaces).toBeUndefined();
+    });
+  });
+});

@@ -1,10 +1,12 @@
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -17,10 +19,15 @@ import {
   deleteTypeFile,
   loadTypeRegistry,
   TypeOperationError,
+  type TypePresentation,
   updateTypeFile,
 } from "./index.js";
 
-const fsGate = vi.hoisted(() => ({ failRename: false }));
+const fsGate = vi.hoisted(() => ({
+  failRename: false,
+  readGate: undefined as { suffix: string; onRead: number; text: string } | undefined,
+  reads: new Map<string, number>(),
+}));
 
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
@@ -31,6 +38,20 @@ vi.mock("node:fs", async (importOriginal) => {
         throw new Error("injected rename failure");
       }
       return actual.renameSync(from, to);
+    },
+    readFileSync: (
+      path: Parameters<typeof actual.readFileSync>[0],
+      options?: Parameters<typeof actual.readFileSync>[1],
+    ) => {
+      const key = String(path);
+      const count = (fsGate.reads.get(key) ?? 0) + 1;
+      fsGate.reads.set(key, count);
+      const gate = fsGate.readGate;
+      if (gate !== undefined && key.endsWith(gate.suffix) && count === gate.onRead) {
+        fsGate.readGate = undefined;
+        return gate.text;
+      }
+      return actual.readFileSync(path, options);
     },
   };
 });
@@ -75,6 +96,8 @@ const captureError = (action: () => unknown): TypeOperationError => {
 
 afterEach(() => {
   fsGate.failRename = false;
+  fsGate.readGate = undefined;
+  fsGate.reads.clear();
   for (const root of roots.splice(0)) {
     rmSync(root, { recursive: true, force: true });
   }
@@ -108,6 +131,23 @@ atributos:
     const registry = loadTypeRegistry(tiposDir);
     expect(registry.warnings).toEqual([]);
     expect(registry.types.get("libro")).toEqual(definition);
+  });
+
+  it("writes and round-trips the optional presentacion block", () => {
+    const tiposDir = createTiposDir();
+    const presentacion: TypePresentation = { seccion: "notas", carpeta: "Libros", visible: false };
+
+    const definition = createTypeFile(tiposDir, { ...LIBRO, presentacion });
+
+    expect(definition.presentacion).toEqual(presentacion);
+    const text = readFileSync(join(tiposDir, "libro.yaml"), "utf8");
+    expect(text).toContain("presentacion:");
+    expect(text).toContain("seccion: notas");
+    expect(text).toContain("carpeta: Libros");
+    expect(text).toContain("visible: false");
+    const registry = loadTypeRegistry(tiposDir);
+    expect(registry.warnings).toEqual([]);
+    expect(registry.types.get("libro")?.presentacion).toEqual(presentacion);
   });
 
   it("creates the tipos directory when it does not exist", () => {
@@ -198,6 +238,74 @@ describe("updateTypeFile", () => {
     expect(updated.name).toBe("Libro de lectura");
     expect(updated.description).toBe("Nueva descripcion");
     expect(updated.attributes).toEqual([{ ...TITULO, name: "Obra" }]);
+  });
+
+  it("updates the presentacion block", () => {
+    const tiposDir = createTiposDir();
+    createTypeFile(tiposDir, LIBRO);
+
+    const updated = updateTypeFile(tiposDir, "libro", {
+      presentacion: { seccion: "productividad", visible: true },
+    });
+
+    expect(updated.presentacion).toEqual({ seccion: "productividad", visible: true });
+    expect(loadTypeRegistry(tiposDir).types.get("libro")?.presentacion).toEqual({
+      seccion: "productividad",
+      visible: true,
+    });
+  });
+
+  it("keeps presentacion and unknown user keys when updating other fields", () => {
+    const tiposDir = createTiposDir();
+    mkdirSync(tiposDir, { recursive: true });
+    writeFileSync(
+      join(tiposDir, "libro.yaml"),
+      `id: libro
+nombre: Libro
+atributos:
+  - id: titulo
+    nombre: Titulo
+    tipo: texto
+    obligatorio: true
+presentacion:
+  seccion: notas
+  carpeta: Libros
+prioridad: alta
+`,
+      "utf8",
+    );
+
+    const updated = updateTypeFile(tiposDir, "libro", { name: "Libro de lectura" });
+
+    const text = readFileSync(join(tiposDir, "libro.yaml"), "utf8");
+    expect(updated.name).toBe("Libro de lectura");
+    expect(updated.presentacion).toEqual({ seccion: "notas", carpeta: "Libros" });
+    expect(text).toContain("nombre: Libro de lectura");
+    expect(text).toContain("seccion: notas");
+    expect(text).toContain("carpeta: Libros");
+    expect(text).toContain("prioridad: alta");
+  });
+
+  it("still updates a type with an invalid presentacion block and keeps it untouched", () => {
+    const tiposDir = createTiposDir();
+    mkdirSync(tiposDir, { recursive: true });
+    writeFileSync(
+      join(tiposDir, "libro.yaml"),
+      `id: libro
+nombre: Libro
+atributos: []
+presentacion:
+  seccion: biblioteca
+`,
+      "utf8",
+    );
+
+    const updated = updateTypeFile(tiposDir, "libro", { name: "Otro" });
+
+    const text = readFileSync(join(tiposDir, "libro.yaml"), "utf8");
+    expect(updated.name).toBe("Otro");
+    expect(updated.presentacion).toBeUndefined();
+    expect(text).toContain("seccion: biblioteca");
   });
 
   it("removes an attribute without touching the data already stored in objects", () => {
@@ -307,6 +415,34 @@ Cuerpo que menciona genero: novela.
       "injected rename failure",
     );
 
+    expect(readFileSync(path, "utf8")).toBe(before);
+    expect(readdirSync(tiposDir).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+  });
+
+  it("preserves the mode of the type file", () => {
+    const tiposDir = createTiposDir();
+    createTypeFile(tiposDir, LIBRO);
+    const path = join(tiposDir, "libro.yaml");
+    chmodSync(path, 0o600);
+
+    updateTypeFile(tiposDir, "libro", { name: "Cambiado" });
+
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+  });
+
+  it("refuses to overwrite a type file changed on disk since it was read", () => {
+    const tiposDir = createTiposDir();
+    createTypeFile(tiposDir, LIBRO);
+    const path = join(tiposDir, "libro.yaml");
+    const before = readFileSync(path, "utf8");
+    fsGate.reads.clear();
+    const external = before.replace("nombre: Libro", "nombre: Editado fuera de la app");
+    fsGate.readGate = { suffix: "libro.yaml", onRead: 2, text: external };
+
+    const error = captureError(() => updateTypeFile(tiposDir, "libro", { name: "Cambiado" }));
+
+    expect(error.key).toBe("error.validationError");
+    expect(error.problems.join(" ")).toContain("changed on disk since it was read");
     expect(readFileSync(path, "utf8")).toBe(before);
     expect(readdirSync(tiposDir).filter((name) => name.endsWith(".tmp"))).toEqual([]);
   });

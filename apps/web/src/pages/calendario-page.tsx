@@ -306,6 +306,16 @@ export const CalendarioPage = () => {
         ...(movimiento.fin === undefined ? {} : { fin: movimiento.fin.toISOString() }),
       },
       {
+        onSuccess: () => {
+          setCambios((actuales) => {
+            if (actuales[id] === undefined) {
+              return actuales;
+            }
+            const siguientes: Record<string, MovimientoEvento> = { ...actuales };
+            delete siguientes[id];
+            return siguientes;
+          });
+        },
         onError: (error) => {
           setCambios((actuales) => {
             const siguientes: Record<string, MovimientoEvento> = { ...actuales };

@@ -45,7 +45,7 @@ export const loadTypeRegistry = (
 
     const details = parseTypeDetails(text);
     if (details.definition === null) {
-      warnings.push({ path, problems: [...details.fileProblems] });
+      warnings.push({ path, problems: [...details.fileProblems, ...details.typeWarnings] });
       continue;
     }
 
@@ -59,8 +59,9 @@ export const loadTypeRegistry = (
     }
     types.set(definition.id, definition);
 
-    if (details.fileProblems.length > 0) {
-      warnings.push({ path, problems: [...details.fileProblems] });
+    const fileProblems = [...details.fileProblems, ...details.typeWarnings];
+    if (fileProblems.length > 0) {
+      warnings.push({ path, problems: fileProblems });
     }
     for (const attribute of details.attributeWarnings) {
       warnings.push({

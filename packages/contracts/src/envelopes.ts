@@ -17,6 +17,7 @@ export type TiposList = z.infer<typeof tiposListSchema>;
 
 export const sesionStatusSchema = z.object({
   autenticado: z.boolean(),
+  setupRequerido: z.boolean().optional(),
 });
 
 export type SesionStatus = z.infer<typeof sesionStatusSchema>;

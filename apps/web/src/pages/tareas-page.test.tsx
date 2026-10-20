@@ -45,7 +45,11 @@ const tarea = (id: string, titulo: string, opciones: OpcionesTarea = {}): Object
 
 type MockApiOptions = {
   readonly tareas?: readonly ObjectPayload[];
-  readonly lista?: (url: URL, intento: number) => Response | undefined;
+  readonly lista?: (
+    url: URL,
+    intento: number,
+    tareas: readonly ObjectPayload[],
+  ) => Response | undefined;
 };
 
 const mockApi = (options: MockApiOptions = {}): void => {
@@ -97,11 +101,15 @@ const mockApi = (options: MockApiOptions = {}): void => {
     if (url.pathname === "/api/objetos") {
       listados.push(url);
       intentosLista += 1;
-      const respuesta = options.lista?.(url, intentosLista);
+      const respuesta = options.lista?.(url, intentosLista, tareas);
       if (respuesta !== undefined) {
         return respuesta;
       }
       return jsonResponse({ objetos: tareas, siguienteCursor: null });
+    }
+
+    if (url.pathname === "/api/tipos" && method === "GET") {
+      return jsonResponse({ tipos: [] });
     }
 
     return errorResponse("not_found", "No existe la ruta", 404);
@@ -226,6 +234,40 @@ describe("vista de tareas", () => {
     await waitFor(() => expect(screen.getByRole("combobox", etiqueta)).toHaveValue("pendiente"));
   });
 
+  it("vuelve a mostrar en Pendientes una tarea deshecha sin recargar", async () => {
+    mockApi({
+      tareas: [tarea("A", "Regar plantas")],
+      lista: (url, _intento, tareas) => {
+        const estados = url.searchParams.getAll("atributo.estado");
+        const visibles =
+          estados.length === 0
+            ? tareas
+            : tareas.filter((item) => estados.includes(String(item.atributos.estado)));
+        return jsonResponse({ objetos: visibles, siguienteCursor: null });
+      },
+    });
+    const user = userEvent.setup();
+    renderApp(
+      "/tareas",
+      new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 30_000 } } }),
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Pendientes" }));
+    await screen.findByRole("link", { name: "Regar plantas" });
+
+    const etiqueta = { name: "Estado de Regar plantas" };
+    await user.selectOptions(screen.getByRole("combobox", etiqueta), "hecha");
+    await waitFor(() => expect(screen.queryByRole("link", { name: "Regar plantas" })).toBeNull());
+
+    await user.click(screen.getByRole("button", { name: "Todas" }));
+    await screen.findByRole("link", { name: "Regar plantas" });
+    await user.selectOptions(screen.getByRole("combobox", etiqueta), "pendiente");
+    await waitFor(() => expect(screen.getByRole("combobox", etiqueta)).toHaveValue("pendiente"));
+
+    await user.click(screen.getByRole("button", { name: "Pendientes" }));
+    expect(await screen.findByRole("link", { name: "Regar plantas" })).toBeInTheDocument();
+  });
+
   it("crea una tarea con título y fecha límite opcional", async () => {
     mockApi();
     const user = userEvent.setup();
@@ -233,7 +275,10 @@ describe("vista de tareas", () => {
 
     await screen.findByText("No hay tareas para hoy.");
     await user.click(screen.getByRole("button", { name: "Nueva tarea" }));
-    await user.type(await screen.findByLabelText("Título"), "Preparar informe");
+    const dialogo = within(await screen.findByRole("dialog"));
+    expect(dialogo.queryByLabelText("Estado")).toBeNull();
+    expect(dialogo.queryByRole("option", { name: "hecha" })).toBeNull();
+    await user.type(dialogo.getByLabelText("Título"), "Preparar informe");
     await user.type(screen.getByLabelText("Fecha límite"), "2026-10-20");
     await user.click(screen.getByRole("button", { name: "Crear tarea" }));
 

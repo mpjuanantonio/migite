@@ -131,8 +131,13 @@
     @apply font-sans;
     color-scheme: light;
   }
-  .dark {
+  :root.dark {
     color-scheme: dark;
+  }
+  option,
+  optgroup {
+    background-color: var(--popover);
+    color: var(--popover-foreground);
   }
   body {
     @apply bg-background text-foreground antialiased;
@@ -193,6 +198,29 @@
   .cm-editor .cm-panels {
     background-color: var(--card);
     color: var(--foreground);
+  }
+
+  .editor-lectura .cm-editor {
+    border-left: 3px solid transparent;
+    font-size: 1.0625rem;
+    background-color: transparent;
+    transition: border-color 150ms;
+  }
+  .editor-lectura .cm-editor.cm-focused {
+    outline: none;
+    border-left-color: var(--primary);
+  }
+  .editor-lectura .cm-editor .cm-scroller {
+    font-family: var(--font-display);
+    line-height: 1.75;
+    padding: 0.5rem 0 0;
+  }
+  .editor-lectura .cm-editor .cm-content {
+    width: 100%;
+    padding: 0;
+  }
+  .editor-lectura .cm-editor .cm-line {
+    text-wrap: pretty;
   }
 
   .prose-archivo {

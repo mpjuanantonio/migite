@@ -1,4 +1,9 @@
-import { type AttributePayload, type TipoPayload, tipoPayloadSchema } from "@migite/contracts";
+import {
+  type AttributePayload,
+  type PresentacionPayload,
+  type TipoPayload,
+  tipoPayloadSchema,
+} from "@migite/contracts";
 import {
   ATTRIBUTE_ROLE_WIRES,
   type AttributeDefinition,
@@ -20,6 +25,7 @@ export type TipoChanges = {
   readonly nombre?: string;
   readonly descripcion?: string;
   readonly atributos?: readonly AttributePayload[];
+  readonly presentacion?: PresentacionPayload;
 };
 
 const toAttributePayload = (attribute: AttributeDefinition): AttributePayload => ({
@@ -38,9 +44,12 @@ const toPayload = (definition: TypeDefinition): TipoPayload =>
     nombre: definition.name,
     ...(definition.description === undefined ? {} : { descripcion: definition.description }),
     atributos: definition.attributes.map(toAttributePayload),
+    ...(definition.presentacion === undefined
+      ? {}
+      : { presentacion: { ...definition.presentacion } }),
   });
 
-const toAttributes = (attributes: readonly AttributePayload[]): AttributeDefinition[] =>
+export const toAttributes = (attributes: readonly AttributePayload[]): AttributeDefinition[] =>
   attributes.map((attribute) => ({
     id: attribute.id,
     name: attribute.nombre,
@@ -65,6 +74,7 @@ export const crearTipo = (deps: TiposDeps, input: TipoPayload): TipoPayload =>
       name: input.nombre,
       ...(input.descripcion === undefined ? {} : { description: input.descripcion }),
       attributes: toAttributes(input.atributos),
+      ...(input.presentacion === undefined ? {} : { presentacion: { ...input.presentacion } }),
     }),
   );
 
@@ -74,6 +84,7 @@ export const actualizarTipo = (deps: TiposDeps, id: string, changes: TipoChanges
       ...(changes.nombre === undefined ? {} : { name: changes.nombre }),
       ...(changes.descripcion === undefined ? {} : { description: changes.descripcion }),
       ...(changes.atributos === undefined ? {} : { attributes: toAttributes(changes.atributos) }),
+      ...(changes.presentacion === undefined ? {} : { presentacion: { ...changes.presentacion } }),
     }),
   );
 

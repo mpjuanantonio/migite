@@ -19,27 +19,40 @@ export const attributeRoleWireSchema = z.enum(["estado", "vencimiento", "inicio"
 
 export type AttributeRoleWire = z.infer<typeof attributeRoleWireSchema>;
 
-const attributeId = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/);
+export const identifierSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/);
 
 const nonEmptyText = z.string().trim().min(1);
 
 export const attributePayloadSchema = z.strictObject({
-  id: attributeId,
+  id: identifierSchema,
   nombre: nonEmptyText,
   tipo: fieldTypeWireSchema,
   rol: attributeRoleWireSchema.optional(),
   obligatorio: z.boolean(),
-  opciones: z.array(nonEmptyText).optional(),
-  referencia_a: z.array(nonEmptyText).optional(),
+  opciones: z.array(nonEmptyText).max(100).optional(),
+  referencia_a: z.array(nonEmptyText).max(32).optional(),
 });
 
 export type AttributePayload = z.infer<typeof attributePayloadSchema>;
+
+export const presentacionSeccionSchema = z.enum(["notas", "productividad"]);
+
+export type PresentacionSeccion = z.infer<typeof presentacionSeccionSchema>;
+
+export const presentacionPayloadSchema = z.strictObject({
+  seccion: presentacionSeccionSchema.optional(),
+  carpeta: nonEmptyText.max(200).optional(),
+  visible: z.boolean().optional(),
+});
+
+export type PresentacionPayload = z.infer<typeof presentacionPayloadSchema>;
 
 export const tipoPayloadSchema = z.object({
   id: z.string(),
   nombre: z.string(),
   descripcion: z.string().optional(),
   atributos: z.array(attributePayloadSchema),
+  presentacion: presentacionPayloadSchema.optional(),
 });
 
 export type TipoPayload = z.infer<typeof tipoPayloadSchema>;

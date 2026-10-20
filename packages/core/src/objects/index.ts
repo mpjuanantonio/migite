@@ -1,4 +1,11 @@
 export { bootstrapVault } from "./bootstrap.js";
+export {
+  type ChunkMarkdownOptions,
+  chunkMarkdownBySections,
+  DEFAULT_CHUNK_MAX_CHARS,
+  DEFAULT_CHUNK_OVERLAP_CHARS,
+  type MarkdownChunk,
+} from "./chunks.js";
 export { ObjectOperationError } from "./errors.js";
 export type {
   CreateObjectInput,

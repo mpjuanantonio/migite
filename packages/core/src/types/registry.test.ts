@@ -137,6 +137,33 @@ describe("loadTypeRegistry", () => {
     expect(warning.problems).toContain('unknown key "prioridad" ignored');
   });
 
+  it("registers the type with a presentacion block without warnings", () => {
+    const dir = createTypesDir({
+      "libro.yaml": `${VALID_LIBRO}presentacion:\n  seccion: notas\n  carpeta: Libros\n`,
+    });
+
+    const registry = loadTypeRegistry(dir);
+
+    expect(registry.warnings).toEqual([]);
+    expect(registry.types.get("libro")?.presentacion).toEqual({
+      seccion: "notas",
+      carpeta: "Libros",
+    });
+  });
+
+  it("registers the type but warns about an invalid presentacion block", () => {
+    const dir = createTypesDir({
+      "libro.yaml": `${VALID_LIBRO}presentacion:\n  seccion: biblioteca\n`,
+    });
+
+    const registry = loadTypeRegistry(dir);
+
+    expect(registry.types.has("libro")).toBe(true);
+    expect(registry.types.get("libro")?.presentacion).toBeUndefined();
+    const warning = firstWarning(registry.warnings);
+    expect(warning.problems.join(" ")).toContain("presentacion.seccion");
+  });
+
   it("registers the type but warns about every dropped attribute", () => {
     const dir = createTypesDir({
       "libro.yaml": `id: libro

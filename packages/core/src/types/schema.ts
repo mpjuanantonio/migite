@@ -67,8 +67,20 @@ export const attributeSchema = z
     }
   });
 
+export const presentationSchema = z.strictObject({
+  seccion: z.enum(["notas", "productividad"]).optional(),
+  carpeta: nonEmptyText.optional(),
+  visible: z.boolean().optional(),
+});
+
 export const formatIssues = (error: ZodError): string[] =>
   error.issues.map((issue) => {
     const path = issue.path.map((segment) => String(segment)).join(".");
     return path === "" ? issue.message : `${path}: ${issue.message}`;
+  });
+
+export const presentationIssues = (error: ZodError): string[] =>
+  error.issues.map((issue) => {
+    const path = ["presentacion", ...issue.path.map((segment) => String(segment))].join(".");
+    return `${path}: ${issue.message}`;
   });

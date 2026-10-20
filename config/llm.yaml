@@ -1,9 +1,12 @@
 providers:
-  - id: openai
-    baseUrl: https://api.openai.com/v1
-    apiKeyEnv: OPENAI_API_KEY
+  - id: google
+    baseUrl: https://generativelanguage.googleapis.com/v1beta/openai
+    apiKeyEnv: GEMINI_API_KEY
+  - id: opencode
+    baseUrl: https://opencode.ai/inference/go/openai/v1
+    apiKeyEnv: OPENACODE_API_KEY
 roles:
-  chat: { provider: openai, model: gpt-4o-mini }
-  retrieve: { provider: openai, model: gpt-4o-mini }
-  summarize: { provider: openai, model: gpt-4o-mini }
-  embeddings: { provider: openai, model: text-embedding-3-small }
+  chat: { provider: google, model: gemini-3.8-flash }
+  retrieve: { provider: google, model: gemini-3.8-flash }
+  summarize: { provider: google, model: gemini-3.8-flash }
+  embeddings: { provider: google, model: gemini-embedding-001 }

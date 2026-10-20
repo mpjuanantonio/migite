@@ -3,11 +3,16 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { loadConfig } from "@migite/core";
+import { createOpenAICompatClient } from "@migite/llm";
 import { createApp } from "./app.js";
 import { loadAuthConfig } from "./auth.js";
+import { configureAcciones } from "./routes/acciones.js";
 import { configureBuscar } from "./routes/buscar.js";
+import { configureChat } from "./routes/chat.js";
+import { configureConversaciones } from "./routes/conversaciones.js";
 import { configureExport } from "./routes/export.js";
 import { configureHealth } from "./routes/health.js";
+import { configureMemorias } from "./routes/memorias.js";
 import { configureObjetos } from "./routes/objetos.js";
 import { configureTipos } from "./routes/tipos.js";
 import { startRuntime } from "./runtime.js";
@@ -44,6 +49,21 @@ const start = (): void => {
     vaultDir: runtime.vaultDir,
     timeZone: config.app.timeZone,
   });
+  configureAcciones({
+    db: runtime.db,
+    vaultDir: runtime.vaultDir,
+    timeZone: config.app.timeZone,
+  });
+  configureChat({
+    client: createOpenAICompatClient(config.llm),
+    db: runtime.db,
+    vaultDir: runtime.vaultDir,
+    timeZone: config.app.timeZone,
+    locale: config.app.locale,
+    embeddingsModel: `${config.llm.roles.embeddings.provider}:${config.llm.roles.embeddings.model}`,
+  });
+  configureConversaciones({ db: runtime.db });
+  configureMemorias({ db: runtime.db });
   configureTipos({ tiposDir: join(runtime.vaultDir, "tipos") });
   configureBuscar({ db: runtime.db });
   configureExport({ vaultDir: runtime.vaultDir });
@@ -54,7 +74,7 @@ const start = (): void => {
   });
   const app = createApp({
     locale: config.app.locale,
-    auth: { ...authConfig, store: createIndexSessionStore(runtime.db) },
+    auth: { store: createIndexSessionStore(runtime.db, authConfig) },
   });
 
   const shutdown = (): void => {

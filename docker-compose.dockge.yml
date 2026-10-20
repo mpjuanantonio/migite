@@ -1,7 +1,10 @@
 # docker-compose.dockge.yml — stack único para Dockge (sin overlays ni build).
-# Pega este fichero como compose del stack en Dockge y crea su `.env` con:
-#   VERSION, MIGITE_USER, MIGITE_PASSWORD_HASH y MIGITE_SESSION_SECRET.
-# Detalles y generación de secretos: docs/despliegue.md ("Despliegue con Dockge").
+# Pega este fichero como compose del stack en Dockge y crea su `.env` solo con
+# VERSION (obligatoria: tag de la imagen a desplegar). Las credenciales se crean
+# en el primer arranque desde el navegador y la app genera el secreto de sesión.
+# MIGITE_USER, MIGITE_PASSWORD_HASH y MIGITE_SESSION_SECRET son opcionales y
+# solo se usan para automatización. Detalles: docs/despliegue.md
+# ("Despliegue con Dockge").
 services:
   app:
     image: ghcr.io/mpjuanantonio/migite:${VERSION:?Define VERSION=vX.Y.Z en .env}

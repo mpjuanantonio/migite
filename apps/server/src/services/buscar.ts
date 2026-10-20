@@ -5,10 +5,10 @@ import {
 } from "@migite/contracts";
 import {
   DEFAULT_SEARCH_LIMIT,
+  type HybridSearchResult,
   type IndexDatabase,
   listObjectsIndexed,
-  type SearchResult,
-  searchObjects,
+  searchKnowledge,
 } from "@migite/index";
 import { encodeCursor, filtersOf } from "./objetos.js";
 
@@ -23,7 +23,7 @@ export type BuscarPage = {
 
 export const DEFAULT_BUSCAR_LIMIT = DEFAULT_SEARCH_LIMIT;
 
-const toResultado = (row: SearchResult): SearchResultItem =>
+const toResultado = (row: HybridSearchResult): SearchResultItem =>
   searchResultItemSchema.parse({
     id: row.id,
     tipo: row.tipo,
@@ -31,6 +31,9 @@ const toResultado = (row: SearchResult): SearchResultItem =>
     ruta: row.ruta,
     actualizado: row.actualizado,
     ...(row.snippet === undefined ? {} : { fragmento: row.snippet }),
+    ...(row.encabezado === undefined || row.encabezado === null
+      ? {}
+      : { encabezado: row.encabezado }),
   });
 
 export const buscar = (deps: BuscarDeps, params: SearchParams, offset: number): BuscarPage => {
@@ -38,10 +41,10 @@ export const buscar = (deps: BuscarDeps, params: SearchParams, offset: number): 
   const query = params.q?.trim() ?? "";
   const filters = filtersOf(params);
   const fetchLimit = limit + 1;
-  const rows: SearchResult[] =
+  const rows: HybridSearchResult[] =
     query === ""
       ? listObjectsIndexed(deps.db, { filters, limit: fetchLimit, offset })
-      : searchObjects(deps.db, { query, filters, limit: fetchLimit, offset });
+      : searchKnowledge(deps.db, { query, filters, limit: fetchLimit, offset });
   const page = rows.slice(0, limit);
   const hasMore = rows.length > limit;
   return {

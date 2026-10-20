@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ESTADOS_TAREA, esEstadoTarea, esVencida, fechaLocal, finDelDia } from "@/lib/tareas";
 
 describe("utilidades de tareas", () => {
@@ -14,7 +14,18 @@ describe("utilidades de tareas", () => {
   it("calcula la fecha local y el fin del día", () => {
     const fecha = new Date(2026, 9, 7, 15, 30);
     expect(fechaLocal(fecha)).toBe("2026-10-07");
-    expect(finDelDia(fecha)).toBe("2026-10-07T23:59:59.999Z");
+    expect(finDelDia(fecha)).toBe(new Date(2026, 9, 7, 23, 59, 59, 999).toISOString());
+  });
+
+  it("cubre las 23:59 locales aunque la zona sea UTC-5", () => {
+    vi.stubEnv("TZ", "America/Bogota");
+    try {
+      const fecha = new Date(2026, 9, 7, 15, 30);
+      expect(new Date(2026, 9, 7).getTimezoneOffset()).toBe(300);
+      expect(finDelDia(fecha)).toBe("2026-10-08T04:59:59.999Z");
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("marca vencidas solo si la fecha ya pasó y siguen sin hacerse", () => {

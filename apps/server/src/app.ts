@@ -11,10 +11,14 @@ import type { ServerEnv } from "./env.js";
 import { registerErrorHandling } from "./middleware/errors.js";
 import { requestLogger } from "./middleware/logs.js";
 import { requireSession } from "./middleware/session.js";
+import { accionesRouter } from "./routes/acciones.js";
 import { buscarRouter } from "./routes/buscar.js";
+import { chatRouter } from "./routes/chat.js";
+import { conversacionesRouter } from "./routes/conversaciones.js";
 import { exportRouter } from "./routes/export.js";
 import { healthRouter } from "./routes/health.js";
 import { mantenimientoRouter } from "./routes/mantenimiento.js";
+import { memoriasRouter } from "./routes/memorias.js";
 import { objetosRouter } from "./routes/objetos.js";
 import { createSesionRouter } from "./routes/sesion.js";
 import { tiposRouter } from "./routes/tipos.js";
@@ -61,11 +65,15 @@ export const createApp = (options: CreateAppOptions): Hono<ServerEnv> => {
   app.route("/api/health", healthRouter);
   app.route("/api/sesion", createSesionRouter(options.auth, { locale: options.locale }));
 
+  app.route("/api/acciones", accionesRouter);
+  app.route("/api/chat", chatRouter);
+  app.route("/api/conversaciones", conversacionesRouter);
   app.route("/api/objetos", objetosRouter);
   app.route("/api/tipos", tiposRouter);
   app.route("/api/buscar", buscarRouter);
   app.route("/api/export", exportRouter);
   app.route("/api/mantenimiento", mantenimientoRouter);
+  app.route("/api/memorias", memoriasRouter);
 
   if (existsSync(webDist)) {
     app.use("*", serveStatic({ root: webDist }));

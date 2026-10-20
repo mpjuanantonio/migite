@@ -74,11 +74,20 @@ export interface AttributeDefinition {
   references?: string[];
 }
 
+export type PresentationSection = "notas" | "productividad";
+
+export interface TypePresentation {
+  seccion?: PresentationSection;
+  carpeta?: string;
+  visible?: boolean;
+}
+
 export interface TypeDefinition {
   id: string;
   name: string;
   description?: string;
   attributes: AttributeDefinition[];
+  presentacion?: TypePresentation;
   system: boolean;
 }
 

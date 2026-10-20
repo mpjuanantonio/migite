@@ -4,6 +4,7 @@ import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { createQueryClient } from "@/api/client";
 import { I18nProvider } from "@/i18n/context";
 import { routes } from "@/router";
+import { TemaProvider } from "@/theme/context";
 
 export type RenderAppResult = RenderResult & {
   readonly router: ReturnType<typeof createMemoryRouter>;
@@ -16,9 +17,11 @@ export const renderApp = (
   const router = createMemoryRouter(routes, { initialEntries: [path] });
   const result = render(
     <I18nProvider>
-      <QueryClientProvider client={client}>
-        <RouterProvider router={router} />
-      </QueryClientProvider>
+      <TemaProvider>
+        <QueryClientProvider client={client}>
+          <RouterProvider router={router} />
+        </QueryClientProvider>
+      </TemaProvider>
     </I18nProvider>,
   );
   return { ...result, router };
@@ -32,7 +35,8 @@ export const jsonResponse = (body: unknown, status = 200): Response =>
 
 export const noContentResponse = (): Response => new Response(null, { status: 204 });
 
-export const sesionResponse = (autenticado: boolean): Response => jsonResponse({ autenticado });
+export const sesionResponse = (autenticado: boolean, setupRequerido?: boolean): Response =>
+  jsonResponse({ autenticado, ...(setupRequerido === undefined ? {} : { setupRequerido }) });
 
 export const errorResponse = (codigo: string, mensaje: string, status: number): Response =>
   jsonResponse({ error: { codigo, mensaje } }, status);

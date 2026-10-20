@@ -1,4 +1,55 @@
 export {
+  ACCION_ESTADOS,
+  AccionConflictoError,
+  type AccionEstado,
+  type AccionRecord,
+  type ActualizarEstadoAccionInput,
+  actualizarEstadoAccion,
+  type CrearAccionInput,
+  crearAccion,
+  type ListarAccionesOptions,
+  listarAcciones,
+  obtenerAccion,
+} from "./actions.js";
+export {
+  borrarConversacion,
+  type ConversacionRecord,
+  type CrearConversacionInput,
+  crearConversacion,
+  derivarTitulo,
+  type GuardarMensajeInput,
+  guardarMensaje,
+  listarConversaciones,
+  listarMensajes,
+  MENSAJE_ROLES,
+  type MensajeRecord,
+  type MensajeRol,
+  obtenerConversacion,
+  TITULO_CONVERSACION_MAX,
+} from "./conversations.js";
+export {
+  DEFAULT_EMBED_BATCH_SIZE,
+  decodeEmbeddingVector,
+  EMBEDDINGS_MODEL_META_KEY,
+  type EmbeddingProvider,
+  encodeEmbeddingVector,
+  formatFragmentForEmbedding,
+  type SyncEmbeddingsOptions,
+  type SyncEmbeddingsResult,
+  syncEmbeddings,
+} from "./embeddings.js";
+export {
+  cosineSimilarity,
+  DEFAULT_CANDIDATE_MULTIPLIER,
+  DEFAULT_RRF_K,
+  type HybridSearchResult,
+  type SearchKnowledgeHybridOptions,
+  type SearchKnowledgeOptions,
+  searchHybridObjects,
+  searchKnowledge,
+  searchKnowledgeHybrid,
+} from "./hybrid-search.js";
+export {
   type ApplyObjectEventOptions,
   applyObjectEvent,
   type BuildIndexOptions,
@@ -14,6 +65,16 @@ export {
   runReindex,
   type TitleCache,
 } from "./indexer.js";
+export {
+  type ActualizarMemoriaInput,
+  actualizarMemoria,
+  borrarMemoria,
+  type GuardarMemoriaInput,
+  guardarMemoria,
+  listarMemorias,
+  type MemoriaRecord,
+  obtenerMemoria,
+} from "./memories.js";
 export {
   type IndexDatabase,
   IndexError,
@@ -33,6 +94,7 @@ export {
   fragmentos,
   LINK_CONTEXTS,
   type LinkContext,
+  memorias,
   mensajes,
   meta,
   objetos,

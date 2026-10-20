@@ -3,13 +3,16 @@ import { RouterProvider } from "react-router-dom";
 import { queryClient } from "@/api/client";
 import { I18nProvider } from "@/i18n/context";
 import { createAppRouter } from "@/router";
+import { TemaProvider } from "@/theme/context";
 
 const router = createAppRouter();
 
 export const App = () => (
   <I18nProvider>
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>
+    <TemaProvider>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    </TemaProvider>
   </I18nProvider>
 );

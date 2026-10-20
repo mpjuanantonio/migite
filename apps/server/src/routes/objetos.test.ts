@@ -2,17 +2,26 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  type ArbolObjetos,
+  arbolObjetosSchema,
+  enlacesEntrantesSchema,
+  LIMITE_MAX_ARBOL,
   type ObjectPayload,
   objectPayloadSchema,
   objetosPageSchema,
   renameReportSchema,
 } from "@migite/contracts";
-import { bootstrapVault, writeObjectFile } from "@migite/core";
-import { buildIndex, type IndexHandle, openIndex } from "@migite/index";
+import { bootstrapVault, parseObjectFile, writeObjectFile } from "@migite/core";
+import { buildIndex, type IndexHandle, openIndex, reconcileIndex } from "@migite/index";
 import type { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../app.js";
-import { type AuthOptions, createSessionToken, SESSION_COOKIE } from "../auth.js";
+import {
+  type AuthOptions,
+  createSessionToken,
+  createStaticSessionStore,
+  SESSION_COOKIE,
+} from "../auth.js";
 import type { ServerEnv } from "../env.js";
 import { encodeCursor, MAX_LIST_OFFSET } from "../services/objetos.js";
 import { configureObjetos } from "./objetos.js";
@@ -110,10 +119,11 @@ actualizado: 2026-10-06T09:00:00.000+02:00
 Cuerpo recuperable de la nota rota.`;
 
 const auth: AuthOptions = {
-  usuario: USUARIO,
-  passwordHash: "$argon2id$test",
-  secretoSesion: SECRETO,
-  store: { generacion: () => 0, invalidar: () => 1 },
+  store: createStaticSessionStore({
+    usuario: USUARIO,
+    passwordHash: "$argon2id$test",
+    secretoSesion: SECRETO,
+  }),
 };
 
 type ListBody = {
@@ -180,6 +190,42 @@ const writeEnlaza = (): void => {
     "Enlace a [[Beta]] desde el cuerpo.",
   );
   writeFileSync(join(vaultDir, "enlaza.md"), text, "utf8");
+};
+
+const ENLAZA_FM = "01JENLAZAFM000000000000000";
+
+const writeEnlaceFrontmatter = (): void => {
+  const text = writeObjectFile(
+    {
+      id: ENLAZA_FM,
+      type: "nota",
+      title: "Enlaza FM",
+      created: "2026-10-01T09:00:00.000+02:00",
+      updated: "2026-10-01T09:00:00.000+02:00",
+      links: ["[[Beta]]", "[[Beta|alias]]"],
+      attributes: {},
+    },
+    "Sin enlaces en el cuerpo.",
+  );
+  writeFileSync(join(vaultDir, "enlaza-fm.md"), text, "utf8");
+};
+
+const PROYECTO = "01JPROYECTO0000000000000000";
+
+const writeProyecto = (): void => {
+  const text = writeObjectFile(
+    {
+      id: PROYECTO,
+      type: "proyecto",
+      title: "Proyecto X",
+      created: "2026-10-01T09:00:00.000+02:00",
+      updated: "2026-10-01T09:00:00.000+02:00",
+      links: [],
+      attributes: { estado: "activo" },
+    },
+    "",
+  );
+  writeFileSync(join(vaultDir, "proyecto-x.md"), text, "utf8");
 };
 
 const EVENTO_A = "01JEVENTOA000000000000000000";
@@ -436,6 +482,88 @@ describe("GET /api/objetos", () => {
   });
 });
 
+describe("GET /api/objetos/arbol", () => {
+  it("returns a light tree ordered by ruta, without cuerpo or atributos", async () => {
+    const res = await app.request("/api/objetos/arbol", { headers: headers() });
+
+    expect(res.status).toBe(200);
+    const raw = (await res.json()) as { nodos: Record<string, unknown>[] };
+    const body = arbolObjetosSchema.parse(raw);
+    expect(body.nodos.map((nodo) => nodo.id)).toEqual([ALFA, DELTA, EPSILON, BETA, GAMMA]);
+    expect(body.nodos[0]).toEqual({
+      id: ALFA,
+      tipo: "nota",
+      titulo: "Alfa",
+      ruta: "alfa.md",
+      carpeta: "",
+      actualizado: "2026-10-05T09:00:00.000+02:00",
+    });
+    for (const nodo of raw.nodos) {
+      expect(Object.keys(nodo).sort()).toEqual([
+        "actualizado",
+        "carpeta",
+        "id",
+        "ruta",
+        "tipo",
+        "titulo",
+      ]);
+      expect(nodo).not.toHaveProperty("cuerpo");
+      expect(nodo).not.toHaveProperty("atributos");
+    }
+  });
+
+  it("filters by tipo", async () => {
+    const notas = await getJson<ArbolObjetos>("/api/objetos/arbol?tipo=nota");
+    expect(notas.nodos.map((nodo) => nodo.id)).toEqual([ALFA, DELTA, EPSILON, GAMMA]);
+
+    const tareas = await getJson<ArbolObjetos>("/api/objetos/arbol?tipo=tarea");
+    expect(tareas.nodos).toEqual([
+      {
+        id: BETA,
+        tipo: "tarea",
+        titulo: "Beta",
+        ruta: "proyectos/beta.md",
+        carpeta: "proyectos",
+        actualizado: "2026-10-04T09:00:00.000+02:00",
+      },
+    ]);
+  });
+
+  it("derives carpeta from ruta and honours an explicit limit without pagination", async () => {
+    const completo = await getJson<ArbolObjetos>("/api/objetos/arbol");
+    expect(completo.nodos.find((nodo) => nodo.id === BETA)?.carpeta).toBe("proyectos");
+    expect(completo.nodos.find((nodo) => nodo.id === ALFA)?.carpeta).toBe("");
+
+    const limitado = await getJson<ArbolObjetos>("/api/objetos/arbol?limite=2");
+    expect(limitado.nodos.map((nodo) => nodo.id)).toEqual([ALFA, DELTA]);
+  });
+
+  it("rejects invalid params with validation_error", async () => {
+    const paths = [
+      "/api/objetos/arbol?tipo=",
+      "/api/objetos/arbol?limite=0",
+      `/api/objetos/arbol?limite=${LIMITE_MAX_ARBOL + 1}`,
+      "/api/objetos/arbol?limite=no-numero",
+      "/api/objetos/arbol?tipo=nota&tipo=tarea",
+    ];
+
+    for (const path of paths) {
+      const res = await app.request(path, { headers: headers() });
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as ErrorBody).error.codigo).toBe("validation_error");
+    }
+  });
+
+  it("requires a valid session", async () => {
+    const res = await app.request("/api/objetos/arbol");
+
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({
+      error: { codigo: "unauthorized", mensaje: "Se requiere autenticación" },
+    });
+  });
+});
+
 describe("GET /api/objetos/:id", () => {
   it("returns a payload validated against the shared schema", async () => {
     const res = await app.request(`/api/objetos/${ALFA}`, { headers: headers() });
@@ -502,6 +630,63 @@ describe("GET /api/objetos/:id", () => {
   });
 });
 
+describe("GET /api/objetos/:id/enlaces-entrantes", () => {
+  it("returns incoming links from the body and the frontmatter, deduplicated per source and context", async () => {
+    writeEnlaza();
+    writeEnlaceFrontmatter();
+    buildIndex(handle.db, { vaultDir });
+
+    const res = await app.request(`/api/objetos/${BETA}/enlaces-entrantes`, {
+      headers: headers(),
+    });
+
+    expect(res.status).toBe(200);
+    const body = enlacesEntrantesSchema.parse(await res.json());
+    expect(body.entrantes).toHaveLength(2);
+    expect(body.entrantes).toEqual(
+      expect.arrayContaining([
+        { id: ENLAZA, titulo: "Enlaza", ruta: "enlaza.md", contexto: "body" },
+        { id: ENLAZA_FM, titulo: "Enlaza FM", ruta: "enlaza-fm.md", contexto: "frontmatter" },
+      ]),
+    );
+  });
+
+  it("resolves the target by title and by path", async () => {
+    writeEnlaza();
+    buildIndex(handle.db, { vaultDir });
+
+    const byTitle = await getJson<{ entrantes: unknown[] }>("/api/objetos/Beta/enlaces-entrantes");
+    const byPath = await getJson<{ entrantes: unknown[] }>(
+      `/api/objetos/${encodeURIComponent("proyectos/beta.md")}/enlaces-entrantes`,
+    );
+
+    expect(byTitle.entrantes).toHaveLength(1);
+    expect(byPath.entrantes).toEqual(byTitle.entrantes);
+  });
+
+  it("returns an empty list when nobody links to the object", async () => {
+    const body = await getJson<{ entrantes: unknown[] }>(`/api/objetos/${DELTA}/enlaces-entrantes`);
+
+    expect(body.entrantes).toEqual([]);
+  });
+
+  it("answers 404 with object_not_found when the object does not exist", async () => {
+    const res = await app.request("/api/objetos/no-existe/enlaces-entrantes", {
+      headers: headers(),
+    });
+
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as ErrorBody).error.codigo).toBe("object_not_found");
+  });
+
+  it("requires a valid session", async () => {
+    const res = await app.request(`/api/objetos/${BETA}/enlaces-entrantes`);
+
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as ErrorBody).error.codigo).toBe("unauthorized");
+  });
+});
+
 describe("POST /api/objetos", () => {
   it("creates an object and returns 201 with the validated payload", async () => {
     const res = await sendJson("POST", "/api/objetos", {
@@ -520,6 +705,44 @@ describe("POST /api/objetos", () => {
     expect(body.atributos).toEqual({ etiquetas: ["api"] });
     expect(body.degraded).toEqual([]);
     expect(existsSync(join(vaultDir, body.ruta))).toBe(true);
+  });
+
+  it("creates an object already linked to a project and indexes the association", async () => {
+    writeProyecto();
+    buildIndex(handle.db, { vaultDir });
+
+    const res = await sendJson("POST", "/api/objetos", {
+      titulo: "Tarea del proyecto",
+      tipo: "tarea",
+      atributos: { estado: "pendiente" },
+      enlaces: ["[[Proyecto X]]"],
+    });
+
+    expect(res.status).toBe(201);
+    const body = objectPayloadSchema.parse(await res.json());
+    expect(body.enlaces).toEqual(["[[Proyecto X]]"]);
+    const parsed = parseObjectFile(readFileSync(join(vaultDir, body.ruta), "utf8"));
+    expect(parsed.ok && parsed.frontmatter.links).toEqual(["[[Proyecto X]]"]);
+
+    reconcileIndex(handle.db, { vaultDir });
+    expect(idsOf(await getJson<ListBody>(`/api/objetos?enlazadoA=${PROYECTO}`))).toContain(body.id);
+    const entrantes = await getJson<{ entrantes: { id: string; contexto: string }[] }>(
+      `/api/objetos/${PROYECTO}/enlaces-entrantes`,
+    );
+    expect(entrantes.entrantes).toContainEqual(
+      expect.objectContaining({ id: body.id, contexto: "frontmatter" }),
+    );
+  });
+
+  it("rejects enlaces that are not wikilinks with validation_error", async () => {
+    const res = await sendJson("POST", "/api/objetos", {
+      titulo: "Sin corchetes",
+      enlaces: ["Proyecto X"],
+    });
+
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as ErrorBody).error.codigo).toBe("validation_error");
+    expect(existsSync(join(vaultDir, "sin-corchetes.md"))).toBe(false);
   });
 
   it("rejects a missing required attribute with its domain code", async () => {
@@ -566,6 +789,50 @@ describe("PATCH /api/objetos/:id", () => {
     expect(body.tipo).toBe("nota");
     expect(body.cuerpo).toBe("Cuerpo editado");
     expect(body.atributos).toEqual({ etiquetas: ["trabajo", "api"] });
+  });
+
+  it("removes an attribute when its value is null (JSON merge patch)", async () => {
+    const res = await sendJson("PATCH", `/api/objetos/${ALFA}`, {
+      atributos: { etiquetas: null },
+    });
+
+    expect(res.status).toBe(200);
+    const body = objectPayloadSchema.parse(await res.json());
+    expect(body.atributos).toEqual({});
+
+    const read = await getJson<ObjectPayload>(`/api/objetos/${ALFA}`);
+    expect(read.atributos).toEqual({});
+
+    const text = readFileSync(join(vaultDir, "alfa.md"), "utf8");
+    expect(text).not.toContain("etiquetas");
+    expect(text).not.toContain("null");
+  });
+
+  it("removes only null attributes and keeps merging the rest", async () => {
+    const res = await sendJson("PATCH", `/api/objetos/${BETA}`, {
+      atributos: { etiquetas: null, prioridad: 3 },
+    });
+
+    expect(res.status).toBe(200);
+    const body = objectPayloadSchema.parse(await res.json());
+    expect(body.atributos).toEqual({ estado: "pendiente", prioridad: 3 });
+
+    const read = await getJson<ObjectPayload>(`/api/objetos/${BETA}`);
+    expect(read.atributos).toEqual({ estado: "pendiente", prioridad: 3 });
+  });
+
+  it("rejects clearing a required attribute with missing_required_attribute", async () => {
+    const res = await sendJson("PATCH", `/api/objetos/${BETA}`, {
+      atributos: { estado: null },
+    });
+
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as ErrorBody;
+    expect(body.error.codigo).toBe("missing_required_attribute");
+    expect(body.error.mensaje).toContain("estado");
+
+    const read = await getJson<ObjectPayload>(`/api/objetos/${BETA}`);
+    expect(read.atributos).toEqual({ etiquetas: ["trabajo", "urgente"], estado: "pendiente" });
   });
 
   it("rejects changing the title and points to the rename endpoint", async () => {

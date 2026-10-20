@@ -204,6 +204,7 @@ export const searchResultItemSchema = z.object({
   ruta: z.string(),
   actualizado: z.string(),
   fragmento: z.string().optional(),
+  encabezado: z.string().nullable().optional(),
 });
 
 export type SearchResultItem = z.infer<typeof searchResultItemSchema>;

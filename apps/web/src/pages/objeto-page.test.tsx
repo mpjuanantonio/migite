@@ -1,8 +1,14 @@
-import type { ObjectPayload, TipoPayload } from "@migite/contracts";
+import type {
+  ArbolObjetoNode,
+  EnlaceEntrante,
+  ObjectPayload,
+  TipoPayload,
+} from "@migite/contracts";
 import { QueryClient } from "@tanstack/react-query";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
+import { queryKeys } from "@/api/keys";
 import {
   errorResponse,
   jsonResponse,
@@ -11,25 +17,29 @@ import {
   sesionResponse,
 } from "@/test/render-app";
 
-vi.mock("@uiw/react-codemirror", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@uiw/react-codemirror")>();
-  return {
-    ...actual,
-    default: (props: {
-      readonly value?: string;
-      readonly onChange?: (value: string) => void;
-      readonly "aria-label"?: string;
-      readonly placeholder?: string;
-    }) => (
+const estadoWikilink = vi.hoisted(() => ({ titulo: "Diario de viaje" }));
+
+vi.mock("@/components/editor/markdown-editor", () => ({
+  MarkdownEditor: (props: {
+    readonly value: string;
+    readonly onChange: (valor: string) => void;
+    readonly ariaLabel: string;
+    readonly placeholder?: string;
+    readonly onWikilinkClick?: (titulo: string) => void;
+  }) => (
+    <div>
       <textarea
-        aria-label={props["aria-label"]}
+        aria-label={props.ariaLabel}
         placeholder={props.placeholder}
-        value={props.value ?? ""}
-        onChange={(event) => props.onChange?.(event.target.value)}
+        value={props.value}
+        onChange={(event) => props.onChange(event.target.value)}
       />
-    ),
-  };
-});
+      <button type="button" onClick={() => props.onWikilinkClick?.(estadoWikilink.titulo)}>
+        Wikilink del editor
+      </button>
+    </div>
+  ),
+}));
 
 let fetchMock: Mock<typeof fetch>;
 
@@ -40,14 +50,24 @@ type PatchBody = {
 
 type PatchHandler = (body: PatchBody, attempt: number) => Response;
 
-type RenameHandler = (nuevoTitulo: string, attempt: number) => Response;
+type RenameHandler = (nuevoTitulo: string, attempt: number) => Response | Promise<Response>;
+
+type CrearHandler = (titulo: string) => Response;
+
+type ResolverHandler = (titulo: string) => Response | undefined;
 
 type ObjetoApiOptions = {
   readonly objeto?: ObjectPayload;
+  readonly objetos?: readonly ObjectPayload[];
   readonly getError?: Response;
   readonly patch?: PatchHandler;
   readonly rename?: RenameHandler;
   readonly deleteResponse?: Response;
+  readonly crear?: CrearHandler;
+  readonly resolver?: ResolverHandler;
+  readonly entrantes?: readonly EnlaceEntrante[];
+  readonly entrantesError?: Response;
+  readonly arbol?: readonly ArbolObjetoNode[];
 };
 
 const TIPOS: readonly TipoPayload[] = [
@@ -102,19 +122,47 @@ const mockObjetoApi = (options: ObjetoApiOptions = {}): void => {
   let intentos = 0;
   let intentosRenombrado = 0;
   const objeto = options.objeto ?? objetoDePrueba();
+  const creados: ObjectPayload[] = [];
+  const catalogo = (): readonly ObjectPayload[] => [objeto, ...(options.objetos ?? []), ...creados];
 
   fetchMock.mockImplementation(async (input, init) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     if (url.startsWith("/api/tipos")) {
       return jsonResponse({ tipos: TIPOS });
     }
-    if (url === "/api/objetos") {
-      return jsonResponse({ objetos: [], siguienteCursor: null });
+    const method = init?.method ?? "GET";
+    if (url === "/api/objetos" || url.startsWith("/api/objetos?")) {
+      if (method === "POST") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as {
+          readonly titulo?: string;
+          readonly cuerpo?: string;
+        };
+        if (options.crear !== undefined) {
+          return options.crear(body.titulo ?? "");
+        }
+        const creado = objetoDePrueba({
+          id: `01JCREADO${creados.length + 1}`,
+          titulo: body.titulo ?? "Sin título",
+          cuerpo: body.cuerpo ?? "",
+          ruta: `notas/creada-${creados.length + 1}.md`,
+        });
+        creados.push(creado);
+        return jsonResponse(creado);
+      }
+      return jsonResponse({ objetos: options.objetos ?? [], siguienteCursor: null });
     }
     if (!url.startsWith("/api/objetos/")) {
       return sesionResponse(true);
     }
-    const method = init?.method ?? "GET";
+    if (url.startsWith("/api/objetos/arbol")) {
+      return jsonResponse({ nodos: options.arbol ?? [] });
+    }
+    if (url.endsWith("/enlaces-entrantes")) {
+      if (options.entrantesError !== undefined) {
+        return options.entrantesError;
+      }
+      return jsonResponse({ entrantes: options.entrantes ?? [] });
+    }
     if (method === "PATCH") {
       intentos += 1;
       const body = JSON.parse(String(init?.body ?? "{}")) as PatchBody;
@@ -134,7 +182,7 @@ const mockObjetoApi = (options: ObjetoApiOptions = {}): void => {
       const body = JSON.parse(String(init?.body ?? "{}")) as { readonly nuevoTitulo?: string };
       const nuevoTitulo = body.nuevoTitulo ?? objeto.titulo;
       if (options.rename !== undefined) {
-        return options.rename(nuevoTitulo, intentosRenombrado);
+        return await options.rename(nuevoTitulo, intentosRenombrado);
       }
       return jsonResponse({
         objeto: { ...objeto, titulo: nuevoTitulo },
@@ -144,10 +192,22 @@ const mockObjetoApi = (options: ObjetoApiOptions = {}): void => {
     if (method === "DELETE") {
       return options.deleteResponse ?? noContentResponse();
     }
-    if (options.getError !== undefined) {
-      return options.getError;
+    const ruta = decodeURIComponent(url.split("?")[0] ?? url);
+    if (ruta === `/api/objetos/${objeto.id}`) {
+      if (options.getError !== undefined) {
+        return options.getError;
+      }
+      return jsonResponse(objeto);
     }
-    return jsonResponse(objeto);
+    const titulo = ruta.slice("/api/objetos/".length);
+    const manual = options.resolver?.(titulo);
+    if (manual !== undefined) {
+      return manual;
+    }
+    const encontrado = catalogo().find((item) => item.id === titulo || item.titulo === titulo);
+    return encontrado === undefined
+      ? errorResponse("object_not_found", `No existe «${titulo}»`, 404)
+      : jsonResponse(encontrado);
   });
 };
 
@@ -162,6 +222,42 @@ const objetoTarea = (overrides: Partial<ObjectPayload> = {}): ObjectPayload =>
 const renderObjeto = () =>
   renderApp("/objetos/01JALFA", new QueryClient({ defaultOptions: { queries: { retry: false } } }));
 
+const avanzarTemporizadores = async (ms = 0): Promise<void> => {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+};
+
+const patchesDe = (clave: "cuerpo" | "atributos"): PatchBody[] => {
+  const resultado: PatchBody[] = [];
+  for (const [, init] of fetchMock.mock.calls) {
+    if (init?.method !== "PATCH") {
+      continue;
+    }
+    const body = JSON.parse(String(init.body ?? "{}")) as PatchBody;
+    if (body[clave] !== undefined) {
+      resultado.push(body);
+    }
+  }
+  return resultado;
+};
+
+const patchCuerpo = (): PatchBody | undefined => patchesDe("cuerpo")[0];
+
+const renombrados = (): { readonly nuevoTitulo: string }[] =>
+  fetchMock.mock.calls
+    .filter(([input, init]) => String(input).endsWith("/renombrar") && init?.method === "POST")
+    .map(([, init]) => JSON.parse(String(init?.body ?? "{}")) as { readonly nuevoTitulo: string });
+
+const indicadorGuardando = (): HTMLElement | null =>
+  screen.queryByRole("status", { name: "Guardando…" });
+
+const indicadorGuardado = (): HTMLElement | null =>
+  screen.queryByRole("status", { name: "Guardado" });
+
+const indicadorError = (): HTMLElement | null =>
+  screen.queryByRole("button", { name: /^No se pudo guardar/ });
+
 beforeEach(() => {
   localStorage.clear();
   fetchMock = vi.fn<typeof fetch>();
@@ -169,11 +265,12 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
 describe("ficha de objeto", () => {
-  it("carga el objeto y muestra el cuerpo en el editor y en la vista previa", async () => {
+  it("carga el objeto y muestra el cuerpo en el editor", async () => {
     mockObjetoApi();
     renderObjeto();
 
@@ -181,15 +278,105 @@ describe("ficha de objeto", () => {
       await screen.findByRole("heading", { level: 1, name: "Cuaderno de campo" }),
     ).toBeInTheDocument();
     expect(screen.getByText("nota", { selector: "span" })).toBeInTheDocument();
-    expect(screen.getByText("Sin cambios")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Guardar" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Guardar" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Guardar atributos" })).toBeNull();
+    expect(indicadorGuardando()).toBeNull();
+    expect(indicadorGuardado()).toBeNull();
 
+    expect(screen.getByRole("region", { name: "Texto markdown" })).toBeInTheDocument();
     const editor = screen.getByLabelText("Cuerpo de la ficha en markdown");
     expect(editor).toHaveValue("# Diario\n\nUna **nota** serena.");
+  });
 
-    const preview = screen.getByRole("region", { name: "Vista previa" });
-    expect(within(preview).getByRole("heading", { level: 1, name: "Diario" })).toBeInTheDocument();
-    expect(within(preview).getByText("nota", { selector: "strong" })).toBeInTheDocument();
+  it("muestra el explorador de notas con la ficha actual resaltada", async () => {
+    mockObjetoApi({
+      arbol: [
+        {
+          id: "01JALFA",
+          tipo: "nota",
+          titulo: "Cuaderno de campo",
+          ruta: "notas/cuaderno.md",
+          carpeta: "notas",
+          actualizado: "2026-10-05T18:30:00.000Z",
+        },
+      ],
+    });
+    renderObjeto();
+
+    await screen.findByRole("heading", { level: 1, name: "Cuaderno de campo" });
+
+    const arbol = await screen.findByRole("list", { name: "Árbol de notas" });
+    expect(within(arbol).getByRole("link", { name: "Cuaderno de campo" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(within(arbol).getByRole("button", { name: "notas" })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+  });
+
+  it("expande los ancestros de la carpeta de la ficha aunque haya expansión guardada", async () => {
+    localStorage.setItem("migite.explorador.expandidas", JSON.stringify(["otra"]));
+    mockObjetoApi({
+      objeto: objetoDePrueba({
+        carpeta: "Libros/clasicos",
+        ruta: "Libros/clasicos/cuaderno.md",
+      }),
+      arbol: [
+        {
+          id: "01JALFA",
+          tipo: "nota",
+          titulo: "Cuaderno de campo",
+          ruta: "Libros/clasicos/cuaderno.md",
+          carpeta: "Libros/clasicos",
+          actualizado: "2026-10-05T18:30:00.000Z",
+        },
+      ],
+    });
+    renderObjeto();
+
+    await screen.findByRole("heading", { level: 1, name: "Cuaderno de campo" });
+
+    const arbol = await screen.findByRole("list", { name: "Árbol de notas" });
+    expect(within(arbol).getByRole("button", { name: "Plegar Libros" })).toBeInTheDocument();
+    expect(within(arbol).getByRole("button", { name: "Plegar clasicos" })).toBeInTheDocument();
+    expect(within(arbol).getByRole("link", { name: "Cuaderno de campo" })).toBeInTheDocument();
+  });
+
+  it("toma las sugerencias de wikilinks del árbol ligero sin listar objetos completos", async () => {
+    mockObjetoApi();
+    renderObjeto();
+
+    await screen.findByLabelText("Cuerpo de la ficha en markdown");
+
+    expect(fetchMock.mock.calls.some(([input]) => String(input) === "/api/objetos/arbol")).toBe(
+      true,
+    );
+    expect(
+      fetchMock.mock.calls.some(([input]) => String(input).startsWith("/api/objetos?limite=100")),
+    ).toBe(false);
+  });
+
+  it("ordena la ficha con propiedades arriba y escritura a ancho completo", async () => {
+    mockObjetoApi();
+    renderObjeto();
+
+    const propiedades = await screen.findByRole("region", { name: "Atributos" });
+    const escritura = screen.getByRole("region", { name: "Texto markdown" });
+    const entrantes = screen.getByRole("region", { name: "Enlazan aquí" });
+
+    const sigueA = (origen: HTMLElement, destino: HTMLElement): boolean =>
+      (origen.compareDocumentPosition(destino) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+
+    expect(sigueA(propiedades, escritura)).toBe(true);
+    expect(sigueA(escritura, entrantes)).toBe(true);
+    expect(escritura).toHaveClass("editor-lectura");
+    expect(escritura).not.toHaveClass("rounded-lg");
+    expect(escritura).not.toHaveClass("border");
+    expect(escritura).not.toHaveClass("bg-card");
+    expect(escritura).not.toHaveClass("shadow-sheet");
+    expect(escritura.closest("article")).toHaveClass("shadow-sheet");
   });
 
   it("muestra el mensaje del API cuando la ficha no existe", async () => {
@@ -204,6 +391,25 @@ describe("ficha de objeto", () => {
     expect(screen.getByText("No existe la ficha solicitada")).toBeInTheDocument();
   });
 
+  it("trata un objeto cacheado como null como ficha no encontrada", async () => {
+    mockObjetoApi();
+    const cliente = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
+    });
+    cliente.setQueryData(queryKeys.objeto("01JALFA"), null);
+
+    renderApp("/objetos/01JALFA", cliente);
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Ficha no encontrada" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("El recurso solicitado no existe")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Cuerpo de la ficha en markdown")).toBeNull();
+    expect(fetchMock.mock.calls.some(([input]) => String(input) === "/api/objetos/01JALFA")).toBe(
+      false,
+    );
+  });
+
   it("avisa cuando el objeto está en modo degradado", async () => {
     mockObjetoApi({
       objeto: objetoDePrueba({
@@ -216,82 +422,140 @@ describe("ficha de objeto", () => {
     expect(screen.getByLabelText("Cuerpo de la ficha en markdown")).toBeInTheDocument();
   });
 
-  it("edita y guarda el cuerpo con el botón", async () => {
+  it("autoguarda el cuerpo al dejar de teclear", async () => {
     mockObjetoApi();
-    const user = userEvent.setup();
     renderObjeto();
 
     const editor = await screen.findByLabelText("Cuerpo de la ficha en markdown");
-    await user.clear(editor);
-    await user.type(editor, "Cuerpo nuevo");
+    vi.useFakeTimers();
+    fireEvent.change(editor, { target: { value: "Cuerpo autoguardado" } });
 
-    expect(screen.getByText("Cambios sin guardar")).toBeInTheDocument();
-    const preview = screen.getByRole("region", { name: "Vista previa" });
-    expect(within(preview).getByText("Cuerpo nuevo")).toBeInTheDocument();
+    expect(indicadorGuardando()).toBeInTheDocument();
+    expect(patchCuerpo()).toBeUndefined();
 
-    await user.click(screen.getByRole("button", { name: "Guardar" }));
+    await avanzarTemporizadores(1199);
+    expect(patchCuerpo()).toBeUndefined();
 
-    expect(await screen.findByText("Guardado")).toBeInTheDocument();
+    await avanzarTemporizadores(1);
+
+    expect(patchCuerpo()?.cuerpo).toBe("Cuerpo autoguardado");
     const patchCall = fetchMock.mock.calls.find(([, init]) => init?.method === "PATCH");
     expect(patchCall?.[0]).toBe("/api/objetos/01JALFA");
-    expect(JSON.parse(String(patchCall?.[1]?.body))).toEqual({ cuerpo: "Cuerpo nuevo" });
-    expect(screen.getByRole("button", { name: "Guardar" })).toBeDisabled();
+    expect(indicadorGuardado()).toBeInTheDocument();
+    expect(indicadorGuardando()).toBeNull();
   });
 
-  it("muestra el error de guardado y permite reintentar", async () => {
+  it("muestra el error del API en el indicador y permite reintentar", async () => {
     mockObjetoApi({
       patch: (_body, attempt) =>
         attempt === 1
           ? errorResponse("write_error", "No se pudo escribir el archivo", 500)
           : jsonResponse(objetoDePrueba({ cuerpo: "Cuerpo recuperado" })),
     });
-    const user = userEvent.setup();
     renderObjeto();
 
     const editor = await screen.findByLabelText("Cuerpo de la ficha en markdown");
-    await user.clear(editor);
-    await user.type(editor, "Cuerpo recuperado");
-    await user.click(screen.getByRole("button", { name: "Guardar" }));
+    fireEvent.change(editor, { target: { value: "Cuerpo recuperado" } });
 
-    const alerta = await screen.findByRole("alert");
-    expect(alerta).toHaveTextContent("No se pudo escribir el archivo");
+    const boton = await screen.findByRole("button", { name: /^No se pudo guardar/ });
+    expect(boton).toHaveAttribute("title", "No se pudo guardar: No se pudo escribir el archivo");
+    expect(editor).toHaveValue("Cuerpo recuperado");
 
-    await user.click(within(alerta).getByRole("button", { name: "Reintentar" }));
-
-    expect(await screen.findByText("Guardado")).toBeInTheDocument();
-    expect(screen.queryByRole("alert")).toBeNull();
-  });
-
-  it("guarda con el atajo Ctrl+S", async () => {
-    mockObjetoApi();
-    const user = userEvent.setup();
-    renderObjeto();
-
-    const editor = await screen.findByLabelText("Cuerpo de la ficha en markdown");
-    await user.clear(editor);
-    await user.type(editor, "Cuerpo con atajo");
-    await user.keyboard("{Control>}s{/Control}");
+    fireEvent.click(boton);
 
     await waitFor(() => {
-      const patchCall = fetchMock.mock.calls.find(([, init]) => init?.method === "PATCH");
-      expect(patchCall).toBeDefined();
-      expect(JSON.parse(String(patchCall?.[1]?.body))).toEqual({ cuerpo: "Cuerpo con atajo" });
+      expect(patchesDe("cuerpo")).toHaveLength(2);
     });
-    expect(await screen.findByText("Guardado")).toBeInTheDocument();
+    expect(indicadorGuardado()).toBeInTheDocument();
+    expect(indicadorError()).toBeNull();
+  });
+
+  it("guarda con el atajo Ctrl+S sin esperar al debounce", async () => {
+    mockObjetoApi();
+    renderObjeto();
+
+    const editor = await screen.findByLabelText("Cuerpo de la ficha en markdown");
+    vi.useFakeTimers();
+    fireEvent.change(editor, { target: { value: "Cuerpo con atajo" } });
+    fireEvent.keyDown(window, { key: "s", ctrlKey: true });
+    await avanzarTemporizadores(0);
+
+    expect(patchCuerpo()?.cuerpo).toBe("Cuerpo con atajo");
+    expect(indicadorGuardado()).toBeInTheDocument();
+  });
+});
+
+describe("borrador sin guardar al salir", () => {
+  it("avisa antes de cerrar la pestaña cuando hay cambios pendientes", async () => {
+    mockObjetoApi();
+    renderObjeto();
+
+    const editor = await screen.findByLabelText("Cuerpo de la ficha en markdown");
+    vi.useFakeTimers();
+    fireEvent.change(editor, { target: { value: "Cambio sin guardar" } });
+
+    const aviso = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(aviso);
+
+    expect(aviso.defaultPrevented).toBe(true);
+
+    await avanzarTemporizadores(1200);
+    expect(patchCuerpo()?.cuerpo).toBe("Cambio sin guardar");
+  });
+
+  it("no avisa si no hay cambios pendientes", async () => {
+    mockObjetoApi();
+    renderObjeto();
+    await screen.findByLabelText("Cuerpo de la ficha en markdown");
+
+    const aviso = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(aviso);
+
+    expect(aviso.defaultPrevented).toBe(false);
+  });
+
+  it("flushea el borrador del objeto anterior al cambiar de objeto", async () => {
+    mockObjetoApi({
+      objetos: [objetoDePrueba({ id: "01JOTRA", titulo: "Tareas del mes", cuerpo: "" })],
+    });
+    const { router } = renderObjeto();
+
+    const editor = await screen.findByLabelText("Cuerpo de la ficha en markdown");
+    fireEvent.change(editor, { target: { value: "Borrador de A" } });
+
+    await act(async () => {
+      await router.navigate("/objetos/01JOTRA");
+    });
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Tareas del mes" }),
+    ).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(patchCuerpo()?.cuerpo).toBe("Borrador de A");
+    });
+    const llamada = fetchMock.mock.calls.find(([, init]) => init?.method === "PATCH");
+    expect(llamada?.[0]).toBe("/api/objetos/01JALFA");
+    expect(screen.getByLabelText("Cuerpo de la ficha en markdown")).toHaveValue("");
+  });
+
+  it("flushea el borrador al desmontar la ficha", async () => {
+    mockObjetoApi();
+    const { unmount } = renderObjeto();
+
+    const editor = await screen.findByLabelText("Cuerpo de la ficha en markdown");
+    fireEvent.change(editor, { target: { value: "Cambio al salir" } });
+    unmount();
+
+    await waitFor(() => {
+      expect(patchCuerpo()?.cuerpo).toBe("Cambio al salir");
+    });
   });
 });
 
 const patchAtributos = (): PatchBody | undefined => {
-  for (const [, init] of fetchMock.mock.calls) {
-    if (init?.method !== "PATCH") {
-      continue;
-    }
-    const body = JSON.parse(String(init.body ?? "{}")) as PatchBody;
-    if (body.atributos !== undefined) {
-      return body;
-    }
-  }
-  return undefined;
+  const patches = patchesDe("atributos");
+  return patches[patches.length - 1];
 };
 
 describe("bandeja de atributos", () => {
@@ -334,10 +598,10 @@ describe("bandeja de atributos", () => {
     expect(screen.getByLabelText("Web")).toHaveAttribute("type", "url");
     expect(screen.getByLabelText("Enlace")).toHaveValue("[[Beta]]");
     expect(screen.getByLabelText("Adjunto")).toHaveValue("docs/a.pdf");
-    expect(screen.getByRole("button", { name: "Guardar atributos" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Guardar atributos" })).toBeNull();
   });
 
-  it("edita y guarda los atributos con el mapa fusionado", async () => {
+  it("autoguarda los atributos con el mapa fusionado", async () => {
     mockObjetoApi({
       objeto: objetoTarea({
         atributos: { estado: "pendiente", vencimiento: "2026-10-10", prioridad: 3, urgente: false },
@@ -352,33 +616,32 @@ describe("bandeja de atributos", () => {
     await user.selectOptions(screen.getByLabelText("Estado"), "hecha");
     await user.click(screen.getByRole("switch", { name: "Urgente" }));
 
-    expect(screen.getByText("Atributos sin guardar")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Guardar atributos" }));
-
-    expect(await screen.findByText("Atributos guardados")).toBeInTheDocument();
-    expect(patchAtributos()?.atributos).toEqual({
-      estado: "hecha",
-      vencimiento: "2026-11-01",
-      prioridad: 3,
-      urgente: true,
+    await waitFor(() => {
+      expect(patchAtributos()?.atributos).toEqual({
+        estado: "hecha",
+        vencimiento: "2026-11-01",
+        prioridad: 3,
+        urgente: true,
+      });
     });
-    expect(screen.getByRole("button", { name: "Guardar atributos" })).toBeDisabled();
   });
 
-  it("añade un atributo libre y lo guarda", async () => {
+  it("añade un atributo libre y lo autoguarda", async () => {
     mockObjetoApi();
     const user = userEvent.setup();
     renderObjeto();
+
+    await user.click(await screen.findByRole("button", { name: "Más acciones" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Añadir atributo" }));
 
     await user.type(await screen.findByLabelText("Clave"), "proyecto");
     await user.type(screen.getByLabelText("Valor"), "migite");
     await user.click(screen.getByRole("button", { name: "Añadir atributo" }));
 
     expect(await screen.findByLabelText("proyecto")).toHaveValue("migite");
-    await user.click(screen.getByRole("button", { name: "Guardar atributos" }));
-
-    expect(await screen.findByText("Atributos guardados")).toBeInTheDocument();
-    expect(patchAtributos()?.atributos).toEqual({ proyecto: "migite" });
+    await waitFor(() => {
+      expect(patchAtributos()?.atributos).toEqual({ proyecto: "migite" });
+    });
   });
 
   it("elimina atributos libres y definidos opcionales", async () => {
@@ -399,17 +662,16 @@ describe("bandeja de atributos", () => {
     expect(screen.queryByLabelText("Vencimiento")).toBeNull();
     expect(screen.queryByLabelText("presupuesto")).toBeNull();
 
-    await user.click(screen.getByRole("button", { name: "Guardar atributos" }));
-
-    expect(await screen.findByText("Atributos guardados")).toBeInTheDocument();
-    expect(patchAtributos()?.atributos).toEqual({
-      estado: "pendiente",
-      vencimiento: null,
-      presupuesto: null,
+    await waitFor(() => {
+      expect(patchAtributos()?.atributos).toEqual({
+        estado: "pendiente",
+        vencimiento: null,
+        presupuesto: null,
+      });
     });
   });
 
-  it("muestra los valores en crudo y los guarda en modo degradado", async () => {
+  it("muestra los valores en crudo y los autoguarda en modo degradado", async () => {
     mockObjetoApi({
       objeto: objetoDePrueba({
         tipo: "misterio",
@@ -417,7 +679,6 @@ describe("bandeja de atributos", () => {
         degraded: [{ kind: "unknownType", type: "misterio" }],
       }),
     });
-    const user = userEvent.setup();
     renderObjeto();
 
     expect(await screen.findByText("Valores en crudo")).toBeInTheDocument();
@@ -427,10 +688,24 @@ describe("bandeja de atributos", () => {
     expect(screen.getByLabelText("nota")).toHaveValue("hola");
 
     fireEvent.change(presupuesto, { target: { value: "1500" } });
-    await user.click(screen.getByRole("button", { name: "Guardar atributos" }));
 
-    expect(await screen.findByText("Atributos guardados")).toBeInTheDocument();
-    expect(patchAtributos()?.atributos).toEqual({ presupuesto: 1500, nota: "hola" });
+    await waitFor(() => {
+      expect(patchAtributos()?.atributos).toEqual({ presupuesto: 1500, nota: "hola" });
+    });
+  });
+
+  it("asocia las etiquetas cuando la clave del atributo lleva espacios", async () => {
+    mockObjetoApi({
+      objeto: objetoDePrueba({ atributos: { "clave con espacios": "valor" } }),
+    });
+    renderObjeto();
+
+    const campo = await screen.findByLabelText("clave con espacios");
+    const etiqueta = screen.getByText("clave con espacios");
+
+    expect(campo.id).not.toMatch(/\s/);
+    expect(etiqueta.tagName).toBe("LABEL");
+    expect(etiqueta).toHaveAttribute("for", campo.id);
   });
 
   it("conserva lo tipeado cuando el PATCH de atributos falla", async () => {
@@ -446,7 +721,6 @@ describe("bandeja de atributos", () => {
 
     const web = await screen.findByLabelText("Web");
     fireEvent.change(web, { target: { value: "no-es-url" } });
-    await user.click(screen.getByRole("button", { name: "Guardar atributos" }));
 
     const alerta = await screen.findByRole("alert");
     expect(alerta).toHaveTextContent('attribute "web": expected an http(s) URL');
@@ -454,65 +728,37 @@ describe("bandeja de atributos", () => {
 
     await user.click(within(alerta).getByRole("button", { name: "Reintentar" }));
 
-    expect(await screen.findByText("Atributos guardados")).toBeInTheDocument();
-    expect(screen.queryByRole("alert")).toBeNull();
+    await waitFor(() => {
+      expect(screen.queryByRole("alert")).toBeNull();
+    });
+    expect(patchesDe("atributos")).toHaveLength(2);
   });
 });
 
-const abrirDialogoRenombrar = async (user: ReturnType<typeof userEvent.setup>) => {
-  await user.click(await screen.findByRole("button", { name: "Renombrar" }));
+const abrirTitulo = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.click(await screen.findByRole("button", { name: "Cuaderno de campo" }));
+  return screen.getByRole("textbox", { name: "Título de la ficha" });
+};
+
+const abrirMenu = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.click(await screen.findByRole("button", { name: "Más acciones" }));
+  return screen.findByRole("menu");
+};
+
+const abrirBorrarDesdeMenu = async (user: ReturnType<typeof userEvent.setup>) => {
+  await abrirMenu(user);
+  await user.click(await screen.findByRole("menuitem", { name: "Borrar" }));
   return screen.findByRole("dialog");
 };
 
-describe("renombrar y borrar la ficha", () => {
-  it("renombra la ficha y muestra el informe de ficheros reescritos", async () => {
+describe("título editable", () => {
+  it("renombra al confirmar con Enter y muestra el informe discreto", async () => {
     mockObjetoApi({
       rename: (nuevoTitulo) =>
         jsonResponse({
           objeto: objetoDePrueba({ titulo: nuevoTitulo }),
           informe: {
-            reescritos: ["diario/ref.md", "tareas/x.md"],
-            omitidos: [],
-            enlacesSinResolver: [],
-          },
-        }),
-    });
-    const user = userEvent.setup();
-    renderObjeto();
-
-    const dialogo = await abrirDialogoRenombrar(user);
-    const campo = within(dialogo).getByLabelText("Nuevo título");
-    expect(campo).toHaveValue("Cuaderno de campo");
-    await user.clear(campo);
-    await user.type(campo, "Cuaderno nuevo");
-    await user.click(within(dialogo).getByRole("button", { name: "Renombrar" }));
-
-    expect(
-      await screen.findByRole("heading", { level: 1, name: "Cuaderno nuevo" }),
-    ).toBeInTheDocument();
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).toBeNull();
-    });
-
-    const llamada = fetchMock.mock.calls.find(([input]) => String(input).endsWith("/renombrar"));
-    expect(llamada?.[0]).toBe("/api/objetos/01JALFA/renombrar");
-    expect(llamada?.[1]?.method).toBe("POST");
-    expect(JSON.parse(String(llamada?.[1]?.body))).toEqual({ nuevoTitulo: "Cuaderno nuevo" });
-
-    expect(await screen.findByText("Ficha renombrada")).toBeInTheDocument();
-    expect(screen.getByText("Ficheros reescritos (2)")).toBeInTheDocument();
-    expect(screen.getByText("diario/ref.md")).toBeInTheDocument();
-    expect(screen.getByText("tareas/x.md")).toBeInTheDocument();
-    expect(screen.queryByRole("alert")).toBeNull();
-  });
-
-  it("avisa de los enlaces sin resolver y de los ficheros omitidos", async () => {
-    mockObjetoApi({
-      rename: () =>
-        jsonResponse({
-          objeto: objetoDePrueba({ titulo: "Cuaderno nuevo" }),
-          informe: {
-            reescritos: [],
+            reescritos: ["diario/ref.md"],
             omitidos: [{ path: "roto.md", problems: ["frontmatter ilegible"] }],
             enlacesSinResolver: [{ path: "notas/otra.md", link: "[[Cuaderno de campo]]" }],
           },
@@ -521,16 +767,138 @@ describe("renombrar y borrar la ficha", () => {
     const user = userEvent.setup();
     renderObjeto();
 
-    const dialogo = await abrirDialogoRenombrar(user);
-    await user.clear(within(dialogo).getByLabelText("Nuevo título"));
-    await user.type(within(dialogo).getByLabelText("Nuevo título"), "Cuaderno nuevo");
-    await user.click(within(dialogo).getByRole("button", { name: "Renombrar" }));
+    const campo = await abrirTitulo(user);
+    await user.clear(campo);
+    await user.type(campo, "Cuaderno nuevo");
+    fireEvent.keyDown(campo, { key: "Enter" });
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Cuaderno nuevo" }),
+    ).toBeInTheDocument();
+
+    const llamada = fetchMock.mock.calls.find(([input]) => String(input).endsWith("/renombrar"));
+    expect(llamada?.[0]).toBe("/api/objetos/01JALFA/renombrar");
+    expect(llamada?.[1]?.method).toBe("POST");
+    expect(JSON.parse(String(llamada?.[1]?.body))).toEqual({ nuevoTitulo: "Cuaderno nuevo" });
 
     expect(await screen.findByText("Ficheros omitidos")).toBeInTheDocument();
     expect(screen.getByText(/frontmatter ilegible/)).toBeInTheDocument();
-    const aviso = await screen.findByRole("alert");
-    expect(aviso).toHaveTextContent("Enlaces sin resolver");
-    expect(aviso).toHaveTextContent("«[[Cuaderno de campo]]» en notas/otra.md");
+    expect(screen.getByText("Enlaces sin resolver")).toBeInTheDocument();
+    expect(screen.getByText(/«\[\[Cuaderno de campo\]\]» en notas\/otra.md/)).toBeInTheDocument();
+    expect(screen.queryByText("Ficha renombrada")).toBeNull();
+    expect(screen.queryByText(/Ficheros reescritos/)).toBeNull();
+  });
+
+  it("encola una segunda edición del título en lugar de descartarla", async () => {
+    let liberarPrimero: (() => void) | undefined;
+    const primeroEnVuelo = new Promise<void>((resolve) => {
+      liberarPrimero = resolve;
+    });
+    mockObjetoApi({
+      rename: async (nuevoTitulo, attempt) => {
+        if (attempt === 1) {
+          await primeroEnVuelo;
+        }
+        return jsonResponse({
+          objeto: objetoDePrueba({ titulo: nuevoTitulo }),
+          informe: { reescritos: [], omitidos: [], enlacesSinResolver: [] },
+        });
+      },
+    });
+    const user = userEvent.setup();
+    renderObjeto();
+
+    let campo = await abrirTitulo(user);
+    await user.clear(campo);
+    await user.type(campo, "Primer título");
+    fireEvent.keyDown(campo, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(renombrados()).toHaveLength(1);
+    });
+
+    campo = await abrirTitulo(user);
+    await user.clear(campo);
+    await user.type(campo, "Segundo título");
+    fireEvent.keyDown(campo, { key: "Enter" });
+
+    expect(renombrados()).toHaveLength(1);
+
+    await act(async () => {
+      liberarPrimero?.();
+    });
+
+    await waitFor(() => {
+      expect(renombrados()).toHaveLength(2);
+    });
+    expect(renombrados().map((cuerpo) => cuerpo.nuevoTitulo)).toEqual([
+      "Primer título",
+      "Segundo título",
+    ]);
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Segundo título" }),
+    ).toBeInTheDocument();
+  });
+
+  it("Escape revierte el título sin llamar al API", async () => {
+    mockObjetoApi();
+    const user = userEvent.setup();
+    renderObjeto();
+
+    const campo = await abrirTitulo(user);
+    await user.clear(campo);
+    await user.type(campo, "Otro título");
+    fireEvent.keyDown(campo, { key: "Escape" });
+
+    expect(screen.queryByRole("textbox", { name: "Título de la ficha" })).toBeNull();
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Cuaderno de campo" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cuaderno de campo" })).toHaveFocus();
+    expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith("/renombrar"))).toBe(
+      false,
+    );
+  });
+
+  it("no renombra si el título no cambia o queda vacío", async () => {
+    mockObjetoApi();
+    const user = userEvent.setup();
+    renderObjeto();
+
+    let campo = await abrirTitulo(user);
+    fireEvent.keyDown(campo, { key: "Enter" });
+
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Cuaderno de campo" }),
+    ).toBeInTheDocument();
+
+    campo = await abrirTitulo(user);
+    await user.clear(campo);
+    fireEvent.keyDown(campo, { key: "Enter" });
+
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Cuaderno de campo" }),
+    ).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith("/renombrar"))).toBe(
+      false,
+    );
+  });
+
+  it("confirma el título al salir del campo", async () => {
+    mockObjetoApi();
+    const user = userEvent.setup();
+    renderObjeto();
+
+    const campo = await abrirTitulo(user);
+    await user.clear(campo);
+    await user.type(campo, "Cuaderno nuevo");
+    await user.click(screen.getByLabelText("Cuerpo de la ficha en markdown"));
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Cuaderno nuevo" }),
+    ).toBeInTheDocument();
+    const llamada = fetchMock.mock.calls.find(([input]) => String(input).endsWith("/renombrar"));
+    expect(JSON.parse(String(llamada?.[1]?.body))).toEqual({ nuevoTitulo: "Cuaderno nuevo" });
   });
 
   it("muestra el error del API cuando el título está duplicado", async () => {
@@ -540,24 +908,76 @@ describe("renombrar y borrar la ficha", () => {
     const user = userEvent.setup();
     renderObjeto();
 
-    const dialogo = await abrirDialogoRenombrar(user);
-    await user.clear(within(dialogo).getByLabelText("Nuevo título"));
-    await user.type(within(dialogo).getByLabelText("Nuevo título"), "Otro título");
-    await user.click(within(dialogo).getByRole("button", { name: "Renombrar" }));
+    const campo = await abrirTitulo(user);
+    await user.clear(campo);
+    await user.type(campo, "Otro título");
+    fireEvent.keyDown(campo, { key: "Enter" });
 
     const alerta = await screen.findByRole("alert");
     expect(alerta).toHaveTextContent("Ya existe una ficha con ese título");
-    expect(within(dialogo).getByLabelText("Nuevo título")).toHaveValue("Otro título");
-    expect(screen.getByText("Cuaderno de campo", { selector: "h1" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Cuaderno de campo" }),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("menú de acciones de la hoja", () => {
+  it("no muestra los botones de renombrar, borrar ni añadir atributo", async () => {
+    mockObjetoApi();
+    renderObjeto();
+
+    await screen.findByRole("heading", { level: 1, name: "Cuaderno de campo" });
+    expect(screen.queryByRole("button", { name: "Renombrar" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Borrar" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Añadir atributo" })).toBeNull();
   });
 
+  it("abre y cierra con teclado y contiene las acciones", async () => {
+    mockObjetoApi();
+    const user = userEvent.setup();
+    renderObjeto();
+
+    const disparador = await screen.findByRole("button", { name: "Más acciones" });
+    disparador.focus();
+    await user.keyboard("{Enter}");
+
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).getByRole("menuitem", { name: "Añadir atributo" })).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: "Borrar" })).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByRole("menu")).toBeNull();
+    });
+    expect(disparador).toHaveFocus();
+  });
+
+  it("abre el formulario de atributo libre desde el menú y lo añade", async () => {
+    mockObjetoApi();
+    const user = userEvent.setup();
+    renderObjeto();
+
+    await abrirMenu(user);
+    await user.click(screen.getByRole("menuitem", { name: "Añadir atributo" }));
+
+    await user.type(await screen.findByLabelText("Clave"), "proyecto");
+    await user.type(screen.getByLabelText("Valor"), "migite");
+    await user.click(screen.getByRole("button", { name: "Añadir atributo" }));
+
+    expect(await screen.findByLabelText("proyecto")).toHaveValue("migite");
+    await waitFor(() => {
+      expect(patchAtributos()?.atributos).toEqual({ proyecto: "migite" });
+    });
+  });
+});
+
+describe("borrar la ficha", () => {
   it("no llama al API si el borrado no se confirma", async () => {
     mockObjetoApi();
     const user = userEvent.setup();
     const { router } = renderObjeto();
 
-    await user.click(await screen.findByRole("button", { name: "Borrar" }));
-    const dialogo = await screen.findByRole("dialog");
+    const dialogo = await abrirBorrarDesdeMenu(user);
     expect(dialogo).toHaveTextContent("¿Borrar «Cuaderno de campo»?");
     expect(dialogo).toHaveTextContent("Esta acción no se puede deshacer.");
 
@@ -575,8 +995,7 @@ describe("renombrar y borrar la ficha", () => {
     const user = userEvent.setup();
     const { router } = renderObjeto();
 
-    await user.click(await screen.findByRole("button", { name: "Borrar" }));
-    const dialogo = await screen.findByRole("dialog");
+    const dialogo = await abrirBorrarDesdeMenu(user);
     await user.click(within(dialogo).getByRole("button", { name: "Borrar ficha" }));
 
     await waitFor(() => {
@@ -594,12 +1013,190 @@ describe("renombrar y borrar la ficha", () => {
     const user = userEvent.setup();
     const { router } = renderObjeto();
 
-    await user.click(await screen.findByRole("button", { name: "Borrar" }));
-    const dialogo = await screen.findByRole("dialog");
+    const dialogo = await abrirBorrarDesdeMenu(user);
     await user.click(within(dialogo).getByRole("button", { name: "Borrar ficha" }));
 
     const alerta = await screen.findByRole("alert");
     expect(alerta).toHaveTextContent("No se pudo borrar el archivo");
     expect(router.state.location.pathname).toBe("/objetos/01JALFA");
+  });
+});
+
+describe("wikilinks del editor", () => {
+  const diarioDeViaje = (): ObjectPayload =>
+    objetoDePrueba({ id: "01JDIARIO", titulo: "Diario de viaje", cuerpo: "" });
+
+  const clicWikilink = async (user: ReturnType<typeof userEvent.setup>, titulo: string) => {
+    estadoWikilink.titulo = titulo;
+    await user.click(await screen.findByRole("button", { name: "Wikilink del editor" }));
+  };
+
+  const abrirWikilink = async (user: ReturnType<typeof userEvent.setup>, titulo: string) => {
+    await clicWikilink(user, titulo);
+    return screen.findByRole("dialog");
+  };
+
+  it("navega al objeto existente cuando el wikilink resuelve", async () => {
+    mockObjetoApi({
+      objeto: objetoDePrueba({ cuerpo: "Enlaza [[Diario de viaje]] aquí." }),
+      objetos: [diarioDeViaje()],
+    });
+    const user = userEvent.setup();
+    const { router } = renderObjeto();
+
+    await clicWikilink(user, "Diario de viaje");
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/objetos/01JDIARIO");
+    });
+    expect(
+      fetchMock.mock.calls.some(([input]) => String(input) === "/api/objetos/Diario%20de%20viaje"),
+    ).toBe(true);
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Diario de viaje" }),
+    ).toBeInTheDocument();
+  });
+
+  it("ofrece crear la nota cuando el wikilink no resuelve y la crea", async () => {
+    mockObjetoApi({ objeto: objetoDePrueba({ cuerpo: "Falta [[Nota nueva]]." }) });
+    const user = userEvent.setup();
+    const { router } = renderObjeto();
+
+    await abrirWikilink(user, "Nota nueva");
+    await user.click(await screen.findByRole("button", { name: "Crear nota" }));
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/objetos/01JCREADO1");
+    });
+    const llamada = fetchMock.mock.calls.find(
+      ([input, init]) => String(input) === "/api/objetos" && init?.method === "POST",
+    );
+    expect(JSON.parse(String(llamada?.[1]?.body))).toEqual({ titulo: "Nota nueva" });
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Nota nueva" }),
+    ).toBeInTheDocument();
+  });
+
+  it("muestra el error y no navega cuando falla la creación", async () => {
+    mockObjetoApi({
+      objeto: objetoDePrueba({ cuerpo: "Falta [[Nota nueva]]." }),
+      crear: () => errorResponse("write_error", "No se pudo escribir el archivo", 500),
+    });
+    const user = userEvent.setup();
+    const { router } = renderObjeto();
+
+    await abrirWikilink(user, "Nota nueva");
+    await user.click(await screen.findByRole("button", { name: "Crear nota" }));
+
+    const alerta = await screen.findByRole("alert");
+    expect(alerta).toHaveTextContent("No se pudo escribir el archivo");
+    expect(router.state.location.pathname).toBe("/objetos/01JALFA");
+  });
+
+  it("guarda el borrador antes de crear la nota", async () => {
+    mockObjetoApi({ objeto: objetoDePrueba({ cuerpo: "Falta [[Nota nueva]]." }) });
+    const user = userEvent.setup();
+    const { router } = renderObjeto();
+
+    const editor = await screen.findByLabelText("Cuerpo de la ficha en markdown");
+    fireEvent.change(editor, {
+      target: { value: "Falta [[Nota nueva]]. Y una idea más." },
+    });
+
+    await abrirWikilink(user, "Nota nueva");
+    await user.click(await screen.findByRole("button", { name: "Crear nota" }));
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/objetos/01JCREADO1");
+    });
+    const llamadas = fetchMock.mock.calls;
+    const indicePatch = llamadas.findIndex(([, init]) => init?.method === "PATCH");
+    const indicePost = llamadas.findIndex(
+      ([input, init]) => String(input) === "/api/objetos" && init?.method === "POST",
+    );
+    expect(indicePatch).toBeGreaterThanOrEqual(0);
+    expect(indicePost).toBeGreaterThan(indicePatch);
+    expect(JSON.parse(String(llamadas[indicePatch]?.[1]?.body))).toEqual({
+      cuerpo: "Falta [[Nota nueva]]. Y una idea más.",
+    });
+    expect(JSON.parse(String(llamadas[indicePost]?.[1]?.body))).toEqual({ titulo: "Nota nueva" });
+  });
+
+  it("no crea la nota si falla el guardado previo del borrador", async () => {
+    mockObjetoApi({
+      objeto: objetoDePrueba({ cuerpo: "Falta [[Nota nueva]]." }),
+      patch: () => errorResponse("write_error", "No se pudo escribir el archivo", 500),
+    });
+    const user = userEvent.setup();
+    const { router } = renderObjeto();
+
+    const editor = await screen.findByLabelText("Cuerpo de la ficha en markdown");
+    fireEvent.change(editor, {
+      target: { value: "Falta [[Nota nueva]]. Y una idea más." },
+    });
+
+    await abrirWikilink(user, "Nota nueva");
+    await user.click(await screen.findByRole("button", { name: "Crear nota" }));
+
+    const boton = await screen.findByRole("button", {
+      name: /^No se pudo guardar/,
+      hidden: true,
+    });
+    expect(boton).toHaveAttribute(
+      "title",
+      expect.stringContaining("No se pudo escribir el archivo"),
+    );
+    expect(router.state.location.pathname).toBe("/objetos/01JALFA");
+    expect(
+      fetchMock.mock.calls.some(
+        ([input, init]) => String(input) === "/api/objetos" && init?.method === "POST",
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("enlaces entrantes", () => {
+  const tareasDelMes = (): ObjectPayload =>
+    objetoDePrueba({ id: "01JOTRA", titulo: "Tareas del mes", cuerpo: "" });
+
+  const diarioDeViaje = (): ObjectPayload =>
+    objetoDePrueba({ id: "01JDIARIO", titulo: "Diario de viaje", cuerpo: "" });
+
+  it("muestra quién enlaza aquí y navega al objeto al pulsar", async () => {
+    mockObjetoApi({
+      objetos: [tareasDelMes(), diarioDeViaje()],
+      entrantes: [
+        { id: "01JOTRA", titulo: "Tareas del mes", ruta: "notas/tareas.md", contexto: "body" },
+        {
+          id: "01JDIARIO",
+          titulo: "Diario de viaje",
+          ruta: "notas/diario.md",
+          contexto: "frontmatter",
+        },
+      ],
+    });
+    const user = userEvent.setup();
+    const { router } = renderObjeto();
+
+    const panel = await screen.findByRole("region", { name: "Enlazan aquí" });
+    expect(await within(panel).findByText("cuerpo")).toBeInTheDocument();
+    expect(within(panel).getByText("frontmatter")).toBeInTheDocument();
+
+    await user.click(await within(panel).findByRole("link", { name: "Tareas del mes" }));
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/objetos/01JOTRA");
+    });
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Tareas del mes" }),
+    ).toBeInTheDocument();
+  });
+
+  it("muestra el estado vacío cuando nadie enlaza aquí", async () => {
+    mockObjetoApi();
+    renderObjeto();
+
+    const panel = await screen.findByRole("region", { name: "Enlazan aquí" });
+    expect(await within(panel).findByText("Aún nada enlaza aquí…")).toBeInTheDocument();
   });
 });

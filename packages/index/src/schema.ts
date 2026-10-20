@@ -97,9 +97,22 @@ export const acciones = sqliteTable(
     tipoAccion: text("tipo_accion").notNull(),
     payload: text("payload").notNull(),
     estado: text("estado").notNull(),
+    detalle: text("detalle"),
+    resultado: text("resultado"),
     creada: text("creada").notNull(),
   },
   (table) => [index("acciones_estado_idx").on(table.estado)],
+);
+
+export const memorias = sqliteTable(
+  "memorias",
+  {
+    id: text("id").primaryKey(),
+    clave: text("clave").notNull(),
+    contenido: text("contenido").notNull(),
+    actualizada: text("actualizada").notNull(),
+  },
+  (table) => [uniqueIndex("memorias_clave_unique").on(table.clave)],
 );
 
 export const conversaciones = sqliteTable("conversaciones", {

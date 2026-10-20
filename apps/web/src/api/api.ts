@@ -1,5 +1,7 @@
 import { errorBodySchema } from "@migite/contracts";
-import { t } from "@migite/core";
+import { defaultLocale, type Locale, locales } from "@migite/core";
+import { LOCALE_STORAGE_KEY } from "@/i18n/context";
+import { translate } from "@/i18n/translate";
 
 export class ApiError extends Error {
   readonly codigo: string;
@@ -31,7 +33,19 @@ export type ApiFetchOptions = {
 
 const JSON_TYPE = "application/json";
 
-const toApiError = async (response: Response): Promise<ApiError> => {
+const esLocale = (valor: string | null): valor is Locale =>
+  valor !== null && (locales as readonly string[]).includes(valor);
+
+const localeActivo = (): Locale => {
+  try {
+    const guardado = localStorage.getItem(LOCALE_STORAGE_KEY);
+    return esLocale(guardado) ? guardado : defaultLocale;
+  } catch {
+    return defaultLocale;
+  }
+};
+
+export const toApiError = async (response: Response): Promise<ApiError> => {
   let payload: unknown;
   try {
     payload = await response.json();
@@ -42,7 +56,11 @@ const toApiError = async (response: Response): Promise<ApiError> => {
   if (parsed.success) {
     return new ApiError(parsed.data.error.codigo, parsed.data.error.mensaje, response.status);
   }
-  return new ApiError("generic_error", t("error.genericError"), response.status);
+  return new ApiError(
+    "generic_error",
+    translate("error.genericError", undefined, localeActivo()),
+    response.status,
+  );
 };
 
 export const apiFetch = async <T>(path: string, options: ApiFetchOptions = {}): Promise<T> => {

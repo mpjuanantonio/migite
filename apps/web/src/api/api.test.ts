@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { LOCALE_STORAGE_KEY } from "@/i18n/context";
 import { ApiError, apiFetch, setUnauthorizedHandler } from "./api";
 
 const jsonResponse = (body: unknown, status: number): Response =>
@@ -11,6 +12,7 @@ describe("apiFetch", () => {
   const fetchMock = vi.fn<typeof fetch>();
 
   beforeEach(() => {
+    localStorage.clear();
     fetchMock.mockReset();
     vi.stubGlobal("fetch", fetchMock);
   });
@@ -71,7 +73,24 @@ describe("apiFetch", () => {
     const error = await apiFetch("/api/objetos").catch((caught: unknown) => caught);
 
     expect(error).toBeInstanceOf(ApiError);
-    expect(error).toMatchObject({ codigo: "generic_error", status: 500 });
+    expect(error).toMatchObject({
+      codigo: "generic_error",
+      mensaje: "Se ha producido un error inesperado",
+      status: 500,
+    });
+  });
+
+  it("traduce el error genérico al locale activo", async () => {
+    localStorage.setItem(LOCALE_STORAGE_KEY, "en");
+    fetchMock.mockResolvedValue(new Response("texto plano", { status: 502 }));
+
+    const error = await apiFetch("/api/objetos").catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({
+      codigo: "generic_error",
+      mensaje: "An unexpected error occurred",
+      status: 502,
+    });
   });
 
   it("avisa al manejador y lanza ApiError cuando la respuesta es 401", async () => {
